@@ -19,7 +19,7 @@ dist/
 htmlcov/
 
 # graphwalk outputs
-results/
+results/**/results.json
 *.graph.json
 .cache/
 
