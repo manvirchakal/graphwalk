@@ -40,6 +40,8 @@ class GraphwalkSettings(BaseSettings):
     )
     jev_model_openrouter: str = JEV_MODEL_OPENROUTER
     jev_model_typesafe: str = JEV_MODEL_TYPESAFE
+    jev_timeout_s: float = Field(default=10.0, gt=0)
+    jev_max_retries: int = Field(default=2, ge=0)
 
     @property
     def jev_model(self) -> str:

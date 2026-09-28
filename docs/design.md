@@ -271,6 +271,24 @@ class QASystem(Protocol):        # eval adapter; graphwalk, vector RAG, later Gr
 draw over the offered labels. It records every request, reports fixed fake usage and
 cost, and can be told to raise, which is how guardrail and error paths get tested.
 
+**As built in M2:**
+
+- `state`, `instructions` and option descriptions are typed `JSONContent` (text, an
+  object, or an array), matching the wire format. A question needs at least 2 options:
+  traversal must short-circuit a single-option step itself.
+- `normalize_distribution` enforces the contract for every backend:
+  - A label the backend was not offered is an **error**.
+  - An offered label that is missing gets **0 and a warning**.
+  - The result is renormalized to sum to 1. Ties break by offer order.
+- `JevBackend` uses the SDK's default response type, so the SDK's validation and
+  request id are kept. It reads OpenRouter's `id`, `provider` and `usage.cost` from the
+  raw body. It refuses any `*-latest` model. `verify_model()` checks the pinned id:
+  TypeSafe lists models as `{"models": [{"name"}]}` and OpenRouter as
+  `{"data": [{"id"}]}` (the OpenRouter format is unverified live).
+- `FakeDecisionBackend` answers from a script callable `(question, state) -> dist | None`.
+  An unscripted question gets a Dirichlet draw seeded by `(seed, question, state)`, so
+  answers don't depend on call order.
+
 ## 4. Traversal and the beam-to-Jev mapping
 
 ### One step, one question
