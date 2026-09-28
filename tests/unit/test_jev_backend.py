@@ -193,25 +193,51 @@ async def test_verify_model_typesafe() -> None:
         await backend(rec, model="jev-1.14.0").verify_model()
 
 
+def openrouter_endpoints(model: str, n_endpoints: int = 1) -> dict[str, Any]:
+    # Shape captured from the live OpenRouter API (GET /api/v1/models/{id}/endpoints).
+    return {
+        "data": {
+            "id": model,
+            "name": "TypeSafe: Jev 1.13",
+            "architecture": {"modality": "text->decisions"},
+            "endpoints": [{"name": f"TypeSafe | {model}-20260917", "model_id": model, "status": 0}]
+            * n_endpoints,
+        }
+    }
+
+
 async def test_verify_model_openrouter() -> None:
-    rec = Recorder(respond_json({"data": [{"id": "typesafe/jev-1.13"}, {"id": "x/y"}]}))
+    rec = Recorder(respond_json(openrouter_endpoints("typesafe/jev-1.13")))
     jev = backend(rec, provider="openrouter", model="typesafe/jev-1.13")
     await jev.verify_model()
-    assert str(rec.requests[0].url) == "https://openrouter.ai/api/v1/models"
+    assert (
+        str(rec.requests[0].url)
+        == "https://openrouter.ai/api/v1/models/typesafe/jev-1.13/endpoints"
+    )
     assert rec.requests[0].headers["authorization"] == "Bearer test-key"
+
+
+async def test_verify_model_openrouter_unknown_model() -> None:
+    rec = Recorder(respond_json({"error": {"message": "not found"}}, status=404))
     with pytest.raises(DecisionBackendError, match="not offered"):
         await backend(rec, provider="openrouter", model="typesafe/jev-9").verify_model()
 
 
+async def test_verify_model_openrouter_without_endpoints() -> None:
+    rec = Recorder(respond_json(openrouter_endpoints("typesafe/jev-1.13", n_endpoints=0)))
+    with pytest.raises(DecisionBackendError, match="not offered"):
+        await backend(rec, provider="openrouter", model="typesafe/jev-1.13").verify_model()
+
+
 async def test_verify_model_listing_failure() -> None:
     rec = Recorder(respond_json({"unexpected": True}))
-    with pytest.raises(DecisionBackendError, match="could not list models"):
+    with pytest.raises(DecisionBackendError, match="could not check model availability"):
         await backend(rec, provider="openrouter", model="typesafe/jev-1.13").verify_model()
 
 
 async def test_verify_model_non_object_listing() -> None:
     rec = Recorder(lambda _r: httpx2.Response(200, json=["not", "an", "object"]))
-    with pytest.raises(DecisionBackendError, match="could not list models"):
+    with pytest.raises(DecisionBackendError, match="could not check model availability"):
         await backend(rec, provider="openrouter", model="typesafe/jev-1.13").verify_model()
 
 

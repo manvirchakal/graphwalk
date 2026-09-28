@@ -40,6 +40,8 @@ logger = logging.getLogger(__name__)
 JEV_MAX_OPTIONS = 255
 """Maximum options per choice question (from TypeSafe's published limits; unverified live)."""
 
+_HTTP_NOT_FOUND = 404
+
 _BASE_URLS: dict[DecisionProvider, str] = {
     "typesafe": TYPESAFE_BASE_URL,
     "openrouter": OPENROUTER_BASE_URL,
@@ -169,30 +171,39 @@ class JevBackend:
     async def verify_model(self) -> None:
         """Fail fast if the pinned model is not offered by the provider.
 
-        TypeSafe lists models at ``GET /v1/models`` (``{"models": [{"name": ...}]}``);
-        OpenRouter's ``GET /api/v1/models`` uses its own format (``{"data": [{"id": ...}]}``).
+        * TypeSafe: ``GET /v1/models`` -> ``{"models": [{"name": ...}]}``.
+        * OpenRouter: ``GET /api/v1/models/{id}/endpoints`` -> ``{"data": {"id": ...,
+          "endpoints": [...]}}``. OpenRouter's general ``/models`` list omits
+          decision-modality models such as Jev, so it cannot be used for this check.
         """
         try:
-            if self._provider == "typesafe":
-                listing = await self._client.models.list()
-                available = {m.name for m in listing.models}
-            else:
-                available = await self._openrouter_model_ids()
+            offered = (
+                await self._typesafe_offers_model()
+                if self._provider == "typesafe"
+                else await self._openrouter_offers_model()
+            )
         except (TypeSafeError, httpx2.HTTPError, ValueError, KeyError, TypeError) as error:
-            raise DecisionBackendError(f"could not list models: {error}") from error
-        if self._model not in available:
+            raise DecisionBackendError(f"could not check model availability: {error}") from error
+        if not offered:
             msg = f"pinned model {self._model!r} is not offered by {self._provider}"
             raise DecisionBackendError(msg)
 
-    async def _openrouter_model_ids(self) -> set[str]:
+    async def _typesafe_offers_model(self) -> bool:
+        listing = await self._client.models.list()
+        return self._model in {m.name for m in listing.models}
+
+    async def _openrouter_offers_model(self) -> bool:
         async with httpx2.AsyncClient(transport=self._transport, timeout=self._timeout_s) as client:
             response = await client.get(
-                f"{self._base_url}/v1/models",
+                f"{self._base_url}/v1/models/{self._model}/endpoints",
                 headers={"Authorization": f"Bearer {self._api_key}"},
             )
+            if response.status_code == _HTTP_NOT_FOUND:
+                return False
             response.raise_for_status()
-            data = cast("dict[str, Any]", response.json())
-            return {str(m["id"]) for m in cast("list[dict[str, Any]]", data["data"])}
+            data = cast("dict[str, Any]", cast("dict[str, Any]", response.json())["data"])
+            endpoints = cast("list[Any]", data.get("endpoints") or [])
+            return data.get("id") == self._model and len(endpoints) > 0
 
     def _check_model(self, echoed: str) -> None:
         if echoed != self._model and not self._warned_model_mismatch:

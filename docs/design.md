@@ -53,8 +53,8 @@ policy, so I could not read those pages directly. What I relied on, in order of 
 | Per-question context | **No.** `state` is shared per call; only `instructions` differ per question | Per-beam context (path, current node) must go into each question's `instructions`. See §4 |
 | `usage.cost` | **OpenRouter only** (unverified). TypeSafe direct returns only token counts | **Open question Q1** |
 | Temperature or top-p on the server | None | Applied client-side to the returned distribution, as the spec already intends |
-| Option limits | Choice supports at most 255 options *(unverified)*; context is 32k tokens *(unverified)* | Prefilter cap must be ≤ 254 (STOP uses one slot). Batches must be split by token budget |
-| Model pin `jev-1.13.0` | Direct: `jev-1.13.0` *(unverified)*. OpenRouter: `typesafe/jev-1.13` (no patch version) *(unverified)* | **Open question Q2** |
+| Option limits | **Verified (docs):** Choice supports ≤ 255 options. Context is **64k tokens per request, and 32k for `state` + the longest single question** | Prefilter cap ≤ 254 (STOP uses one slot). Batches are split by that two-part budget |
+| Model pin `jev-1.13.0` | **Verified:** direct `jev-1.13.0` (docs). OpenRouter `typesafe/jev-1.13` (live API), served by endpoint `typesafe/jev-1.13-20260917` | Q2 decided |
 | OpenRouter uses the Decisions API | OpenRouter has `POST /api/alpha/decisions` and a TypeSafe-compatible `POST /api/v1/systemone` *(unverified)* | One code path: the SDK with `base_url=https://openrouter.ai/api` |
 
 ### Integration path: the official SDK
@@ -72,6 +72,29 @@ I plan to use `typesafe-sdk>=0.7.2,<0.8` (`AsyncTypeSafeClient`) instead of raw 
   forbids.
 - Cost of this choice: it adds `httpx2`, `tenacity`, and `pydantic` (already needed) to
   the base install. That's light, so the SDK is a base dependency, not an extra.
+
+### Verified from the TypeSafe docs (after network access was granted)
+
+- **Questions in one call are evaluated in parallel against the shared `state`.** Adding
+  questions barely changes latency. That supports per-depth beam batching, and it
+  weakens my earlier worry that stacking beams would contaminate each decision. It
+  still needs measuring.
+- TypeSafe publishes a Hierarchical Classification cookbook that runs **beam search over
+  Choice probabilities**. That's prior art for our beam strategy, and I'll read it
+  before M3.
+- The Jev 1.13 "jaggedness" page lists known weak spots:
+  - literal reading of instructions
+  - numbers and date comparison
+  - **indirection / multi-hop reasoning**
+  - large state full of irrelevant detail
+
+  Implications for us: keep `state` = the query only, and put a precise, literal task in
+  each question. Give options real descriptions, not bare opaque labels. Keep numeric and
+  date comparisons in code. The indirection weakness is a direct risk to our bet: each
+  hop must be asked as a *local* judgment, never as "which path answers the query".
+- Rate limits: 250k tokens/s and 1,200 requests/min, and they currently change
+  dynamically. The eval runner needs concurrency limits and has to respect 429s. The
+  SDK already retries them.
 
 ## 1. Module layout
 
@@ -284,7 +307,9 @@ cost, and can be told to raise, which is how guardrail and error paths get teste
   request id are kept. It reads OpenRouter's `id`, `provider` and `usage.cost` from the
   raw body. It refuses any `*-latest` model. `verify_model()` checks the pinned id:
   TypeSafe lists models as `{"models": [{"name"}]}` and OpenRouter as
-  `{"data": [{"id"}]}` (the OpenRouter format is unverified live).
+  `{"data": {"id", "endpoints": [...]}}` via `GET /api/v1/models/{id}/endpoints`, verified
+  against the live API. OpenRouter's general `/models` list **omits decision models**,
+  so it can't be used for this check.
 - `FakeDecisionBackend` answers from a script callable `(question, state) -> dist | None`.
   An unscripted question gets a Dirichlet draw seeded by `(seed, question, state)`, so
   answers don't depend on call order.
@@ -316,7 +341,8 @@ Mapping: **one Jev call per depth; one choice question per active beam**, keyed 
 all sharing `state={"query": q}`. Each question's `instructions` carries its own path
 and current node. This is the only batching Jev allows, because `state` is per call.
 
-Splits: if the estimated tokens for the batch exceed the budget (default 24k of 32k),
+Splits: Jev's documented budget is 64k tokens per request and 32k for `state` + the longest
+question. If the batch's estimated tokens exceed either (with a safety margin),
 the batch is split into several calls. These run concurrently (`asyncio.gather`) and
 each counts toward the call and cost guardrails. Beams at the same node with the same
 option set still get separate questions, because their paths differ. There is no
