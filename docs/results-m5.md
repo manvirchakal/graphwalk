@@ -47,8 +47,12 @@ With n = 200, a 95% interval on a score near 0.8 is about ±0.055, so difference
 | gold | graphwalk entity beam | **0.919** | 0.890 | 0.44 | 0.79 | 0.067 | 1.00 |
 | gold | graphwalk relation (greedy) | 0.910 | 0.877 | **0.37** | 0.60 | **0.036** | 1.00 |
 | — | vector RAG | 0.600 | 0.600 | 1.57 | 2.83 | 0.040 | — |
-| resolved | graphwalk entity greedy | 0.574 | 0.573 | 0.25 | 0.64 | 0.049 | 0.55 |
-| resolved | graphwalk entity beam | 0.784 | 0.767 | 0.42 | 0.80 | 0.071 | 0.55 |
+| resolved | graphwalk entity greedy | 0.574 | 0.573 | 0.25 | 0.64 | 0.049 | 0.52\* |
+| resolved | graphwalk entity beam | 0.784 | 0.767 | 0.42 | 0.80 | 0.071 | 0.52\* |
+
+\* Originally reported as 0.55: the metric skipped the 16 questions where no entry node
+was found. Fixed later; these runs' raw records were lost, so the value is recomputed as
+0.553 × 284 / 300. See "Entity linking" below for the improved linker.
 
 ## Tuning round (MetaQA dev → test once)
 
@@ -167,9 +171,9 @@ what makes MetaQA work.
 - **Dataset ambiguity.** MetaQA merges same-titled films into one node (e.g. several "Les
   Misérables"), and gold lists one version's answers. 18 of the 23 relation errors at
   1 hop are shared with RAG.
-- **Entity linking.** Name matching finds exactly the gold start only 55% of the time on
+- **Entity linking.** Name matching found exactly the gold start only 52% of the time on
   2Wiki. Titles in questions differ from graph names, and extra mentions also match. This
-  is now the largest loss end to end.
+  was the largest loss end to end; the Jev linker below closes most of it.
 
 ## Caveats
 
