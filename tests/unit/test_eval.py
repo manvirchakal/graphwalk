@@ -310,3 +310,13 @@ async def test_resummarize_recomputes_from_records(tmp_path: Path) -> None:
     assert again[0].summary == run.summary
     document = json.loads((out / "results.json").read_text(encoding="utf-8"))
     assert "resummarized_at" in document["environment"]
+
+
+def test_v2_presets_use_the_tuned_knobs_and_dataset_glosses() -> None:
+    config = preset_config("relation-v2", glosses={"r": "meaning"})
+    assert config.hop_mode == "relation"
+    assert config.stop_style == "literal"
+    assert config.show_types
+    assert config.answer_type == "hint"
+    assert config.relation_glosses == {"r": "meaning"}
+    assert preset_config("relation").stop_style == "v1"

@@ -47,6 +47,14 @@ PRESETS: dict[str, dict[str, JsonValue]] = {
 }
 GLOSSES = "dataset"
 """Sentinel value for ``relation_glosses``: use the dataset's own relation glosses."""
+TUNED_V2: dict[str, JsonValue] = {
+    # Chosen on MetaQA dev (scripts/tune_metaqa_dev.py; docs/results-m5.md).
+    "show_types": True,
+    "stop_style": "literal",
+    "relation_glosses": GLOSSES,
+    "answer_type": "hint",
+}
+PRESETS.update({f"{name}-v2": {**PRESETS[name], **TUNED_V2} for name in list(PRESETS)})
 DATASET_GLOSSES: dict[str, dict[str, str]] = {"metaqa": metaqa.RELATION_GLOSSES}
 RAG = "rag"
 SYSTEMS = (*PRESETS, RAG)

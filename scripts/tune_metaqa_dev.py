@@ -56,5 +56,10 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=200)
     parser.add_argument("--preset", default="relation")
     parser.add_argument("--hops", type=int, nargs="+", default=[1, 2, 3])
+    parser.add_argument(
+        "--variants", action="extend", nargs="+", help="labels to run (default: all)"
+    )
     args = parser.parse_args()
+    if args.variants:
+        VARIANTS[:] = [v for v in VARIANTS if v[0] in args.variants]
     asyncio.run(main(args.n, args.preset, args.hops))
