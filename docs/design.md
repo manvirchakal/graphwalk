@@ -1,6 +1,6 @@
 # graphwalk — design
 
-Status: **draft, awaiting approval.** Nothing is implemented yet.
+Status: **draft; open questions answered (see §9).** Nothing is implemented yet.
 
 ## 0. What the Jev API actually is (and how I verified it)
 
@@ -324,9 +324,11 @@ Pruned options are logged in the trace.
 
 ### Guardrails
 
-`Budget(max_depth, max_decision_calls, max_cost_usd)` is checked *before* each call,
-for depth and calls, and *after* each call, for cost, since cost is known only from
-the response. So a query can overshoot the cost cap by at most one call. An abort
+`Budget(max_depth, max_decision_calls, max_input_tokens)` is checked *before* each
+call, for depth and calls, and *after* each call, for tokens, since the token count is
+known only from the response. So a query can overshoot the token cap by at most one
+call. Per Q1, v1 logs token usage only; pricing, and a USD cap derived from it, comes
+later. An abort
 raises nothing to the caller: the result has `status="aborted"`, `abort_reason`, the
 best partial answer, and the full trace.
 
@@ -388,7 +390,27 @@ Everything will be written and unit-tested with fakes. The live, Neo4j, and eval
 need either a broader network policy plus secrets on this environment, or a run on your
 machine.
 
-## 9. Open questions (need your call before or during the milestones)
+## 9. Decisions
+
+- **Q1 → token usage only.** Traces, evals, and guardrails use `input_tokens` and
+  `output_tokens`. `Usage.cost_usd` stays an optional field, filled only when a provider
+  reports it (OpenRouter), and is never computed. The spec's "max cost per query"
+  becomes `max_input_tokens` for v1.
+- **Q2 → yes.** Pin `jev-1.13.0` (direct) and `typesafe/jev-1.13` (OpenRouter). Check
+  the id at startup via `GET /v1/models` and fail if it is missing. Record the
+  server-echoed `model` in every trace.
+- **Q3 → yes.** `hop_mode: "entity" | "relation"`, default `"entity"` as in the spec.
+  In relation mode, each step's options are the distinct outgoing edge types plus
+  STOP. Picking one moves the frontier to *all* targets of that type (deduplicated).
+  When STOP is chosen, the frontier set is the answer. If the frontier grows beyond
+  `max_frontier`, it is prefiltered by embedding similarity to the query. Beam scoring
+  is unchanged; a beam is now a relation path.
+- **Q6 → yes.** LiteLLM goes in an `llm` extra.
+- **Q4, Q5, Q7 → proposed defaults stand** unless revisited: `EntryResolver` with name
+  match then embedding; graph-only and graph + LLM reader variants in the E2E eval;
+  `per_depth` beam batching with a `per_beam` switch.
+
+## 10. Original open questions (for reference)
 
 **Q1 — Cost on TypeSafe direct.** It returns token counts but no `usage.cost`.
 Proposal: `cost_usd = input_tokens × price_per_input_token` from config (default
