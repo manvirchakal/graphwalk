@@ -85,6 +85,7 @@ class GraphwalkSystem:
                 answer_set=(),
                 status="no_entry",
                 latency_s=time.perf_counter() - started,
+                start=(),
                 decision_calls=link.decision_calls,
                 input_tokens=link.input_tokens,
                 output_tokens=link.output_tokens,

@@ -84,6 +84,15 @@ def _query_cost(answer: SystemAnswer) -> float | None:
     return answer.cost_usd
 
 
+def _linked(question: EvalQuestion, answer: SystemAnswer) -> bool | None:
+    """Entry nodes used == gold. Finding no entry node is a linking miss."""
+    if question.gold_start is None:
+        return None
+    if answer.status == "no_entry":
+        return False
+    return None if answer.start is None else set(answer.start) == set(question.gold_start)
+
+
 def summarize(system: str, dataset: str, records: Sequence[Record]) -> Summary:
     answers = [r.answer for r in records]
     costs = [_query_cost(a) for a in answers]
@@ -142,14 +151,11 @@ async def run_system(
         done += 1
         if on_done is not None:
             on_done(done, len(questions))
-        linked = None
-        if question.gold_start is not None and answer.start is not None:
-            linked = set(answer.start) == set(question.gold_start)
         return Record(
             question=question,
             answer=answer,
             score=score(answer.answers, answer.answer_set, question.answers, question.kind),
-            linked=linked,
+            linked=_linked(question, answer),
         )
 
     started = time.perf_counter()
@@ -282,7 +288,8 @@ def resummarize(out_dir: Path) -> list[SystemRun]:
                 update={
                     "score": score(
                         r.answer.answers, r.answer.answer_set, r.question.answers, r.question.kind
-                    )
+                    ),
+                    "linked": _linked(r.question, r.answer),
                 }
             )
             for r in run.records

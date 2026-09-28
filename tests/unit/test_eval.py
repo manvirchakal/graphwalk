@@ -193,6 +193,9 @@ async def test_graphwalk_linking_modes() -> None:
     assert resolved.answers[0] == "London"
     missing = await (await graphwalk_system("given")).answer(no_start)
     assert missing.status == "no_entry"
+    assert missing.start == ()  # counts as a linking miss, not as unknown
+    run = await run_system(await graphwalk_system("given"), [no_start])
+    assert run.summary.linking_accuracy == 0.0
     ghost = BORN.model_copy(update={"start": ("ghost",)})
     assert (await (await graphwalk_system()).answer(ghost)).status == "no_entry"
 
