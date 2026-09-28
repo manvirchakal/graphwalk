@@ -28,6 +28,20 @@ OBJECT_TYPES = {
     "has_imdb_rating": "rating",
     "has_imdb_votes": "votes",
 }
+RELATION_GLOSSES = {
+    "directed_by": "the director of the film",
+    "written_by": "a writer of the film",
+    "starred_actors": "an actor who starred in the film",
+    "release_year": "the year the film was released",
+    "in_language": "the language of the film",
+    "has_genre": "the genre of the film",
+    "has_tags": "keywords describing the film (topics, people, themes)",
+    "has_imdb_rating": "the film's IMDb rating",
+    "has_imdb_votes": "how many IMDb votes the film has",
+}
+"""Schema documentation for ``TraversalConfig.relation_glosses`` (written for the tuning
+round in M5; see docs/results-m5.md)."""
+
 _TOPIC = re.compile(r"\[([^\]]+)\]")
 
 

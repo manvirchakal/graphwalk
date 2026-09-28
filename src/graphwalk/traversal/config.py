@@ -74,6 +74,19 @@ class TraversalConfig(BaseModel):
     """``opaque``: labels o1..oN, meaning in descriptions. ``readable``: labels are the
     relation/node text. Which classifies better is an eval question."""
     include_summaries: bool = True
+    show_types: bool = False
+    """Relation mode: show the current nodes' types and each relation's target types."""
+    stop_style: Literal["v1", "literal"] = "v1"
+    """``literal`` states the STOP condition first ("if the current nodes are the things the
+    query asks for, choose STOP")."""
+    relation_glosses: dict[str, str] = Field(default_factory=dict[str, str])
+    """Optional plain-language meaning per relation name (graph schema documentation)."""
+    answer_type: Literal["off", "hint", "gate"] = "off"
+    """Ask Jev once, batched into the first call, what node type the query asks for.
+    ``hint`` shows the predicted type in later questions; ``gate`` also withholds STOP
+    from beams whose current nodes have none of the predicted type (when its probability
+    is at least ``answer_type_gate_min_p``). Needs ``Traverser(node_types=...)``."""
+    answer_type_gate_min_p: float = Field(default=0.6, ge=0.0, le=1.0)
 
     # High-degree handling
     prefilter_threshold: int = Field(default=50, ge=1)

@@ -6,7 +6,7 @@ by irrelevant state): ``state`` is only the query; each question asks one *local
 literally worded judgment about the current node; options carry real descriptions.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -29,6 +29,35 @@ RELATION_TASK = (
 )
 ENTITY_STOP = "The current node itself is the answer to the query; stop here."
 RELATION_STOP = "The current nodes themselves are the answer to the query; stop here."
+
+# stop_style="literal": state the stop condition first and exactly (Jev reads literally).
+ENTITY_TASK_LITERAL = (
+    "You are walking a knowledge graph to answer the query in the state. If the current "
+    "node is the thing the query asks for, choose STOP. Otherwise choose the edge from the "
+    "current node that moves one step closer to the answer."
+)
+RELATION_TASK_LITERAL = (
+    "You are walking a knowledge graph to answer the query in the state. If the current "
+    "nodes are the things the query asks for, choose STOP. Otherwise choose the relation "
+    "to follow from the current nodes that moves one step closer to the answer."
+)
+ENTITY_STOP_LITERAL = "The current node is what the query asks for. Return it as the answer."
+RELATION_STOP_LITERAL = "The current nodes are what the query asks for. Return them as the answer."
+
+ANSWER_TYPE_KEY = "answer_type"
+ANSWER_TYPE_TASK = "What type of thing does the query in the state ask for?"
+
+
+@dataclass(frozen=True)
+class PromptOptions:
+    """Prompt-layout switches (see ``TraversalConfig``); defaults reproduce v1 prompts."""
+
+    include_summary: bool = True
+    preview: int = 5
+    show_types: bool = False
+    stop_style: Literal["v1", "literal"] = "v1"
+    relation_glosses: Mapping[str, str] | None = None
+    expected_answer_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -70,49 +99,80 @@ def names_text(names: Sequence[str], limit: int) -> str:
     return f"{{{shown}, +{extra} more}}" if extra > 0 else f"{{{shown}}}"
 
 
+def _types(nodes: Sequence[Node]) -> list[JsonValue]:
+    return list(dict.fromkeys(node.type for node in nodes))
+
+
 def instructions_for(
     mode: HopMode,
     frontier: Sequence[Node],
     path: Sequence[str],
-    *,
-    include_summary: bool,
-    preview: int,
+    options: PromptOptions,
 ) -> dict[str, JsonValue]:
+    literal = options.stop_style == "literal"
     out: dict[str, JsonValue]
     if mode == "entity":
         out = {
-            "task": ENTITY_TASK,
-            "current": node_card(frontier[0], include_summary=include_summary),
+            "task": ENTITY_TASK_LITERAL if literal else ENTITY_TASK,
+            "current": node_card(frontier[0], include_summary=options.include_summary),
         }
     else:
-        names: list[JsonValue] = [node.name for node in frontier[: max(preview, 1) * 4]]
-        out = {"task": RELATION_TASK, "current": {"nodes": names, "count": len(frontier)}}
+        names: list[JsonValue] = [node.name for node in frontier[: max(options.preview, 1) * 4]]
+        current: dict[str, JsonValue] = {"nodes": names, "count": len(frontier)}
+        if options.show_types:
+            current["types"] = _types(frontier)
+        out = {"task": RELATION_TASK_LITERAL if literal else RELATION_TASK, "current": current}
     if path:
         out["path_so_far"] = list(path)
+    if options.expected_answer_type is not None:
+        out["the_query_asks_for_a"] = options.expected_answer_type
     return out
 
 
+def _gloss(relation: str, options: PromptOptions) -> str | None:
+    return None if options.relation_glosses is None else options.relation_glosses.get(relation)
+
+
 def entity_option(
-    current: Node, move: Move, target: Node, *, include_summary: bool
+    current: Node, move: Move, target: Node, options: PromptOptions
 ) -> dict[str, JsonValue]:
-    return {
+    out: dict[str, JsonValue] = {
         "edge": edge_text(current.name, move.relation, move.direction, target.name),
-        "node": node_card(target, include_summary=include_summary),
+        "node": node_card(target, include_summary=options.include_summary),
     }
+    gloss = _gloss(move.relation, options)
+    if gloss:
+        out["relation_meaning"] = gloss
+    return out
 
 
-def relation_option(move: Move, target_names: Sequence[str], preview: int) -> dict[str, JsonValue]:
-    shown: list[JsonValue] = list(target_names[:preview])
-    return {
+def relation_option(
+    move: Move, targets: Sequence[Node], options: PromptOptions
+) -> dict[str, JsonValue]:
+    shown: list[JsonValue] = [node.name for node in targets[: options.preview]]
+    out: dict[str, JsonValue] = {
         "relation": move.relation,
         "direction": "outgoing" if move.direction == "out" else "incoming",
         "leads_to": shown,
-        "count": len(target_names),
+        "count": len(targets),
     }
+    gloss = _gloss(move.relation, options)
+    if gloss:
+        out["relation_meaning"] = gloss
+    if options.show_types:
+        out["leads_to_types"] = _types(targets)
+    return out
 
 
-def stop_description(mode: HopMode) -> str:
+def stop_description(mode: HopMode, options: PromptOptions | None = None) -> str:
+    if options is not None and options.stop_style == "literal":
+        return ENTITY_STOP_LITERAL if mode == "entity" else RELATION_STOP_LITERAL
     return ENTITY_STOP if mode == "entity" else RELATION_STOP
+
+
+def answer_type_options(types: Sequence[str]) -> dict[str, str]:
+    """Options for the speculative answer-type question: one label per node type."""
+    return {t: f"a {t}" for t in types}
 
 
 def readable_label(move: Move, target_name: str | None) -> str:

@@ -132,6 +132,8 @@ class Trace(BaseModel):
     steps: tuple[Step, ...]
     calls: tuple[Call, ...]
     totals: Totals
+    answer_type: dict[str, float] | None = None
+    """The speculative answer-type distribution, when asked."""
 
 
 class TraversalResult(BaseModel):

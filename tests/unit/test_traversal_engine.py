@@ -1,12 +1,13 @@
 """Traversal engine behavior against the fake decision backend."""
 
 import math
+from collections.abc import Mapping
 
 import pytest
 
 from factories import edge, node
 from graphwalk.core.errors import NodeNotFoundError
-from graphwalk.decisions import FakeDecisionBackend
+from graphwalk.decisions import ChoiceQuestion, FakeDecisionBackend, JSONContent
 from graphwalk.embeddings import FakeEmbedder
 from graphwalk.stores.networkx_store import NetworkXStore
 from graphwalk.traversal import Budget, TraversalConfig, TraversalResult, Traverser
@@ -440,3 +441,89 @@ async def test_preloaded_embeddings_avoid_embedding_calls() -> None:
     assert embedder.calls == [["find the golden retriever puppy"]]  # only the query
     with pytest.raises(ValueError, match="no embedder"):
         Traverser(store, FakeDecisionBackend()).preload_embeddings([], await embedder.embed([]))
+
+
+# -- tuning knobs (all off by default) -------------------------------------------------
+
+MOVIE_TYPES = ("film", "person", "city", "country", "year")
+
+
+async def test_show_types_glosses_and_literal_stop() -> None:
+    _, backend = await walk(
+        FILMS_ROUTE,
+        FILMS,
+        hop_mode="relation",
+        strategy="greedy",
+        allow_stop_at_start=False,
+        show_types=True,
+        stop_style="literal",
+        relation_glosses={"directed_by": "the film's director"},
+    )
+    question = backend.requests[1].questions[0]
+    assert isinstance(question.instructions, dict)
+    assert question.instructions["current"]["types"] == ["person"]  # type: ignore[index]
+    assert str(question.instructions["task"]).startswith(
+        "You are walking a knowledge graph to answer the query in the state. If the current"
+    )
+    described = {d["relation"]: d for d in question.options.values() if isinstance(d, dict)}
+    assert described["directed_by"]["relation_meaning"] == "the film's director"
+    assert described["directed_by"]["leads_to_types"] == ["film"]
+    assert (
+        question.options["STOP"]
+        == "The current nodes are what the query asks for. Return them as the answer."
+    )
+
+
+async def test_answer_type_rides_along_with_the_first_call() -> None:
+    route = oracle(BORN_ROUTE)._script  # reuse the route oracle for the hops
+    assert route is not None
+
+    def script(question: ChoiceQuestion, state: JSONContent) -> Mapping[str, float] | None:
+        if question.key == "answer_type":
+            return {"city": 0.9, "person": 0.1}
+        return route(question, state)
+
+    backend = FakeDecisionBackend(script=script)
+    traverser = Traverser(
+        await movie_store(),
+        backend,
+        config=cfg(strategy="greedy", answer_type="hint", allow_stop_at_start=False),
+        node_types=MOVIE_TYPES,
+    )
+    result = await traverser.traverse(BORN, ["inception"])
+    first = backend.requests[0]
+    assert first.questions[0].key == "answer_type"
+    assert backend.calls == 3  # hop, hop, STOP: the answer-type question adds no call
+    assert result.best is not None
+    assert result.best.node_ids == ("london",)
+    assert result.trace.answer_type is not None
+    assert result.trace.answer_type["city"] == pytest.approx(0.9)
+    later = backend.requests[1].questions[0].instructions
+    assert isinstance(later, dict)
+    assert later["the_query_asks_for_a"] == "city"
+    assert isinstance(first.questions[1].instructions, dict)
+    assert "the_query_asks_for_a" not in first.questions[1].instructions
+
+
+async def test_answer_type_gate_withholds_stop_on_the_wrong_type() -> None:
+    def script(question: ChoiceQuestion, state: object) -> dict[str, float] | None:
+        del state
+        if question.key == "answer_type":
+            return {"city": 1.0}
+        return {label: 1.0 if label == "STOP" else 0.1 for label in question.options}
+
+    backend = FakeDecisionBackend(script=script)
+    traverser = Traverser(
+        await movie_store(),
+        backend,
+        config=cfg(strategy="greedy", answer_type="gate", allow_stop_at_start=False),
+        node_types=MOVIE_TYPES,
+    )
+    await traverser.traverse(BORN, ["inception"])
+    # At depth 1 the walk stands on a person or film, not a city: STOP is not offered.
+    assert "STOP" not in backend.requests[1].questions[0].options
+
+
+async def test_answer_type_requires_node_types() -> None:
+    with pytest.raises(ValueError, match="node_types"):
+        Traverser(await movie_store(), FakeDecisionBackend(), config=cfg(answer_type="hint"))

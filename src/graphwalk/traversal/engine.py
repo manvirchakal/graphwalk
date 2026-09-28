@@ -115,6 +115,8 @@ class _Run:
     steps: list[Step] = field(default_factory=list[Step])
     calls: list[Call] = field(default_factory=list[Call])
     rngs: dict[int, random.Random] = field(default_factory=dict[int, random.Random])
+    answer_type: dict[str, float] | None = None
+    """Distribution from the speculative answer-type question (``answer_type != "off"``)."""
     next_id: int = 0
     depth_reached: int = 0
 
@@ -138,10 +140,15 @@ class Traverser:
         *,
         embedder: Embedder | None = None,
         config: TraversalConfig | None = None,
+        node_types: Sequence[str] | None = None,
     ) -> None:
         self.store = store
         self.decider = decider
         self.config = config or TraversalConfig()
+        self.node_types = tuple(dict.fromkeys(node_types or ()))
+        if self.config.answer_type != "off" and len(self.node_types) < 2:  # noqa: PLR2004
+            msg = "answer_type needs Traverser(node_types=...) with at least 2 types"
+            raise ValueError(msg)
         self._cache = None if embedder is None else EmbeddingCache(embedder)
         if decider.max_options < 2:  # noqa: PLR2004 - STOP plus one move
             msg = "decision backend must allow at least 2 options"
@@ -274,37 +281,64 @@ class Traverser:
         else:
             names = [None] * len(moves)
         labels = prompts.make_labels(cfg.label_style, moves, names)
+        popts = self._prompt_options(run, depth)
         options: list[_Option] = []
         for label, move in zip(labels, moves, strict=True):
             if cfg.hop_mode == "entity":
                 description: JSONContent = prompts.entity_option(
-                    frontier_nodes[0],
-                    move,
-                    run.nodes[move.targets[0]],
-                    include_summary=cfg.include_summaries,
+                    frontier_nodes[0], move, run.nodes[move.targets[0]], popts
                 )
             else:
-                target_names = [run.nodes[t].name for t in move.targets]
-                description = prompts.relation_option(move, target_names, cfg.frontier_preview)
+                targets = [run.nodes[t] for t in move.targets]
+                description = prompts.relation_option(move, targets, popts)
             options.append(_Option(label=label, move=move, description=description))
-        if depth > 0 or cfg.allow_stop_at_start:
+        if (depth > 0 or cfg.allow_stop_at_start) and not self._gated(run, frontier_nodes):
             options.append(
-                _Option(label=STOP, move=None, description=prompts.stop_description(cfg.hop_mode))
+                _Option(
+                    label=STOP,
+                    move=None,
+                    description=prompts.stop_description(cfg.hop_mode, popts),
+                )
             )
         plan = _Plan(beam=beam, options=options, pruned=pruned)
         if len(options) >= 2:  # noqa: PLR2004 - a real decision
             plan.question = ChoiceQuestion(
                 key=f"b{beam.beam_id}",
                 instructions=prompts.instructions_for(
-                    cfg.hop_mode,
-                    frontier_nodes,
-                    beam.path_text,
-                    include_summary=cfg.include_summaries,
-                    preview=cfg.frontier_preview,
+                    cfg.hop_mode, frontier_nodes, beam.path_text, popts
                 ),
                 options={o.label: o.description for o in options},
             )
         return plan
+
+    def _expected_type(self, run: _Run) -> tuple[str, float] | None:
+        dist = run.answer_type
+        if dist is None:
+            return None
+        best = max(dist, key=dist.__getitem__)  # ties: first type offered
+        return best, dist[best]
+
+    def _prompt_options(self, run: _Run, depth: int) -> prompts.PromptOptions:
+        cfg = self.config
+        expected = self._expected_type(run) if depth > 0 else None
+        return prompts.PromptOptions(
+            include_summary=cfg.include_summaries,
+            preview=cfg.frontier_preview,
+            show_types=cfg.show_types,
+            stop_style=cfg.stop_style,
+            relation_glosses=cfg.relation_glosses or None,
+            expected_answer_type=None if expected is None else expected[0],
+        )
+
+    def _gated(self, run: _Run, frontier: Sequence[Node]) -> bool:
+        """``answer_type="gate"``: withhold STOP when no current node has the confidently
+        predicted answer type."""
+        if self.config.answer_type != "gate":
+            return False
+        expected = self._expected_type(run)
+        if expected is None or expected[1] < self.config.answer_type_gate_min_p:
+            return False
+        return all(node.type != expected[0] for node in frontier)
 
     async def _moves(self, run: _Run, beam: _Beam) -> tuple[list[Move], list[Pruned]]:
         cfg = self.config
@@ -392,9 +426,19 @@ class Traverser:
         self, run: _Run, depth: int, questions: list[ChoiceQuestion]
     ) -> dict[str, tuple[ChoiceResult, int]]:
         """Send the depth's questions; return key -> (result, call_id)."""
+        cfg = self.config
+        if depth == 0 and cfg.answer_type != "off":
+            # Speculative fan-out: rides along with the first hop, so it adds no latency.
+            questions = [
+                ChoiceQuestion(
+                    key=prompts.ANSWER_TYPE_KEY,
+                    instructions=prompts.ANSWER_TYPE_TASK,
+                    options=dict(prompts.answer_type_options(self.node_types)),
+                ),
+                *questions,
+            ]
         if not questions:
             return {}
-        cfg = self.config
         if cfg.beam_batching == "per_beam":
             groups = [[q] for q in questions]
         else:
@@ -437,6 +481,9 @@ class Traverser:
                     msg = f"backend returned no result for question {question.key!r}"
                     raise DecisionBackendError(msg)
                 out[question.key] = (result, call_id)
+        answer_type = out.pop(prompts.ANSWER_TYPE_KEY, None)
+        if answer_type is not None:
+            run.answer_type = dict(answer_type[0].probabilities)
         return out
 
     def _expand(
@@ -630,5 +677,6 @@ class Traverser:
             start=start,
             steps=tuple(run.steps),
             calls=tuple(calls),
+            answer_type=run.answer_type,
             totals=totals,
         )
