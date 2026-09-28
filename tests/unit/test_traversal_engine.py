@@ -206,6 +206,7 @@ async def test_dead_end_ends_without_a_call() -> None:
     assert result.best.n_decisions == 1  # the forced STOP counts as a certain decision
     assert result.best.score == 0.0
     assert result.best.min_confidence is None
+    assert result.trace.totals.cost_usd == 0.0  # no calls made: nothing to pay
     assert [s.call_id for s in result.trace.steps] == [None, None]
 
 

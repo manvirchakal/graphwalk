@@ -286,3 +286,27 @@ def test_eval_cli_rejects_bad_input() -> None:
     runner = CliRunner()
     assert runner.invoke(cli.app, ["eval", "nope"]).exit_code == 2
     assert runner.invoke(cli.app, ["eval", "metaqa", "--system", "bogus"]).exit_code == 2
+
+
+def test_queries_without_paid_calls_cost_zero() -> None:
+    from graphwalk.eval.metrics import Score
+    from graphwalk.eval.runner import Record, summarize
+
+    zero = Score(hits1=0, em=0, precision=0, recall=0, f1=0)
+    free = SystemAnswer(answers=(), answer_set=())  # no calls, cost unreported
+    paid = SystemAnswer(answers=(), answer_set=(), decision_calls=2, cost_usd=0.5)
+    unknown = SystemAnswer(answers=(), answer_set=(), decision_calls=1)  # cost missing
+    rec = lambda a: Record(question=BORN, answer=a, score=zero, linked=None)  # noqa: E731
+    assert summarize("s", "d", [rec(free), rec(paid)]).cost_per_query_usd == 0.25
+    assert summarize("s", "d", [rec(free), rec(unknown)]).cost_per_query_usd is None
+
+
+async def test_resummarize_recomputes_from_records(tmp_path: Path) -> None:
+    from graphwalk.eval.runner import resummarize
+
+    run = await run_system(await graphwalk_system(), [BORN])
+    out = write_results(tmp_path / "r", dataset="movies", runs=[run], params={"n": 1})
+    again = resummarize(out)
+    assert again[0].summary == run.summary
+    document = json.loads((out / "results.json").read_text(encoding="utf-8"))
+    assert "resummarized_at" in document["environment"]

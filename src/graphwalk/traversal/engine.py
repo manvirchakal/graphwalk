@@ -616,7 +616,7 @@ class Traverser:
             questions=sum(c.n_questions for c in calls),
             input_tokens=sum(c.input_tokens for c in calls),
             output_tokens=sum(c.output_tokens for c in calls),
-            cost_usd=sum(costs) if costs else None,
+            cost_usd=sum(costs) if costs else (0.0 if not calls else None),
             decision_latency_s=sum(c.latency_s for c in calls),
             wall_s=time.perf_counter() - run.started,
             depth_reached=run.depth_reached,

@@ -1,6 +1,6 @@
 # graphwalk — design
 
-Status: **approved; open questions answered (see §9).** M0–M3 implemented; M2 and M3 verified live on OpenRouter (§0.1, §4 "As built in M3").
+Status: **approved; open questions answered (see §9).** M0–M3 and M5 implemented (M4 deferred); M2 and M3 verified live on OpenRouter; M5 results in `docs/results-m5.md` (§0.1, §4 "As built in M3").
 
 ## 0. What the Jev API actually is (and how I verified it)
 
@@ -534,6 +534,61 @@ are deleted, and the rest are re-derived. Only affected nodes are touched.
   SHA, model ids, package versions) and `summary.md` (EM, F1, hits@1, p50/p95 latency,
   cost per query, decision calls per query). Datasets are cached in
   `~/.cache/graphwalk/datasets`. `--n` takes a seeded subset.
+
+### As built in M5
+
+- **Datasets.**
+  - **MetaQA:** the original KB (134,741 triples → 43,234 nodes, 133,582 unique edges),
+    with vanilla test questions, from a pinned HF mirror (`camazlucas/MetaQA@f8385409`).
+    Node ids are entity names, as in the original. Types come from relations: subjects
+    are `film`, objects are `person`, `year`, `genre`, and so on.
+  - **2Wiki:** the dev split from `voidful/2WikiMultihopQA@16852fde`.
+- **2Wiki uses one pooled graph, not one graph per question.** A question's own
+  evidence triples *are* its reasoning chain, so a per-question graph would make
+  traversal trivial. The graph pools every dev question's evidence (33,091 nodes,
+  26,403 edges). It is still sparse (average degree ≈ 1.6), and every walkable question
+  is exactly 2 hops, so 2Wiki is a weak test here. MetaQA, with 4,000-edge hubs, is the
+  real one.
+- **2Wiki question types.** Only `compositional` and `inference` questions are used
+  (6,785 of 12,576). `comparison` and `bridge_comparison` need a comparison computed in
+  code, which graph-only traversal cannot do. That belongs to M7's graph + LLM reader
+  variant.
+- **2Wiki entry nodes.** `linking=gold` is traversal-only: it starts from the first
+  evidence triple's subject. `linking=resolve` uses `NameEntryResolver`, and the
+  summary reports linking accuracy separately. In only 86% of these questions does the
+  gold start name appear verbatim in the question.
+- **Baseline: same knowledge, different access.** Vector RAG retrieves from one document
+  per node: its name, type, and up to 40 incident triples as sentences. It uses
+  bge-small (fastembed) with top-k = 5, and the LLM reader answers with `' | '`-separated
+  names. Both systems therefore see the same graph; the comparison is walk-with-Jev vs
+  retrieve-and-read. Original-text RAG is M7's job.
+- **Reader LLM.** `openrouter/openai/gpt-6-luna` ($0.10/M input, $0.50/M output) is the
+  cheapest current general model on OpenRouter. It is configurable (`--llm-model`).
+- **Cost.** Every cost comes from the provider's reported `usage.cost`, for Jev and the
+  LLM alike. Nothing is estimated.
+- **Latency.** Wall time per question at concurrency 4. For RAG it is retrieval plus
+  the LLM call, excluding client-side rate-limit waits: OpenRouter caps new accounts at
+  20 req/min per model. graphwalk latency includes the local prefilter and any CPU
+  contention between concurrent questions.
+- **Embedder.** fastembed (ONNX) replaced sentence-transformers in the `embeddings`
+  extra, which avoids a 5 GB torch install. Batching in length order made document
+  embedding 8x faster. Every node's `node_text` is embedded once per graph (cached) and
+  preloaded, so the prefilter over hubs is dot products, not embedding calls.
+- **Store performance.** `NetworkXStore` snapshots copy only the mutable dicts, ~7x
+  cheaper than a deep copy. Deep copying dominated relation-mode expansion of hub
+  frontiers.
+- **Presets.** All presets use `allow_stop_at_start=False`, because neither dataset's
+  answer is the topic entity. They also use `max_frontier=2000` and
+  `Budget(max_depth=4, max_decision_calls=12)`. `greedy` and `beam` (k = 3) use entity
+  hops. `relation` and `relation-beam` use relation hops.
+
+- **Results.** See `docs/results-m5.md`. In short:
+  - relation-mode graphwalk scores F1 0.81–0.91 across MetaQA 1–3 hops, vs
+    0.89 → 0.27 → 0.11 for single-shot RAG over the same KG;
+  - it is 2–3x faster at p50;
+  - cost is roughly at parity (Jev is only ~2.4x cheaper per token than the cheapest
+    current LLM, and a walk makes several calls);
+  - the main weakness is STOP, and end to end, entity linking.
 
 ## 7. Testing
 

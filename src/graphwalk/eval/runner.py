@@ -77,9 +77,16 @@ def _mean(values: Sequence[float]) -> float:
     return math.fsum(values) / len(values) if values else math.nan
 
 
+def _query_cost(answer: SystemAnswer) -> float | None:
+    """Reported cost; a query that made no paid calls cost exactly 0."""
+    if answer.cost_usd is None and answer.decision_calls == 0 and answer.llm_calls == 0:
+        return 0.0
+    return answer.cost_usd
+
+
 def summarize(system: str, dataset: str, records: Sequence[Record]) -> Summary:
     answers = [r.answer for r in records]
-    costs = [a.cost_usd for a in answers]
+    costs = [_query_cost(a) for a in answers]
     latencies = [a.latency_s for a in answers]
     linked = [r.linked for r in records if r.linked is not None]
     return Summary(
@@ -235,6 +242,17 @@ def write_results(
         "runs": [run.model_dump(mode="json") for run in runs],
     }
     (out_dir / "results.json").write_text(json.dumps(document, indent=1), encoding="utf-8")
+    _write_summary(out_dir, dataset, runs, params, env)
+    return out_dir
+
+
+def _write_summary(
+    out_dir: Path,
+    dataset: str,
+    runs: Sequence[SystemRun],
+    params: dict[str, JsonValue],
+    env: dict[str, JsonValue],
+) -> None:
     lines = [
         f"# {dataset}",
         "",
@@ -249,4 +267,30 @@ def write_results(
     for run in runs:
         lines.append(f"- **{run.system}** (wall {run.wall_s:.0f}s): `{json.dumps(run.config)}`")
     (out_dir / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return out_dir
+
+
+def resummarize(out_dir: Path) -> list[SystemRun]:
+    """Recompute summaries from a run's stored records (e.g. after a metric fix) and
+    rewrite ``results.json`` and ``summary.md``. Params and environment are kept, and
+    the rewrite is recorded under ``environment.resummarized_at``."""
+    document = json.loads((out_dir / "results.json").read_text(encoding="utf-8"))
+    runs: list[SystemRun] = []
+    for raw in document["runs"]:
+        run = SystemRun.model_validate(raw)
+        records = [
+            r.model_copy(
+                update={
+                    "score": score(
+                        r.answer.answers, r.answer.answer_set, r.question.answers, r.question.kind
+                    )
+                }
+            )
+            for r in run.records
+        ]
+        summary = summarize(run.system, run.summary.dataset, records)
+        runs.append(run.model_copy(update={"summary": summary, "records": tuple(records)}))
+    document["runs"] = [run.model_dump(mode="json") for run in runs]
+    document["environment"]["resummarized_at"] = datetime.now(UTC).isoformat()
+    (out_dir / "results.json").write_text(json.dumps(document, indent=1), encoding="utf-8")
+    _write_summary(out_dir, document["dataset"], runs, document["params"], document["environment"])
+    return runs
