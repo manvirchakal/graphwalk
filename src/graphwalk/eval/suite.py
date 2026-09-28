@@ -25,7 +25,13 @@ from graphwalk.eval.systems import (
 from graphwalk.eval.types import EvalQuestion, QASystem
 from graphwalk.llm.base import LLMBackend
 from graphwalk.stores.networkx_store import NetworkXStore
-from graphwalk.traversal import NameEntryResolver, TraversalConfig, Traverser
+from graphwalk.traversal import (
+    ChoiceEntryResolver,
+    EntryResolver,
+    NameEntryResolver,
+    TraversalConfig,
+    Traverser,
+)
 from graphwalk.traversal.prompts import node_text
 
 type Dataset = Literal["metaqa", "2wiki"]
@@ -142,6 +148,18 @@ async def node_vectors(
     return texts, vectors
 
 
+def make_resolver(
+    linking: Linking, store: NetworkXStore, decider: DecisionBackend
+) -> EntryResolver | None:
+    if linking == "resolve":
+        return NameEntryResolver(store)
+    if linking == "resolve-best":
+        return NameEntryResolver(store, best_only=True)
+    if linking == "choice":
+        return ChoiceEntryResolver(store, decider)
+    return None
+
+
 async def build_systems(
     names: Sequence[str],
     store: NetworkXStore,
@@ -179,7 +197,7 @@ async def build_systems(
             node_types=node_types,
         )
         traverser.preload_embeddings(*preloaded)
-        resolver = NameEntryResolver(store) if linking == "resolve" else None
+        resolver = make_resolver(linking, store, decider)
         systems.append(
             GraphwalkSystem(
                 store,

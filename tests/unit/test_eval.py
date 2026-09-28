@@ -9,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from graphwalk import cli
+from graphwalk.decisions import FakeDecisionBackend
 from graphwalk.embeddings import FakeEmbedder
 from graphwalk.eval import (
     DocIndex,
@@ -28,7 +29,7 @@ from graphwalk.eval.runner import summary_table, write_results
 from graphwalk.eval.suite import Factories, build_systems, preset_config
 from graphwalk.eval.systems import entity_documents, parse_answers
 from graphwalk.llm import FakeLLM, Message
-from graphwalk.traversal import NameEntryResolver, Traverser
+from graphwalk.traversal import ChoiceEntryResolver, NameEntryResolver, Traverser
 from kg_fixtures import movie_store, oracle
 
 # -- metrics ---------------------------------------------------------------------------
@@ -194,6 +195,37 @@ async def test_graphwalk_linking_modes() -> None:
     assert missing.status == "no_entry"
     ghost = BORN.model_copy(update={"start": ("ghost",)})
     assert (await (await graphwalk_system()).answer(ghost)).status == "no_entry"
+
+
+async def test_choice_linking_is_accounted() -> None:
+    store = await movie_store()
+    traverser = Traverser(store, oracle(ROUTE, cost_per_call=0.001), config=preset_config("beam"))
+    linker = FakeDecisionBackend(
+        script=lambda q, _: {
+            label: 1.0
+            for label, card in q.options.items()
+            if isinstance(card, dict) and card["name"] == "Inception"
+        },
+        cost_per_call=0.01,
+    )
+    system = GraphwalkSystem(
+        store, traverser, linking="choice", resolver=ChoiceEntryResolver(store, linker)
+    )
+    question = BORN.model_copy(
+        update={
+            "start": None,
+            "question": "Where was the director of Inception (with Leonardo DiCaprio) born?",
+        }
+    )
+    answer = await system.answer(question)
+    assert linker.calls == 1
+    assert answer.start == ("inception",)
+    assert answer.answers[0] == "London"
+    assert answer.detail["linking"]["decision_calls"] == 1  # type: ignore[index]
+    walk_calls = answer.decision_calls - 1
+    assert answer.cost_usd == pytest.approx(0.01 + 0.001 * walk_calls)
+    with pytest.raises(ValueError, match="needs a resolver"):
+        GraphwalkSystem(store, traverser, linking="choice")
 
 
 async def test_entity_documents_and_rag() -> None:

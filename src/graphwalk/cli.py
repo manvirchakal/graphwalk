@@ -3,7 +3,7 @@
 import asyncio
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, get_args
 
 import typer
 from pydantic import ValidationError
@@ -197,7 +197,8 @@ def eval_(  # noqa: PLR0917 - Typer maps parameters to CLI options
     n: Annotated[int, typer.Option(help="Seeded subset size (0 = all).")] = 100,
     seed: Annotated[int, typer.Option(help="Subset seed.")] = 0,
     linking: Annotated[
-        str | None, typer.Option(help="given | gold | resolve (default per dataset).")
+        str | None,
+        typer.Option(help="given | gold | resolve | resolve-best | choice (default per dataset)."),
     ] = None,
     concurrency: Annotated[int, typer.Option(help="Questions in flight.")] = 8,
     rag_k: Annotated[int, typer.Option(help="Documents retrieved by the RAG baseline.")] = 5,
@@ -212,13 +213,14 @@ def eval_(  # noqa: PLR0917 - Typer maps parameters to CLI options
 ) -> None:
     """Run systems on a dataset subset; write results.json and summary.md."""
     from graphwalk.eval.suite import SYSTEMS, run_dataset  # noqa: PLC0415
+    from graphwalk.eval.systems import Linking  # noqa: PLC0415
 
     if dataset not in ("metaqa", "2wiki"):
         typer.echo("dataset must be metaqa or 2wiki", err=True)
         raise typer.Exit(code=2)
     systems = system or ["greedy", "rag"]
     bad = [s for s in systems if s not in SYSTEMS]
-    if bad or (linking is not None and linking not in ("given", "gold", "resolve")):
+    if bad or (linking is not None and linking not in get_args(Linking.__value__)):
         typer.echo(f"unknown system(s) {bad} or linking {linking!r}", err=True)
         raise typer.Exit(code=2)
     factories = _eval_factories(llm_model, embed_model, llm_rpm)

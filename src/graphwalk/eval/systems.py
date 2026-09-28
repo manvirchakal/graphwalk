@@ -19,11 +19,14 @@ from graphwalk.eval.types import EvalQuestion, SystemAnswer
 from graphwalk.llm.base import LLMBackend, LLMError, Message
 from graphwalk.stores.base import GraphStore
 from graphwalk.traversal import TraversalConfig, Traverser
-from graphwalk.traversal.entry import EntryResolver
+from graphwalk.traversal.entry import EntryLink, EntryResolver
 
-type Linking = Literal["given", "gold", "resolve"]
+type Linking = Literal["given", "gold", "resolve", "resolve-best", "choice"]
 """Where entry nodes come from: the question's ``start`` (MetaQA), its ``gold_start``
-(traversal-only on 2Wiki), or an :class:`EntryResolver` (end-to-end)."""
+(traversal-only on 2Wiki), or an :class:`EntryResolver` (end-to-end): ``resolve`` =
+every exact name mention, ``resolve-best`` = the top name candidate (fuzzy allowed),
+``choice`` = a decision call picks among the name candidates."""
+RESOLVED: tuple[Linking, ...] = ("resolve", "resolve-best", "choice")
 
 
 class GraphwalkSystem:
@@ -36,8 +39,8 @@ class GraphwalkSystem:
         linking: Linking = "given",
         resolver: EntryResolver | None = None,
     ) -> None:
-        if linking == "resolve" and resolver is None:
-            msg = "linking='resolve' needs a resolver"
+        if linking in RESOLVED and resolver is None:
+            msg = f"linking={linking!r} needs a resolver"
             raise ValueError(msg)
         self._store = store
         self._traverser = traverser
@@ -63,25 +66,30 @@ class GraphwalkSystem:
             "traversal": self._traverser.config.model_dump(mode="json"),
         }
 
-    async def _start(self, question: EvalQuestion) -> tuple[NodeId, ...]:
+    async def _link(self, question: EvalQuestion) -> EntryLink:
         if self._linking == "given":
-            return question.start or ()
+            return EntryLink(nodes=question.start or ())
         if self._linking == "gold":
-            return question.gold_start or ()
+            return EntryLink(nodes=question.gold_start or ())
         assert self._resolver is not None  # checked in __init__  # noqa: S101
-        return tuple(await self._resolver.resolve(question.question))
+        return await self._resolver.link(question.question)
 
     async def answer(self, question: EvalQuestion) -> SystemAnswer:
         started = time.perf_counter()
-        start = await self._start(question)
-        existing = await self._store.get_nodes(start)
-        start = tuple(n for n in start if n in existing)
+        link = await self._link(question)
+        existing = await self._store.get_nodes(link.nodes)
+        start = tuple(n for n in link.nodes if n in existing)
         if not start:
             return SystemAnswer(
                 answers=(),
                 answer_set=(),
                 status="no_entry",
                 latency_s=time.perf_counter() - started,
+                decision_calls=link.decision_calls,
+                input_tokens=link.input_tokens,
+                output_tokens=link.output_tokens,
+                cost_usd=link.cost_usd if link.decision_calls else None,
+                detail={"linking": link.detail},
             )
         result = await self._traverser.traverse(question.question, start)
         ranked: list[str] = []
@@ -96,6 +104,8 @@ class GraphwalkSystem:
             "questions": totals.questions,
             "decision_latency_s": totals.decision_latency_s,
         }
+        if link.decision_calls or link.detail:
+            detail["linking"] = {**link.detail, "decision_calls": link.decision_calls}
         if best is not None:
             detail.update(
                 {
@@ -112,13 +122,21 @@ class GraphwalkSystem:
             status=result.status,
             error=result.error or result.abort_reason,
             latency_s=time.perf_counter() - started,
-            decision_calls=totals.decision_calls,
-            input_tokens=totals.input_tokens,
-            output_tokens=totals.output_tokens,
-            cost_usd=totals.cost_usd,
+            decision_calls=totals.decision_calls + link.decision_calls,
+            input_tokens=totals.input_tokens + link.input_tokens,
+            output_tokens=totals.output_tokens + link.output_tokens,
+            cost_usd=_add_costs(totals.cost_usd, link),
             start=start,
             detail=detail,
         )
+
+
+def _add_costs(traversal: float | None, link: EntryLink) -> float | None:
+    if not link.decision_calls:
+        return traversal
+    if traversal is None or link.cost_usd is None:
+        return None
+    return traversal + link.cost_usd
 
 
 # -- vector RAG ------------------------------------------------------------------------
