@@ -524,6 +524,18 @@ async def test_answer_type_gate_withholds_stop_on_the_wrong_type() -> None:
     assert "STOP" not in backend.requests[1].questions[0].options
 
 
-async def test_answer_type_requires_node_types() -> None:
-    with pytest.raises(ValueError, match="node_types"):
-        Traverser(await movie_store(), FakeDecisionBackend(), config=cfg(answer_type="hint"))
+async def test_answer_type_is_turned_off_without_node_types(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    traverser = Traverser(
+        await movie_store(), FakeDecisionBackend(), config=cfg(answer_type="hint")
+    )
+    assert traverser.config.answer_type == "off"
+    assert "turning it off" in caplog.text
+    one_type = Traverser(
+        await movie_store(),
+        FakeDecisionBackend(),
+        config=cfg(answer_type="gate"),
+        node_types=["entity"],
+    )
+    assert one_type.config.answer_type == "off"

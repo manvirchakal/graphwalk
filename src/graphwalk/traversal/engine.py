@@ -147,8 +147,13 @@ class Traverser:
         self.config = config or TraversalConfig()
         self.node_types = tuple(dict.fromkeys(node_types or ()))
         if self.config.answer_type != "off" and len(self.node_types) < 2:  # noqa: PLR2004
-            msg = "answer_type needs Traverser(node_types=...) with at least 2 types"
-            raise ValueError(msg)
+            # An untyped graph has nothing to predict; run without the question.
+            logger.warning(
+                "answer_type=%r needs at least 2 node types, got %s; turning it off",
+                self.config.answer_type,
+                list(self.node_types),
+            )
+            self.config = self.config.model_copy(update={"answer_type": "off"})
         self._cache = None if embedder is None else EmbeddingCache(embedder)
         if decider.max_options < 2:  # noqa: PLR2004 - STOP plus one move
             msg = "decision backend must allow at least 2 options"
