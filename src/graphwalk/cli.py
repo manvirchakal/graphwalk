@@ -190,7 +190,10 @@ def eval_(  # noqa: PLR0917 - Typer maps parameters to CLI options
         list[str] | None,
         typer.Option(
             "--system",
-            help="Repeatable: greedy, beam, relation, relation-beam, sample, rag; -v2 = tuned.",
+            help=(
+                "Repeatable: greedy, beam, relation, relation-beam, sample, rag, iter-rag; "
+                "-v2 = tuned."
+            ),
         ),
     ] = None,
     hops: Annotated[list[int] | None, typer.Option(help="MetaQA hops (repeatable).")] = None,

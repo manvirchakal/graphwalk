@@ -289,3 +289,200 @@ class VectorRAGSystem:
                 "llm_latency_s": result.latency_s,
             },
         )
+
+
+# -- iterative (multi-step) RAG ----------------------------------------------------------
+
+ITER_SYSTEM = (
+    "You answer questions using facts from a knowledge graph. You can search the graph "
+    "for more entities' facts, one step at a time."
+)
+ITER_STEP = (
+    "Step {step} of {steps}. First write one short line starting with 'Thought:'. Then, if "
+    "the facts answer the question, write one line 'ANSWER: <answer entity names exactly "
+    "as written in the facts; several separated by ' | '>'. Otherwise write one line "
+    "'SEARCH: <names of the entities whose facts you need next; several separated by "
+    "' | '>'. Search for entity names, not questions."
+)
+ITER_LAST = (
+    "Step {step} of {steps}, the last one. First write one short line starting with "
+    "'Thought:'. Then write one line 'ANSWER: <answer entity names exactly as written in "
+    "the facts; several separated by ' | '>', or 'ANSWER: unknown'."
+)
+_ACTION = ("ANSWER:", "SEARCH:")
+
+
+def parse_step(text: str) -> tuple[str, list[str]]:
+    """``("answer" | "search", items)`` from the last ANSWER:/SEARCH: line. Replies
+    without either are read as a bare answer (minus any ``Thought:`` lines)."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in reversed(lines):
+        head = line[:7].upper()
+        if head in _ACTION:
+            items = parse_answers(line[7:])
+            return ("answer" if head == "ANSWER:" else "search"), items
+    body = "\n".join(line for line in lines if not line.lower().startswith("thought:"))
+    return "answer", parse_answers(body)
+
+
+class IterativeRAGSystem:
+    """Multi-step RAG: retrieve for the question, then let the LLM either answer or name
+    entities to look up next (exact name match first, else dense retrieval), up to
+    ``max_steps`` LLM calls. Same documents, embedder, and reader as
+    :class:`VectorRAGSystem`, so the only difference is iteration."""
+
+    def __init__(
+        self,
+        index: DocIndex,
+        embedder: Embedder,
+        llm: LLMBackend,
+        *,
+        names: dict[str, list[int]],
+        k: int = 5,
+        k_search: int = 2,
+        max_steps: int = 5,
+        max_searches: int = 8,
+        max_docs: int = 40,
+        name: str = "iter-rag",
+    ) -> None:
+        if index.embedder_model != embedder.model_id:
+            msg = f"index built with {index.embedder_model}, querying with {embedder.model_id}"
+            raise ValueError(msg)
+        self._index = index
+        self._embedder = embedder
+        self._llm = llm
+        self._names = names
+        self._k = k
+        self._k_search = k_search
+        self._max_steps = max_steps
+        self._max_searches = max_searches
+        self._max_docs = max_docs
+        self._name = name
+
+    @classmethod
+    def name_index(cls, index: DocIndex, names: dict[NodeId, list[str]]) -> dict[str, list[int]]:
+        """Casefolded name/alias -> document positions, for exact-name searches."""
+        out: dict[str, list[int]] = {}
+        for position, node_id in enumerate(index.ids):
+            for name in names.get(node_id, []):
+                out.setdefault(name.casefold(), []).append(position)
+        return out
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def describe(self) -> dict[str, JsonValue]:
+        return {
+            "system": "iter-rag",
+            "k": self._k,
+            "k_search": self._k_search,
+            "max_steps": self._max_steps,
+            "max_searches": self._max_searches,
+            "max_docs": self._max_docs,
+            "llm": self._llm.model_id,
+            "embedder": self._embedder.model_id,
+            "documents": len(self._index.ids),
+            "document": "one per entity: name, type, <= 40 incident triples",
+        }
+
+    def prompt(
+        self,
+        question: str,
+        docs: Sequence[str],
+        searched: Sequence[str],
+        step: int,
+        *,
+        last: bool = False,
+    ) -> list[Message]:
+        facts = "\n".join(f"- {d}" for d in docs) or "(none)"
+        history = "; ".join(searched) if searched else "(none yet)"
+        template = ITER_LAST if last or step == self._max_steps else ITER_STEP
+        user = (
+            f"Facts:\n{facts}\n\nSearched so far: {history}\n\nQuestion: {question}\n\n"
+            + template.format(step=step, steps=self._max_steps)
+        )
+        return [Message(role="system", content=ITER_SYSTEM), Message(role="user", content=user)]
+
+    async def _search(self, query: str) -> list[int]:
+        exact = self._names.get(query.strip().strip("\"'").casefold())
+        if exact:
+            return exact[:3]
+        vector = (await self._embedder.embed([query]))[0]
+        return self._index.top_k(vector, self._k_search)
+
+    async def answer(self, question: EvalQuestion) -> SystemAnswer:
+        started = time.perf_counter()
+        embed_calls = 1
+        hits = self._index.top_k((await self._embedder.embed([question.question]))[0], self._k)
+        retrieval_s = time.perf_counter() - started
+        seen = list(dict.fromkeys(hits))
+        searched: list[str] = []
+        steps: list[JsonValue] = []
+        calls, tokens_in, tokens_out, llm_s = 0, 0, 0, 0.0
+        costs: list[float | None] = []
+        answers: list[str] = []
+        raw = ""
+        last = False
+        for step in range(1, self._max_steps + 1):
+            last = last or step == self._max_steps
+            # Over the cap: keep the question's own hits and the most recent searches.
+            shown = seen[: self._k] + seen[self._k :][-(self._max_docs - self._k) :]
+            docs = [self._index.texts[i] for i in shown]
+            try:
+                result = await self._llm.complete(
+                    self.prompt(question.question, docs, searched, step, last=last)
+                )
+            except LLMError as error:
+                return SystemAnswer(
+                    answers=(),
+                    answer_set=(),
+                    status="error",
+                    error=str(error),
+                    latency_s=retrieval_s + llm_s,
+                    llm_calls=calls + 1,
+                    embed_calls=embed_calls,
+                    input_tokens=tokens_in,
+                    output_tokens=tokens_out,
+                    cost_usd=None,
+                    detail={"steps": steps},
+                )
+            calls += 1
+            tokens_in += result.input_tokens
+            tokens_out += result.output_tokens
+            llm_s += result.latency_s
+            costs.append(result.cost_usd)
+            raw = result.text
+            action, items = parse_step(result.text)
+            if action == "answer" or last:
+                answers = items if action == "answer" else []
+                steps.append({"answer": list[JsonValue](items)} if action == "answer" else {})
+                break
+            new = [q for q in items if q not in searched][: self._max_searches]
+            added = 0
+            t0 = time.perf_counter()
+            for query in new:
+                searched.append(query)
+                found = await self._search(query)
+                embed_calls += query.strip().strip("\"'").casefold() not in self._names
+                for i in found:
+                    if i not in seen:
+                        seen.append(i)
+                        added += 1
+            retrieval_s += time.perf_counter() - t0
+            steps.append({"search": list[JsonValue](new), "added": added})
+            # Nothing new was found: searching again won't help, so answer next.
+            last = added == 0
+        cost = None if not costs or any(c is None for c in costs) else sum(c or 0 for c in costs)
+        return SystemAnswer(
+            answers=tuple(answers),
+            answer_set=tuple(answers),
+            # Retrieval plus the LLM calls themselves; excludes client-side rate-limit waits.
+            latency_s=retrieval_s + llm_s,
+            llm_calls=calls,
+            embed_calls=embed_calls,
+            input_tokens=tokens_in,
+            output_tokens=tokens_out,
+            cost_usd=cost,
+            detail={"steps": steps, "raw": raw, "docs": len(seen)},
+        )

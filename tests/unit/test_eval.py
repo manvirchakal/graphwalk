@@ -27,7 +27,7 @@ from graphwalk.eval.datasets import metaqa, twowiki
 from graphwalk.eval.metrics import percentile
 from graphwalk.eval.runner import summary_table, write_results
 from graphwalk.eval.suite import Factories, build_systems, preset_config
-from graphwalk.eval.systems import entity_documents, parse_answers
+from graphwalk.eval.systems import IterativeRAGSystem, entity_documents, parse_answers, parse_step
 from graphwalk.llm import FakeLLM, Message
 from graphwalk.traversal import ChoiceEntryResolver, NameEntryResolver, Traverser
 from kg_fixtures import movie_store, oracle
@@ -256,6 +256,46 @@ async def test_entity_documents_and_rag() -> None:
         VectorRAGSystem(index, FakeEmbedder(model_id="other"), FakeLLM())
 
 
+async def test_iterative_rag_searches_then_answers() -> None:
+    store = await movie_store()
+    docs = await entity_documents(store)
+    embedder = FakeEmbedder()
+    index = await DocIndex.build(docs, embedder)
+    aliases = {n.id: [n.name, *n.aliases] async for n in store.iter_nodes()}
+    names = IterativeRAGSystem.name_index(index, aliases)
+    assert names["nolan"] == names["christopher nolan"]
+
+    def respond(messages: Sequence[Message]) -> str:
+        user = messages[1].content
+        if "Christopher Nolan (person)" not in user.split("Searched so far")[0]:
+            return "Thought: need the director.\nSEARCH: Christopher Nolan | Inception"
+        return "Thought: found it.\nANSWER: London"
+
+    llm = FakeLLM(respond, cost_per_call=0.002)
+    rag = IterativeRAGSystem(index, embedder, llm, names=names, k=1, max_steps=3)
+    answer = await rag.answer(BORN)
+    assert answer.answers == ("London",)
+    assert answer.llm_calls == 2
+    assert answer.cost_usd == pytest.approx(0.004)
+    assert answer.detail["steps"][0]["search"] == ["Christopher Nolan", "Inception"]  # type: ignore[index]
+    assert "Searched so far: Christopher Nolan; Inception" in llm.calls[1][1].content
+
+    stubborn = FakeLLM(lambda _: "SEARCH: Christopher Nolan")
+    rag = IterativeRAGSystem(index, embedder, stubborn, names=names, k=1, max_steps=5)
+    answer = await rag.answer(BORN)
+    assert answer.llm_calls == 3  # search, repeat (nothing new), forced last step
+    assert answer.answers == ()
+    assert "the last one" in stubborn.calls[-1][1].content
+    assert answer.cost_usd is None  # the provider reported no cost
+
+
+def test_parse_step() -> None:
+    assert parse_step("Thought: x\nSEARCH: A | B") == ("search", ["A", "B"])
+    assert parse_step("answer: A\n") == ("answer", ["A"])
+    assert parse_step("Thought: hmm\nParis") == ("answer", ["Paris"])
+    assert parse_step("ANSWER: unknown") == ("answer", [])
+
+
 def test_parse_answers() -> None:
     assert parse_answers("unknown") == []
     assert parse_answers("A | B | A") == ["A", "B"]
@@ -302,14 +342,15 @@ async def test_build_systems_from_presets() -> None:
         llm=lambda: FakeLLM(lambda _: "London"),
     )
     systems = await build_systems(
-        ["greedy", "relation", "rag"],
+        ["greedy", "relation", "rag", "iter-rag"],
         store,
         "movies",
         factories,
         linking="given",
         cache_index=False,
     )
-    assert [s.name for s in systems] == ["graphwalk-greedy", "graphwalk-relation", "vector-rag"]
+    names = [s.name for s in systems]
+    assert names == ["graphwalk-greedy", "graphwalk-relation", "vector-rag", "iter-rag"]
     results = [await s.answer(BORN) for s in systems]
     assert results[0].answers[0] == "London"
     assert results[2].answers == ("London",)

@@ -18,6 +18,7 @@ from graphwalk.eval.runner import SystemRun, run_system, sample_questions, write
 from graphwalk.eval.systems import (
     DocIndex,
     GraphwalkSystem,
+    IterativeRAGSystem,
     Linking,
     VectorRAGSystem,
     entity_documents,
@@ -63,7 +64,9 @@ TUNED_V2: dict[str, JsonValue] = {
 PRESETS.update({f"{name}-v2": {**PRESETS[name], **TUNED_V2} for name in list(PRESETS)})
 DATASET_GLOSSES: dict[str, dict[str, str]] = {"metaqa": metaqa.RELATION_GLOSSES}
 RAG = "rag"
-SYSTEMS = (*PRESETS, RAG)
+ITER_RAG = "iter-rag"
+BASELINES = (RAG, ITER_RAG)
+SYSTEMS = (*PRESETS, *BASELINES)
 
 
 def preset_config(
@@ -180,10 +183,22 @@ async def build_systems(
     preloaded: tuple[list[str], Vectors] | None = None
     node_types = sorted({node.type async for node in store.iter_nodes()})
     for name in names:
-        if name == RAG:
+        if name in BASELINES:
             embedder = factories.shared_embedder()
             index = await doc_index(store, embedder, index_key, cache=cache_index)
-            systems.append(VectorRAGSystem(index, embedder, factories.llm(), k=rag_k))
+            if name == RAG:
+                systems.append(VectorRAGSystem(index, embedder, factories.llm(), k=rag_k))
+                continue
+            aliases = {n.id: [n.name, *n.aliases] async for n in store.iter_nodes()}
+            systems.append(
+                IterativeRAGSystem(
+                    index,
+                    embedder,
+                    factories.llm(),
+                    names=IterativeRAGSystem.name_index(index, aliases),
+                    k=rag_k,
+                )
+            )
             continue
         decider = decider or factories.decider()
         embedder = factories.shared_embedder()
@@ -239,7 +254,7 @@ async def run_dataset(
     link: Linking = linking or ("given" if dataset == "metaqa" else "gold")
     built: list[QASystem] = []
     for index, (variant, overrides) in enumerate(variants):
-        names = systems if index == 0 else [s for s in systems if s != RAG]
+        names = systems if index == 0 else [s for s in systems if s not in BASELINES]
         built += await build_systems(
             names,
             store,
