@@ -589,6 +589,14 @@ are deleted, and the rest are re-derived. Only affected nodes are touched.
   - cost is roughly at parity (Jev is only ~2.4x cheaper per token than the cheapest
     current LLM, and a walk makes several calls);
   - the main weakness is STOP, and end to end, entity linking.
+- **Tuning round.** Chosen on MetaQA dev, applied once to test; knobs are in
+  `TraversalConfig`, and `-v2` presets enable them.
+  - The chosen knobs are `show_types`, `stop_style="literal"`, `relation_glosses` and
+    `answer_type="hint"`.
+  - The answer-type question is batched into the first call (TypeSafe's speculative
+    fan-out pattern). It turns itself off on graphs with fewer than 2 node types.
+  - The STOP gate (`answer_type="gate"`) is implemented but not chosen: it didn't help on
+    dev.
 
 ## 7. Testing
 
