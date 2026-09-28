@@ -163,7 +163,7 @@ def query(  # noqa: PLR0917 - Typer maps parameters to CLI options
         raise typer.Exit(code=1)
 
 
-def _eval_factories(llm_model: str, embed_model: str) -> "Factories":
+def _eval_factories(llm_model: str, embed_model: str, llm_rpm: float | None) -> "Factories":
     """Real backends for ``graphwalk eval`` (replaced in tests)."""
     from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder  # noqa: PLC0415
     from graphwalk.eval.suite import Factories  # noqa: PLC0415
@@ -178,6 +178,7 @@ def _eval_factories(llm_model: str, embed_model: str) -> "Factories":
             llm_model,
             api_key=None if key is None else key.get_secret_value(),
             max_tokens=512,
+            max_rpm=llm_rpm,
         ),
     )
 
@@ -204,6 +205,9 @@ def eval_(  # noqa: PLR0917 - Typer maps parameters to CLI options
         str, typer.Option(help="LiteLLM model id for the RAG reader.")
     ] = "openrouter/openai/gpt-6-luna",
     embed_model: Annotated[str, typer.Option(help="fastembed model.")] = "BAAI/bge-small-en-v1.5",
+    llm_rpm: Annotated[
+        float | None, typer.Option(help="Cap LLM requests/min (OpenRouter new accounts: 20).")
+    ] = 18.0,
     out: Annotated[Path, typer.Option(help="Results root directory.")] = Path("results"),
 ) -> None:
     """Run systems on a dataset subset; write results.json and summary.md."""
@@ -217,7 +221,7 @@ def eval_(  # noqa: PLR0917 - Typer maps parameters to CLI options
     if bad or (linking is not None and linking not in ("given", "gold", "resolve")):
         typer.echo(f"unknown system(s) {bad} or linking {linking!r}", err=True)
         raise typer.Exit(code=2)
-    factories = _eval_factories(llm_model, embed_model)
+    factories = _eval_factories(llm_model, embed_model, llm_rpm)
 
     def progress(name: str, done: int, total: int) -> None:
         if done == total or done % 25 == 0:

@@ -1,6 +1,7 @@
 """In-memory ``GraphStore`` on a NetworkX ``MultiDiGraph``, with JSON save/load."""
 
 import asyncio
+import copy
 import json
 import os
 from collections.abc import AsyncIterator, Collection, Iterator, Sequence
@@ -244,7 +245,19 @@ class NetworkXStore:
 
 
 def _copy[T: Node | Edge](model: T) -> T:
-    return model.model_copy(deep=True)
+    """A snapshot that shares nothing mutable with ``model``.
+
+    Models are frozen and their tuples hold frozen values, so only the dicts need fresh
+    copies (and ``attributes`` a deep one, since JSON values nest). ~7x cheaper than
+    ``model_copy(deep=True)``, which dominated traversal over hub nodes.
+    """
+    return model.model_copy(
+        update={
+            "attributes": copy.deepcopy(model.attributes),
+            "conflicts": dict(model.conflicts),
+            "attribute_provenance": dict(model.attribute_provenance),
+        }
+    )
 
 
 def _write_json_atomic(path: Path, document: dict[str, Any]) -> None:

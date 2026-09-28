@@ -240,6 +240,7 @@ class VectorRAGSystem:
         query_vector = (await self._embedder.embed([question.question]))[0]
         hits = self._index.top_k(query_vector, self._k)
         docs = [self._index.texts[i] for i in hits]
+        retrieval_s = time.perf_counter() - started
         try:
             result = await self._llm.complete(self.prompt(question.question, docs))
         except LLMError as error:
@@ -256,7 +257,8 @@ class VectorRAGSystem:
         return SystemAnswer(
             answers=answers,
             answer_set=answers,
-            latency_s=time.perf_counter() - started,
+            # Retrieval plus the LLM call itself; excludes client-side rate-limit waits.
+            latency_s=retrieval_s + result.latency_s,
             llm_calls=1,
             embed_calls=1,
             input_tokens=result.input_tokens,
