@@ -227,9 +227,11 @@ def eval_(  # noqa: PLR0917 - Typer maps parameters to CLI options
         if done == total or done % 25 == 0:
             typer.echo(f"  {name}: {done}/{total}", err=True)
 
-    for hop in (hops or [1]) if dataset == "metaqa" else [0]:
-        path, _runs = asyncio.run(
-            run_dataset(
+    async def run_all() -> list[Path]:
+        # One event loop for every run: backends hold loop-bound state (locks, clients).
+        paths: list[Path] = []
+        for hop in (hops or [1]) if dataset == "metaqa" else [0]:
+            path, _runs = await run_dataset(
                 "metaqa" if dataset == "metaqa" else "2wiki",
                 systems,
                 factories,
@@ -242,6 +244,9 @@ def eval_(  # noqa: PLR0917 - Typer maps parameters to CLI options
                 rag_k=rag_k,
                 on_progress=progress,
             )
-        )
-        typer.echo((path / "summary.md").read_text(encoding="utf-8"))
-        typer.echo(f"results: {path}")
+            typer.echo((path / "summary.md").read_text(encoding="utf-8"))
+            typer.echo(f"results: {path}")
+            paths.append(path)
+        return paths
+
+    asyncio.run(run_all())

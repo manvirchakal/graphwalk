@@ -5,6 +5,7 @@ multi-gigabyte torch install. Models download from Hugging Face on first use.
 """
 
 import asyncio
+import threading
 from collections.abc import Sequence
 from typing import Any
 
@@ -25,13 +26,17 @@ class FastEmbedEmbedder:
         self._model: Any = TextEmbedding(model_name)
         self._model_name = model_name
         self._batch_size = batch_size
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()  # not asyncio.Lock: must work across event loops
 
     @property
     def model_id(self) -> str:
         return f"fastembed:{self._model_name}"
 
     def _embed_sync(self, texts: list[str]) -> Vectors:
+        with self._lock:  # the ONNX session is shared; one batch at a time
+            return self._embed_locked(texts)
+
+    def _embed_locked(self, texts: list[str]) -> Vectors:
         # Batches are padded to their longest text, so embed in length order (8x faster
         # on mixed-length documents in our measurements) and restore the input order.
         order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
@@ -46,5 +51,4 @@ class FastEmbedEmbedder:
     async def embed(self, texts: Sequence[str]) -> Vectors:
         if not texts:
             return np.zeros((0, 0), dtype=np.float32)
-        async with self._lock:  # the ONNX session is shared; one batch at a time
-            return await asyncio.to_thread(self._embed_sync, list(texts))
+        return await asyncio.to_thread(self._embed_sync, list(texts))
