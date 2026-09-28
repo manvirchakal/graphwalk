@@ -173,6 +173,17 @@ class Edge(BaseModel):
     provenance: list[Provenance]
 ```
 
+**As built in M1:**
+
+- `Node` and `Edge` also carry `attribute_provenance: dict[str, tuple[Provenance, ...]]`,
+  which records which sources back each attribute value. A key that is absent falls back
+  to the element's `provenance`. This is required for correct conflict attribution after
+  more than one merge: node-level provenance alone would credit a value to every source
+  the node ever absorbed.
+- Models are frozen. `Edge.id` is derived from `(source, type, target)`.
+- Merge logic is pure (`core/merge.py`) and shared by every store, so backends can't
+  diverge on it.
+
 ## 3. Protocols
 
 ```python
@@ -188,7 +199,11 @@ class GraphStore(Protocol):
     async def find_nodes(self, *, name: str | None = None, type: str | None = None,
                          limit: int | None = None) -> list[Node]: ...
     async def iter_nodes(self, *, batch_size: int = 1000) -> AsyncIterator[Node]: ...
+    async def get_edge(self, edge_id: EdgeId) -> Edge | None: ...
+    def iter_edges(self, *, batch_size: int = 1000) -> AsyncIterator[Edge]: ...
     async def delete_node(self, node_id: NodeId) -> None: ...   # also removes incident edges
+    async def delete_edge(self, edge_id: EdgeId) -> None: ...
+    async def clear(self) -> None: ...
     async def merge_nodes(self, keep: NodeId, absorb: NodeId) -> Node: ...
             # rewire edges, union provenance, record conflicts, add alias
     async def counts(self) -> tuple[int, int]: ...
