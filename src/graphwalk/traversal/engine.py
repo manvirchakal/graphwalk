@@ -39,7 +39,7 @@ from graphwalk.decisions.base import (
     DecisionRequest,
     JSONContent,
 )
-from graphwalk.embeddings.base import Embedder
+from graphwalk.embeddings.base import Embedder, Vectors
 from graphwalk.stores.base import GraphStore
 from graphwalk.traversal import prompts
 from graphwalk.traversal.batching import split_questions
@@ -146,6 +146,14 @@ class Traverser:
         if decider.max_options < 2:  # noqa: PLR2004 - STOP plus one move
             msg = "decision backend must allow at least 2 options"
             raise ValueError(msg)
+
+    def preload_embeddings(self, texts: Sequence[str], vectors: Vectors) -> None:
+        """Seed the prefilter cache, typically with ``prompts.node_text`` of every node, so
+        high-degree steps cost dot products instead of embedding calls."""
+        if self._cache is None:
+            msg = "no embedder configured"
+            raise ValueError(msg)
+        self._cache.preload(texts, vectors)
 
     @property
     def embedder(self) -> Embedder | None:
@@ -374,8 +382,10 @@ class Traverser:
         return moves, []
 
     def _move_text(self, run: _Run, move: Move) -> str:
+        # Entity mode ranks by the target node's text alone, so vectors can be precomputed
+        # once per graph (see preload_embeddings) instead of embedded per step.
         if self.config.hop_mode == "entity":
-            return f"{move.relation} {prompts.node_text(run.nodes[move.targets[0]])}"
+            return prompts.node_text(run.nodes[move.targets[0]])
         return move.relation
 
     async def _ask(

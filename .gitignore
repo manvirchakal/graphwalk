@@ -27,3 +27,6 @@ results/
 .idea/
 .vscode/
 .DS_Store
+
+# Eval outputs: keep summaries, not per-question dumps
+results/**/results.json

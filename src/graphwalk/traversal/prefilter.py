@@ -15,9 +15,23 @@ class EmbeddingCache:
         self.embedder = embedder
         self._max_entries = max_entries
         self._vectors: dict[str, np.ndarray] = {}
+        self._pinned: dict[str, np.ndarray] = {}
+        """Preloaded vectors; never evicted."""
+
+    def preload(self, texts: Sequence[str], vectors: Vectors) -> None:
+        """Pin precomputed vectors (e.g. every node's text, built once per graph)."""
+        if len(texts) != len(vectors):
+            msg = f"{len(texts)} texts but {len(vectors)} vectors"
+            raise ValueError(msg)
+        for text, vector in zip(texts, vectors, strict=True):
+            self._pinned[text] = vector
+
+    def _get(self, text: str) -> np.ndarray | None:
+        vector = self._pinned.get(text)
+        return self._vectors.get(text) if vector is None else vector
 
     async def embed(self, texts: Sequence[str]) -> Vectors:
-        missing = list(dict.fromkeys(t for t in texts if t not in self._vectors))
+        missing = list(dict.fromkeys(t for t in texts if self._get(t) is None))
         if missing:
             if len(self._vectors) + len(missing) > self._max_entries:
                 self._vectors.clear()
@@ -26,7 +40,8 @@ class EmbeddingCache:
                 self._vectors[text] = vector
         if not texts:
             return np.zeros((0, 0), dtype=np.float32)
-        return np.stack([self._vectors[t] for t in texts]).astype(np.float32, copy=False)
+        rows = [self._get(t) for t in texts]
+        return np.stack([r for r in rows if r is not None]).astype(np.float32, copy=False)
 
 
 async def rank_by_similarity(

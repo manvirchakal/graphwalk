@@ -27,7 +27,7 @@ neo4j = [
     "neo4j>=5.26",
 ]
 embeddings = [
-    "sentence-transformers>=3.3",
+    "fastembed>=0.7",
 ]
 llm = [
     "litellm>=1.60",

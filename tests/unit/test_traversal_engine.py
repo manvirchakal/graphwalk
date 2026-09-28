@@ -10,6 +10,7 @@ from graphwalk.decisions import FakeDecisionBackend
 from graphwalk.embeddings import FakeEmbedder
 from graphwalk.stores.networkx_store import NetworkXStore
 from graphwalk.traversal import Budget, TraversalConfig, TraversalResult, Traverser
+from graphwalk.traversal.prompts import node_text
 from kg_fixtures import movie_store, oracle
 
 BORN = "Where was the director of Inception born?"
@@ -422,3 +423,19 @@ async def test_cost_is_summed_when_reported() -> None:
         BORN, ["inception"]
     )
     assert result.trace.totals.cost_usd == pytest.approx(0.25 * backend.calls)
+
+
+async def test_preloaded_embeddings_avoid_embedding_calls() -> None:
+    store = await hub_store(60)
+    embedder = FakeEmbedder()
+    config = cfg(
+        strategy="greedy", prefilter_threshold=20, prefilter_top_n=5, budget=Budget(max_depth=1)
+    )
+    traverser = Traverser(store, FakeDecisionBackend(), embedder=embedder, config=config)
+    texts = [node_text(n) async for n in store.iter_nodes()]
+    traverser.preload_embeddings(texts, await embedder.embed(texts))
+    embedder.calls.clear()
+    await traverser.traverse("find the golden retriever puppy", ["hub"])
+    assert embedder.calls == [["find the golden retriever puppy"]]  # only the query
+    with pytest.raises(ValueError, match="no embedder"):
+        Traverser(store, FakeDecisionBackend()).preload_embeddings([], await embedder.embed([]))

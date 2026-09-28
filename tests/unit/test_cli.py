@@ -19,7 +19,7 @@ def test_version() -> None:
     assert result.output.strip() == __version__
 
 
-@pytest.mark.parametrize("command", ["ingest", "eval"])
+@pytest.mark.parametrize("command", ["ingest"])
 def test_commands_exist_and_report_not_implemented(command: str) -> None:
     result = runner.invoke(app, [command])
     assert result.exit_code == 2

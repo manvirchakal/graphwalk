@@ -3,7 +3,7 @@
 import asyncio
 import math
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from pydantic import ValidationError
@@ -14,6 +14,9 @@ from graphwalk.core.errors import GraphwalkError
 from graphwalk.decisions import DecisionBackend
 from graphwalk.stores.networkx_store import NetworkXStore
 from graphwalk.traversal import NameEntryResolver, TraversalConfig, TraversalResult, Traverser
+
+if TYPE_CHECKING:
+    from graphwalk.eval.suite import Factories
 
 app = typer.Typer(
     name="graphwalk",
@@ -160,7 +163,81 @@ def query(  # noqa: PLR0917 - Typer maps parameters to CLI options
         raise typer.Exit(code=1)
 
 
+def _eval_factories(llm_model: str, embed_model: str) -> "Factories":
+    """Real backends for ``graphwalk eval`` (replaced in tests)."""
+    from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder  # noqa: PLC0415
+    from graphwalk.eval.suite import Factories  # noqa: PLC0415
+    from graphwalk.llm.litellm_backend import LiteLLMBackend  # noqa: PLC0415
+
+    settings = GraphwalkSettings()
+    key = settings.openrouter_api_key
+    return Factories(
+        decider=_make_backend,
+        embedder=lambda: FastEmbedEmbedder(embed_model),
+        llm=lambda: LiteLLMBackend(
+            llm_model,
+            api_key=None if key is None else key.get_secret_value(),
+            max_tokens=512,
+        ),
+    )
+
+
 @app.command("eval")
-def eval_() -> None:
-    """Run an evaluation suite."""
-    _not_implemented("eval", "M5")
+def eval_(  # noqa: PLR0917 - Typer maps parameters to CLI options
+    dataset: Annotated[str, typer.Argument(help="metaqa | 2wiki")],
+    system: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--system",
+            help="Repeatable: greedy, beam, relation, relation-beam, sample, rag.",
+        ),
+    ] = None,
+    hops: Annotated[list[int] | None, typer.Option(help="MetaQA hops (repeatable).")] = None,
+    n: Annotated[int, typer.Option(help="Seeded subset size (0 = all).")] = 100,
+    seed: Annotated[int, typer.Option(help="Subset seed.")] = 0,
+    linking: Annotated[
+        str | None, typer.Option(help="given | gold | resolve (default per dataset).")
+    ] = None,
+    concurrency: Annotated[int, typer.Option(help="Questions in flight.")] = 8,
+    rag_k: Annotated[int, typer.Option(help="Documents retrieved by the RAG baseline.")] = 5,
+    llm_model: Annotated[
+        str, typer.Option(help="LiteLLM model id for the RAG reader.")
+    ] = "openrouter/openai/gpt-6-luna",
+    embed_model: Annotated[str, typer.Option(help="fastembed model.")] = "BAAI/bge-small-en-v1.5",
+    out: Annotated[Path, typer.Option(help="Results root directory.")] = Path("results"),
+) -> None:
+    """Run systems on a dataset subset; write results.json and summary.md."""
+    from graphwalk.eval.suite import SYSTEMS, run_dataset  # noqa: PLC0415
+
+    if dataset not in ("metaqa", "2wiki"):
+        typer.echo("dataset must be metaqa or 2wiki", err=True)
+        raise typer.Exit(code=2)
+    systems = system or ["greedy", "rag"]
+    bad = [s for s in systems if s not in SYSTEMS]
+    if bad or (linking is not None and linking not in ("given", "gold", "resolve")):
+        typer.echo(f"unknown system(s) {bad} or linking {linking!r}", err=True)
+        raise typer.Exit(code=2)
+    factories = _eval_factories(llm_model, embed_model)
+
+    def progress(name: str, done: int, total: int) -> None:
+        if done == total or done % 25 == 0:
+            typer.echo(f"  {name}: {done}/{total}", err=True)
+
+    for hop in (hops or [1]) if dataset == "metaqa" else [0]:
+        path, _runs = asyncio.run(
+            run_dataset(
+                "metaqa" if dataset == "metaqa" else "2wiki",
+                systems,
+                factories,
+                hops=hop or 1,
+                n=n or None,
+                seed=seed,
+                linking=linking,  # pyright: ignore[reportArgumentType] - validated above
+                concurrency=concurrency,
+                out_root=out,
+                rag_k=rag_k,
+                on_progress=progress,
+            )
+        )
+        typer.echo((path / "summary.md").read_text(encoding="utf-8"))
+        typer.echo(f"results: {path}")
