@@ -1,0 +1,86 @@
+[project]
+name = "graphwalk"
+version = "0.1.0"
+description = "Fast, probabilistic knowledge-graph traversal and ingestion driven by calibrated classification decisions."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "graphwalk contributors" }]
+requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.12",
+    "pydantic-settings>=2.6",
+    "typer>=0.15",
+]
+
+[project.optional-dependencies]
+neo4j = [
+    "neo4j>=5.26",
+]
+embeddings = [
+    "sentence-transformers>=3.3",
+]
+llm = [
+    "litellm>=1.60",
+]
+eval = [
+    "httpx>=0.28",
+]
+
+[project.scripts]
+graphwalk = "graphwalk.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-socket>=0.8.1",
+    "ruff>=0.16.9",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF",
+    "ASYNC", "PT", "PTH", "TC", "PL", "S", "BLE", "T20", "RET",
+]
+ignore = [
+    "PLR0913", # protocols legitimately take many keyword args
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004", "PLC0415"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+strict = ["src"]
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = ["-ra", "--strict-markers", "--disable-socket", "--allow-unix-socket"]
+markers = [
+    "live: calls a real external API; skipped unless --run-live is given",
+    "neo4j: needs a running Neo4j; skipped unless --run-neo4j is given",
+]

@@ -132,8 +132,10 @@ tests/
 ```
 
 Extras: `neo4j` (neo4j driver), `embeddings` (sentence-transformers), `eval`
-(datasets or requests, the vector-RAG deps), `dev` (ruff, pyright, pytest,
-pytest-asyncio, testcontainers). Base install: pydantic, pydantic-settings, typer,
+(datasets or requests, the vector-RAG deps), `llm` (LiteLLM, per Q6). Dev tools
+(ruff, pyright, pytest, pytest-asyncio, pytest-socket) live in a uv `dev` *dependency
+group*, not an extra. That way plain `uv sync` / `uv run pytest` installs them, and
+they never leak into the published package metadata. Base install: pydantic, pydantic-settings, typer,
 networkx, numpy, typesafe-sdk, litellm, sqlalchemy.
 
 LiteLLM is heavy. Ingestion needs it, but traversal does not. **Q6:** it may be better
