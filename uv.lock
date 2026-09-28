@@ -601,6 +601,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "networkx" },
+    { name = "numpy" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "typer" },
@@ -637,6 +638,7 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'llm'", specifier = ">=1.60" },
     { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=5.26" },
     { name = "networkx", specifier = ">=3.4" },
+    { name = "numpy", specifier = ">=2.1" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "pydantic-settings", specifier = ">=2.6" },
     { name = "sentence-transformers", marker = "extra == 'embeddings'", specifier = ">=3.3" },

@@ -151,7 +151,9 @@ class JevBackend:
             if not isinstance(answer, ChoiceAnswer):
                 msg = f"Jev returned no choice answer for question {question.key!r}"
                 raise DecisionBackendError(msg)
-            results[question.key] = normalize_distribution(question, answer.probabilities)
+            results[question.key] = normalize_distribution(
+                question, answer.probabilities, confidence=answer.confidence
+            )
 
         self._check_model(response.model)
         extras = _openrouter_extras(response)

@@ -82,6 +82,13 @@ class ChoiceResult(BaseModel):
     key: str
     probabilities: dict[str, float]
     top: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    """How peaked the distribution is: 1 = all mass on one label, 0 = uniform.
+
+    Jev reports it; per TypeSafe's docs it is derived from the probabilities as
+    ``(n * p_max - 1) / (n - 1)``, so it adds no information beyond ``probabilities``.
+    Backends that do not report it get that formula (see :func:`choice_confidence`).
+    """
 
 
 class Usage(BaseModel):
@@ -122,8 +129,20 @@ class DecisionBackend(Protocol):
     async def aclose(self) -> None: ...
 
 
+def choice_confidence(probabilities: Mapping[str, float]) -> float:
+    """TypeSafe's Choice confidence: ``(n * p_max - 1) / (n - 1)``, clamped to [0, 1]."""
+    n = len(probabilities)
+    if n < 2:  # noqa: PLR2004 - a single option is certain by construction
+        return 1.0
+    peak = max(probabilities.values())
+    return min(1.0, max(0.0, (n * peak - 1) / (n - 1)))
+
+
 def normalize_distribution(
-    question: ChoiceQuestion, probabilities: Mapping[str, float]
+    question: ChoiceQuestion,
+    probabilities: Mapping[str, float],
+    *,
+    confidence: float | None = None,
 ) -> ChoiceResult:
     """Validate a raw distribution against the offered labels and renormalize it to sum 1.
 
@@ -132,6 +151,8 @@ def normalize_distribution(
     * Negative, NaN, or all-zero mass is an error.
 
     ``top`` is the highest-probability label, ties broken by the order options were offered.
+    ``confidence`` is the backend-reported value if given (clamped to [0, 1]), otherwise
+    :func:`choice_confidence` of the normalized distribution.
     """
     offered = list(question.options)
     unknown = set(probabilities) - set(offered)
@@ -151,4 +172,11 @@ def normalize_distribution(
         raise DecisionBackendError(msg)
     normalized = {label: p / total for label, p in zip(offered, raw, strict=True)}
     top = max(offered, key=lambda label: normalized[label])  # max keeps the first on ties
-    return ChoiceResult(key=question.key, probabilities=normalized, top=top)
+    if confidence is None or not math.isfinite(confidence):
+        confidence = choice_confidence(normalized)
+    return ChoiceResult(
+        key=question.key,
+        probabilities=normalized,
+        top=top,
+        confidence=min(1.0, max(0.0, confidence)),
+    )

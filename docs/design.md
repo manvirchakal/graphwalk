@@ -1,6 +1,6 @@
 # graphwalk — design
 
-Status: **approved; open questions answered (see §9).** M0–M2 implemented; M2 verified live on OpenRouter (§0.1).
+Status: **approved; open questions answered (see §9).** M0–M3 implemented; M2 and M3 verified live on OpenRouter (§0.1, §4 "As built in M3").
 
 ## 0. What the Jev API actually is (and how I verified it)
 
@@ -432,6 +432,80 @@ best partial answer, and the full trace.
 and `Call` = `{call_id, n_questions, latency_s, input_tokens, cost_usd, request_id}`.
 Latency and cost belong to the call, not the step, because one call serves several
 beams. The trace is JSON-serializable and the CLI can pretty-print it.
+
+### As built in M3
+
+Implemented in `src/graphwalk/traversal/` (`config`, `engine`, `scoring`, `sampling`,
+`batching`, `prefilter`, `prompts`, `entry`, `trace`) and `src/graphwalk/embeddings/`.
+TypeSafe's Hierarchical Classification cookbook, read before starting, shaped several of
+these choices. Deviations from the plan above:
+
+- **Beam selection follows the cookbook, not "finished pool + run to max depth".**
+  Finished beams stay in the pool and compete with new candidates for the `k` slots.
+  The walk ends when every surviving beam has finished. The plan would have spent
+  `max_depth` calls on every query. Any finished beam that made the pool is kept for the
+  answer list.
+- **Probability floor.** Scoring uses `log(max(p, prob_floor))` with a default of `1e-3`.
+  Jev rounds to 2 decimals, so a reported 0 means < 0.005 (§0.1). The cookbook uses
+  `1e-9`, which treats a rounded 0 as near-impossible.
+- **Forced steps.** One legal option means no call:
+  - A forced *move* is not a decision, as in the cookbook.
+  - A forced *STOP* (a dead end: no unvisited neighbors) counts as a decision with p = 1.
+    It ranks alongside a chosen STOP.
+  - Without this, walks ending at a leaf skip the final STOP decision and rank below
+    walks that chose STOP. Under `exclude_visited`, leaves are often the correct answer
+    (e.g. a film's release year).
+- **Known quirk of `alpha = 1`.** Mean log-prob rewards appending near-certain decisions:
+  a path gains score by adding a p ≈ 1 STOP. `length_alpha` is configurable, and evals
+  should compare 1.0 against smaller values.
+- **Direction.** The default is `both`: most KG-QA needs to follow edges backwards, e.g.
+  `Nolan <-directed_by- Memento`. Options show the edge in its stored direction
+  (`Memento --directed_by--> Christopher Nolan`).
+- **Depth.** `max_depth` counts decision depths *including* STOP. The default is 4, i.e.
+  3 hops plus STOP. A walk still open at the limit is reported with
+  `terminated_by="max_depth"` and ranked after walks that ended on their own.
+- **Confidence.** Every step records Jev's `confidence`, and each answer records the
+  lowest confidence along its path (`min_confidence`). Per TypeSafe's docs, confidence
+  is derived from the probabilities: `(n * p_max - 1) / (n - 1)` for a Choice. It carries
+  no new information, but it is normalized for option count, which max-p is not. It is
+  recorded only and not yet used for control. Using it is an eval question for M5,
+  e.g. abstaining below a threshold.
+- **Sampling.** `n_samples` independent walks run as parallel beams that don't compete.
+  All walks at one depth go in one call. Each walk has its own RNG, seeded from
+  `(seed, query, walk index)`. Answers are grouped and ranked by votes.
+- **Prefilter.** The prefilter embeds the *query only*, not query plus path. Without an
+  embedder, oversized option sets are truncated in store order to `max_options - 1`, and
+  the trace records it (`reason="truncated"`).
+- **Relation mode.** Each option is `{relation, direction, leads_to (first N names),
+  count}`. The frontier is capped at `max_frontier` by query similarity, or by
+  truncation without an embedder.
+- **Guardrails.** `Budget(max_depth, max_decision_calls, max_input_tokens)` lives in
+  `config.py`; there is no separate `guardrails.py`. A backend failure returns
+  `status="error"` with the partial answers and trace, instead of raising.
+- **Batch splitting.** Token counts are estimated at 3 characters per token of compact
+  JSON, with a 20% margin. Live calls came in at ~500 tokens per question, so the
+  estimate is conservative.
+- **Entry.** `NameEntryResolver` finds whole-word name and alias mentions in the query,
+  longest first, with an optional embedding fallback.
+- **Not yet built.** The sentence-transformers `Embedder` is deferred to M5, where the
+  RAG baseline needs it too; M3 has the protocol and a deterministic hashing fake.
+  The `alpha = 0` early-termination bound is not implemented. There is no `_sync.py`
+  wrapper yet; the CLI uses `asyncio.run`.
+- **CLI.** `graphwalk query GRAPH.json "question" [--start ID] [--strategy ...]
+  [--trace out.json]`.
+
+**Live check (OpenRouter, 2026-09-28, `tests/live/test_traversal_live.py`).** The movie
+fixture graph (10 nodes) was run through 3 queries × {greedy, beam k=3}: 6/6 correct.
+- Greedy used 2–3 calls per query, ~1–1.2 s wall and ~500 input tokens per question.
+  Cost was $0.00004–0.00007 per query.
+- Beam cost 1.1–2× the tokens and calls of greedy for the same answers. It keeps
+  expanding low-scoring alternatives until they finish.
+- Per-call latency was 0.3–0.45 s. Depths are sequential, so wall time ≈ depth × latency.
+- On these easy hops Jev is again saturated (1.0/0.0), and confidence only drops on
+  genuinely ambiguous steps.
+
+This proves plumbing, not accuracy: a 10-node graph can't show whether the bet holds.
+That is M5's job.
 
 ## 5. Ingestion (M6, summarized)
 

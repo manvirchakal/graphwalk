@@ -8,8 +8,14 @@ decision model returns a calibrated probability distribution over them. The bet 
 many cheap, calibrated decisions beat LLM-driven graph RAG on cost and latency at
 competitive accuracy. The built-in eval harness exists to test exactly that bet.
 
-> **Status: pre-alpha.** The scaffold is in place; traversal, ingestion, and evals are
-> being built milestone by milestone. See [`docs/design.md`](docs/design.md).
+> **Status: pre-alpha.** Graph store, Jev decision backend, and the traversal engine
+> (greedy / beam / sample, entity and relation hops) work. Ingestion, Neo4j, and evals are
+> still being built. See [`docs/design.md`](docs/design.md).
+
+```bash
+uv run graphwalk query graph.json "Where was the director of Inception born?" \
+    --strategy beam --beam-width 3 --trace trace.json
+```
 
 ## Quickstart
 

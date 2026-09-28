@@ -9,6 +9,7 @@ from graphwalk.decisions.base import (
     DecisionResponse,
     JSONContent,
     Usage,
+    choice_confidence,
     normalize_distribution,
 )
 from graphwalk.decisions.fake import FakeDecisionBackend
@@ -23,6 +24,7 @@ __all__ = [
     "FakeDecisionBackend",
     "JSONContent",
     "Usage",
+    "choice_confidence",
     "normalize_distribution",
 ]
 # JevBackend is imported from graphwalk.decisions.jev so the SDK loads only when used.
