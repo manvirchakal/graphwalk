@@ -13,7 +13,15 @@ from graphwalk.config import (
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    for var in ("OPENROUTER_API_KEY", "TYPESAFE_API_KEY", "GRAPHWALK_DECISION_PROVIDER"):
+    for var in (
+        "OPENROUTER_API_KEY",
+        "TYPESAFE_API_KEY",
+        "GRAPHWALK_DECISION_PROVIDER",
+        "OPENROUTER_BASE_URL",
+        "TYPESAFE_BASE_URL",
+        "GRAPHWALK_OPENROUTER_BASE_URL",
+        "GRAPHWALK_TYPESAFE_BASE_URL",
+    ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.chdir(tmp_path)  # no stray .env
 
@@ -46,4 +54,30 @@ def test_api_key_is_not_leaked_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_unknown_provider_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GRAPHWALK_DECISION_PROVIDER", "nope")
     with pytest.raises(ValueError, match="decision_provider"):
+        GraphwalkSettings()
+
+
+@pytest.mark.parametrize(
+    ("provider", "var"),
+    [
+        ("openrouter", "OPENROUTER_BASE_URL"),
+        ("openrouter", "GRAPHWALK_OPENROUTER_BASE_URL"),
+        ("typesafe", "TYPESAFE_BASE_URL"),
+        ("typesafe", "GRAPHWALK_TYPESAFE_BASE_URL"),
+    ],
+)
+def test_base_url_override(monkeypatch: pytest.MonkeyPatch, provider: str, var: str) -> None:
+    monkeypatch.setenv("GRAPHWALK_DECISION_PROVIDER", provider)
+    monkeypatch.setenv(var, " https://proxy.example.com/jev/ ")
+    assert GraphwalkSettings().decision_base_url == "https://proxy.example.com/jev"
+
+
+def test_base_url_override_is_per_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TYPESAFE_BASE_URL", "https://proxy.example.com")
+    assert GraphwalkSettings().decision_base_url == OPENROUTER_BASE_URL  # openrouter selected
+
+
+def test_base_url_must_be_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "openrouter.ai/api")
+    with pytest.raises(ValueError, match="must start with"):
         GraphwalkSettings()

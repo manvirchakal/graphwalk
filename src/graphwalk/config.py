@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DecisionProvider = Literal["openrouter", "typesafe"]
@@ -19,7 +19,9 @@ class GraphwalkSettings(BaseSettings):
     """Top-level settings.
 
     Provider API keys use their conventional unprefixed names (``OPENROUTER_API_KEY``,
-    ``TYPESAFE_API_KEY``); everything else uses the ``GRAPHWALK_`` prefix.
+    ``TYPESAFE_API_KEY``), as do base-URL overrides (``OPENROUTER_BASE_URL``,
+    ``TYPESAFE_BASE_URL``, the latter matching the official SDK); each also accepts a
+    ``GRAPHWALK_``-prefixed spelling. Everything else uses the ``GRAPHWALK_`` prefix.
     """
 
     model_config = SettingsConfigDict(
@@ -40,8 +42,25 @@ class GraphwalkSettings(BaseSettings):
     )
     jev_model_openrouter: str = JEV_MODEL_OPENROUTER
     jev_model_typesafe: str = JEV_MODEL_TYPESAFE
+    openrouter_base_url: str = Field(
+        default=OPENROUTER_BASE_URL,
+        validation_alias=AliasChoices("OPENROUTER_BASE_URL", "GRAPHWALK_OPENROUTER_BASE_URL"),
+    )
+    typesafe_base_url: str = Field(
+        default=TYPESAFE_BASE_URL,
+        validation_alias=AliasChoices("TYPESAFE_BASE_URL", "GRAPHWALK_TYPESAFE_BASE_URL"),
+    )
     jev_timeout_s: float = Field(default=10.0, gt=0)
     jev_max_retries: int = Field(default=2, ge=0)
+
+    @field_validator("openrouter_base_url", "typesafe_base_url")
+    @classmethod
+    def _http_url(cls, url: str) -> str:
+        url = url.strip().rstrip("/")
+        if not url.startswith(("https://", "http://")):
+            msg = f"base URL must start with http:// or https://, got {url!r}"
+            raise ValueError(msg)
+        return url
 
     @property
     def jev_model(self) -> str:
@@ -54,8 +73,8 @@ class GraphwalkSettings(BaseSettings):
     def decision_base_url(self) -> str:
         """The API root for the selected provider."""
         if self.decision_provider == "openrouter":
-            return OPENROUTER_BASE_URL
-        return TYPESAFE_BASE_URL
+            return self.openrouter_base_url
+        return self.typesafe_base_url
 
     @property
     def decision_api_key(self) -> SecretStr | None:

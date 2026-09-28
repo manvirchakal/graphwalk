@@ -213,3 +213,18 @@ async def test_verify_model_non_object_listing() -> None:
     rec = Recorder(lambda _r: httpx2.Response(200, json=["not", "an", "object"]))
     with pytest.raises(DecisionBackendError, match="could not list models"):
         await backend(rec, provider="openrouter", model="typesafe/jev-1.13").verify_model()
+
+
+async def test_from_settings_honors_base_url_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GRAPHWALK_DECISION_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://gateway.internal/openrouter/")
+    body = ok_body()
+    body["model"] = "typesafe/jev-1.13"
+    rec = Recorder(respond_json(body))
+    jev = JevBackend.from_settings(
+        GraphwalkSettings(_env_file=None),  # pyright: ignore[reportCallIssue]
+        transport=httpx2.MockTransport(rec),
+    )
+    await jev.decide(REQUEST)
+    assert str(rec.requests[0].url) == "https://gateway.internal/openrouter/v1/systemone"
