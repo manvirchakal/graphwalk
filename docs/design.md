@@ -1,6 +1,6 @@
 # graphwalk — design
 
-Status: **draft; open questions answered (see §9).** Nothing is implemented yet.
+Status: **approved; open questions answered (see §9).** M0–M2 implemented; M2 verified live on OpenRouter (§0.1).
 
 ## 0. What the Jev API actually is (and how I verified it)
 
@@ -40,7 +40,7 @@ policy, so I could not read those pages directly. What I relied on, in order of 
                 "probabilities": { "<label>": 0.8, ... } }   // full distribution, sums to about 1
   },
   "usage": { "input_tokens": 120, "output_tokens": 12 }
-  // OpenRouter adds: "id", "provider", "usage.cost" (USD)   (unverified)
+  // OpenRouter adds: "id", "provider", "usage.cost" (USD)   (verified live, see §0.1)
 }
 ```
 
@@ -51,11 +51,43 @@ policy, so I could not read those pages directly. What I relied on, in order of 
 | Full distribution access | Yes: `probabilities` over every offered label | Beam and sample work as specified |
 | Several questions in one call | Yes: `questions` is a named map | Beam batching works, but see the next row |
 | Per-question context | **No.** `state` is shared per call; only `instructions` differ per question | Per-beam context (path, current node) must go into each question's `instructions`. See §4 |
-| `usage.cost` | **OpenRouter only** (unverified). TypeSafe direct returns only token counts | **Open question Q1** |
+| `usage.cost` | **OpenRouter only** (verified live on OpenRouter). TypeSafe direct returns only token counts | Q1 decided: tokens only |
 | Temperature or top-p on the server | None | Applied client-side to the returned distribution, as the spec already intends |
 | Option limits | **Verified (docs):** Choice supports ≤ 255 options. Context is **64k tokens per request, and 32k for `state` + the longest single question** | Prefilter cap ≤ 254 (STOP uses one slot). Batches are split by that two-part budget |
 | Model pin `jev-1.13.0` | **Verified:** direct `jev-1.13.0` (docs). OpenRouter `typesafe/jev-1.13` (live API), served by endpoint `typesafe/jev-1.13-20260917` | Q2 decided |
-| OpenRouter uses the Decisions API | OpenRouter has `POST /api/alpha/decisions` and a TypeSafe-compatible `POST /api/v1/systemone` *(unverified)* | One code path: the SDK with `base_url=https://openrouter.ai/api` |
+| OpenRouter uses the Decisions API | OpenRouter has `POST /api/alpha/decisions` and a TypeSafe-compatible `POST /api/v1/systemone` (**verified live**) | One code path: the SDK with `base_url=https://openrouter.ai/api` |
+
+### 0.1 Live verification (OpenRouter, 2026-09-28)
+
+`uv run pytest --run-live tests/live -s` passed on the first run with no code changes.
+Three extra raw `curl` calls to `POST https://openrouter.ai/api/v1/systemone` confirmed
+the following:
+
+- **Path.** The SDK's `/v1/systemone` works under `base_url=https://openrouter.ai/api`.
+- **Echoed model.** The response `model` is `typesafe/jev-1.13-20260917`, the dated
+  endpoint id, not the requested `typesafe/jev-1.13`. `_check_model` accepts it, and
+  traces record the dated id.
+- **Top-level extras.** `id` (`gen-dec-…`) and `provider` (`"TypeSafe"`) are top-level
+  fields. `cost` is at `usage.cost` in USD. `_openrouter_extras` already reads all three.
+- **Billing.** Only input tokens are billed. `cost / input_tokens` = $0.042/M exactly
+  (e.g. 588 input tokens → $0.000024696), while `output_tokens` (80–93) are reported
+  but not charged.
+- **Latency.** Two questions per call took 0.63–0.74 s wall-clock from this container
+  (n = 3). About 550–590 input tokens per two-hop-sized call.
+- **Probabilities are rounded to 2 decimals.** Easy hops come back as exactly
+  `1.0 / 0.0 / 0.0`, and a genuinely ambiguous question gave `mixed 0.93, negative
+  0.07, positive 0`. Consequences for M3: (a) beam scoring must floor probabilities
+  (e.g. `max(p, 1e-3)`) before taking logs, because `log(0)` is `-inf`; (b) there are
+  frequent exact ties at 0, so the tie-break must be deterministic (option order);
+  (c) temperature sampling can't revive a 0 option, so exploration relies on beams.
+  The API's resolution also limits how "calibrated" any evaluation can claim to be.
+- **Near-deterministic.** Repeating the same request gave 0.93 vs 0.94 on the
+  ambiguous question and identical results on the easy ones.
+- **`confidence` is an extra field.** Each choice answer includes `confidence`, and it
+  differs from max-p (0.89 vs 0.93). We currently drop it. It may be a better STOP or
+  guardrail signal than max-p. Not yet used; proposed for M3.
+- **Key order.** Probability keys come back shuffled. `normalize_distribution`
+  reorders them to the caller's option order, and the smoke test asserts this.
 
 ### Integration path: the official SDK
 
@@ -445,7 +477,9 @@ These don't change the design, but they limit what I can *verify* here:
 - `docs.typesafe.ai`, `openrouter.ai`, `huggingface.co`, Dropbox, and Google Drive are
   blocked. PyPI works.
 - No Docker daemon, so the Neo4j tests can't run here.
-- No `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY`, so the live smoke test can't run here.
+- ~~No API keys~~ `OPENROUTER_API_KEY` and `openrouter.ai` access were added on
+  2026-09-28. The live smoke test now runs here (§0.1). There is still no `TYPESAFE_API_KEY`,
+  so TypeSafe direct remains unexercised.
 
 Everything will be written and unit-tested with fakes. The live, Neo4j, and eval runs
 need either a broader network policy plus secrets on this environment, or a run on your
