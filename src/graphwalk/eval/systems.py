@@ -5,6 +5,8 @@ retrieves verbalized per-entity documents built from it and asks an LLM. That is
 the question the eval exists to answer: walking with cheap decisions vs. retrieve+read.
 """
 
+import asyncio
+import math
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -18,8 +20,8 @@ from graphwalk.embeddings.base import Embedder, Vectors
 from graphwalk.eval.types import EvalQuestion, SystemAnswer
 from graphwalk.llm.base import LLMBackend, LLMError, Message
 from graphwalk.stores.base import GraphStore
-from graphwalk.traversal import TraversalConfig, Traverser
-from graphwalk.traversal.entry import EntryLink, EntryResolver
+from graphwalk.traversal import TraversalConfig, TraversalResult, Traverser
+from graphwalk.traversal.entry import EntryLink, EntryResolver, NameEntryResolver
 
 type Linking = Literal["given", "gold", "resolve", "resolve-best", "choice"]
 """Where entry nodes come from: the question's ``start`` (MetaQA), its ``gold_start``
@@ -205,6 +207,22 @@ RAG_INSTRUCTIONS = (
 )
 
 
+@dataclass(frozen=True)
+class RAGPrompts:
+    """The reader's wording. :data:`GRAPH_PROMPTS` (the default) reads facts verbalized
+    from a graph and answers with entity names; :data:`TEXT_PROMPTS` reads original
+    passages and answers with a short span (a name, date, number, or yes/no)."""
+
+    system: str
+    instructions: str
+    iter_system: str
+    iter_step: str
+    iter_last: str
+    context_label: str
+    document: str
+    """How the documents were made, recorded in ``describe()``."""
+
+
 def parse_answers(text: str) -> list[str]:
     answers: list[str] = []
     for part in text.replace("\n", "|").split("|"):
@@ -225,6 +243,7 @@ class VectorRAGSystem:
         *,
         k: int = 5,
         name: str = "vector-rag",
+        prompts: RAGPrompts | None = None,
     ) -> None:
         if index.embedder_model != embedder.model_id:
             msg = f"index built with {index.embedder_model}, querying with {embedder.model_id}"
@@ -234,6 +253,7 @@ class VectorRAGSystem:
         self._llm = llm
         self._k = k
         self._name = name
+        self._prompts = prompts or GRAPH_PROMPTS
 
     @property
     def name(self) -> str:
@@ -246,13 +266,14 @@ class VectorRAGSystem:
             "llm": self._llm.model_id,
             "embedder": self._embedder.model_id,
             "documents": len(self._index.ids),
-            "document": "one per entity: name, type, <= 40 incident triples",
+            "document": self._prompts.document,
         }
 
     def prompt(self, question: str, docs: Sequence[str]) -> list[Message]:
+        p = self._prompts
         facts = "\n".join(f"- {d}" for d in docs)
-        user = f"Facts:\n{facts}\n\nQuestion: {question}\n\n{RAG_INSTRUCTIONS}"
-        return [Message(role="system", content=RAG_SYSTEM), Message(role="user", content=user)]
+        user = f"{p.context_label}:\n{facts}\n\nQuestion: {question}\n\n{p.instructions}"
+        return [Message(role="system", content=p.system), Message(role="user", content=user)]
 
     async def answer(self, question: EvalQuestion) -> SystemAnswer:
         started = time.perf_counter()
@@ -310,6 +331,43 @@ ITER_LAST = (
     "the facts; several separated by ' | '>', or 'ANSWER: unknown'."
 )
 _ACTION = ("ANSWER:", "SEARCH:")
+ENTITY_DOCUMENT = "one per entity: name, type, <= 40 incident triples"
+
+GRAPH_PROMPTS = RAGPrompts(
+    system=RAG_SYSTEM,
+    instructions=RAG_INSTRUCTIONS,
+    iter_system=ITER_SYSTEM,
+    iter_step=ITER_STEP,
+    iter_last=ITER_LAST,
+    context_label="Facts",
+    document=ENTITY_DOCUMENT,
+)
+_SHORT = "a short answer only: the entity name, date, number, or yes/no, written as in the passages"
+TEXT_PROMPTS = RAGPrompts(
+    system="You answer questions using only the given passages.",
+    instructions=(
+        f"Answer with {_SHORT}. Output only the answer, nothing else. If the passages do "
+        "not contain the answer, output: unknown"
+    ),
+    iter_system=(
+        "You answer questions using passages from a document collection. You can search "
+        "the collection for more passages, one step at a time."
+    ),
+    iter_step=(
+        "Step {step} of {steps}. First write one short line starting with 'Thought:'. "
+        "Then, if the passages answer the question, write one line 'ANSWER: <"
+        + _SHORT
+        + ">'. Otherwise write one line 'SEARCH: <titles or names of the entities whose "
+        "passages you need next; several separated by ' | '>'. Search for entity names, "
+        "not questions."
+    ),
+    iter_last=(
+        "Step {step} of {steps}, the last one. First write one short line starting with "
+        "'Thought:'. Then write one line 'ANSWER: <" + _SHORT + ">', or 'ANSWER: unknown'."
+    ),
+    context_label="Passages",
+    document="one per paragraph: title and text",
+)
 
 
 def parse_step(text: str) -> tuple[str, list[str]]:
@@ -344,6 +402,7 @@ class IterativeRAGSystem:
         max_searches: int = 8,
         max_docs: int = 40,
         name: str = "iter-rag",
+        prompts: RAGPrompts | None = None,
     ) -> None:
         if index.embedder_model != embedder.model_id:
             msg = f"index built with {index.embedder_model}, querying with {embedder.model_id}"
@@ -358,6 +417,7 @@ class IterativeRAGSystem:
         self._max_searches = max_searches
         self._max_docs = max_docs
         self._name = name
+        self._prompts = prompts or GRAPH_PROMPTS
 
     @classmethod
     def name_index(cls, index: DocIndex, names: dict[NodeId, list[str]]) -> dict[str, list[int]]:
@@ -383,7 +443,7 @@ class IterativeRAGSystem:
             "llm": self._llm.model_id,
             "embedder": self._embedder.model_id,
             "documents": len(self._index.ids),
-            "document": "one per entity: name, type, <= 40 incident triples",
+            "document": self._prompts.document,
         }
 
     def prompt(
@@ -395,14 +455,15 @@ class IterativeRAGSystem:
         *,
         last: bool = False,
     ) -> list[Message]:
+        p = self._prompts
         facts = "\n".join(f"- {d}" for d in docs) or "(none)"
         history = "; ".join(searched) if searched else "(none yet)"
-        template = ITER_LAST if last or step == self._max_steps else ITER_STEP
+        template = p.iter_last if last or step == self._max_steps else p.iter_step
         user = (
-            f"Facts:\n{facts}\n\nSearched so far: {history}\n\nQuestion: {question}\n\n"
-            + template.format(step=step, steps=self._max_steps)
+            f"{p.context_label}:\n{facts}\n\nSearched so far: {history}\n\n"
+            f"Question: {question}\n\n" + template.format(step=step, steps=self._max_steps)
         )
-        return [Message(role="system", content=ITER_SYSTEM), Message(role="user", content=user)]
+        return [Message(role="system", content=p.iter_system), Message(role="user", content=user)]
 
     async def _search(self, query: str) -> list[int]:
         exact = self._names.get(query.strip().strip("\"'").casefold())
@@ -485,4 +546,210 @@ class IterativeRAGSystem:
             output_tokens=tokens_out,
             cost_usd=cost,
             detail={"steps": steps, "raw": raw, "docs": len(seen)},
+        )
+
+
+# -- graphwalk + LLM reader --------------------------------------------------------------
+
+READER_SYSTEM = "You answer questions using only the given facts from a knowledge graph."
+READER_INSTRUCTIONS = (
+    "Answer with a short answer only: the entity name, date, number, or yes/no, written as "
+    "in the facts. Output only the answer, nothing else. If the facts do not contain the "
+    "answer, output: unknown"
+)
+
+
+def node_line(node: Node) -> str:
+    """``Name (type): summary [key: value; ...]``."""
+    text = f"{node.name} ({node.type})"
+    if node.summary:
+        text += f": {node.summary}"
+    if node.attributes:
+        attrs = "; ".join(f"{k}: {v}" for k, v in node.attributes.items())
+        text += f" [{attrs}]"
+    return text
+
+
+async def node_facts(store: GraphStore, node: Node, limit: int) -> list[str]:
+    facts: list[str] = []
+    for neighbor in await store.neighbors(node.id, direction="both"):
+        if len(facts) >= limit:
+            break
+        other = neighbor.node.name
+        if neighbor.direction == "out":
+            facts.append(f"{node.name} {neighbor.edge.type} {other}")
+        else:
+            facts.append(f"{other} {neighbor.edge.type} {node.name}")
+    return facts
+
+
+class GraphReaderSystem:
+    """graphwalk, then an LLM reads what the walk reached.
+
+    Entry nodes are the linked node plus other entities the question names exactly (up
+    to ``max_entries``), so comparison questions get both sides. The walk runs from
+    each entry separately. The reader sees each walk's path and, for every entry and
+    walked node (at most ``max_nodes``), its summary, attributes, and up to
+    ``max_facts`` incident facts. It answers in free text, so dates, yes/no, and
+    comparisons are answerable, which graph-only walking cannot do.
+    """
+
+    def __init__(
+        self,
+        store: GraphStore,
+        traverser: Traverser,
+        llm: LLMBackend,
+        resolver: EntryResolver,
+        *,
+        names: NameEntryResolver | None = None,
+        max_entries: int = 2,
+        max_nodes: int = 20,
+        max_facts: int = 12,
+        max_path_names: int = 5,
+        name: str = "graphwalk-reader",
+    ) -> None:
+        self._store = store
+        self._traverser = traverser
+        self._llm = llm
+        self._resolver = resolver
+        self._names = names
+        self._max_entries = max_entries
+        self._max_nodes = max_nodes
+        self._max_facts = max_facts
+        self._max_path_names = max_path_names
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def describe(self) -> dict[str, JsonValue]:
+        embedder = self._traverser.embedder
+        return {
+            "system": "graphwalk-reader",
+            "decision_model": self._traverser.decider.model_id,
+            "llm": self._llm.model_id,
+            "embedder": None if embedder is None else embedder.model_id,
+            "max_entries": self._max_entries,
+            "max_nodes": self._max_nodes,
+            "max_facts": self._max_facts,
+            "traversal": self._traverser.config.model_dump(mode="json"),
+        }
+
+    async def _entries(self, question: str) -> tuple[list[NodeId], EntryLink]:
+        link = await self._resolver.link(question)
+        entries = list(link.nodes)
+        if self._names is not None:
+            for candidate in await self._names.candidates(question, 8):
+                if len(entries) >= self._max_entries:
+                    break
+                if candidate.exact and candidate.node_id not in entries:
+                    entries.append(candidate.node_id)
+        existing = await self._store.get_nodes(entries)
+        return [e for e in entries if e in existing][: self._max_entries], link
+
+    def _walk_line(self, result: TraversalResult, names: dict[NodeId, str]) -> str | None:
+        best = result.best
+        if best is None:
+            return None
+        parts = [" / ".join(names.get(s, s) for s in best.start)]
+        for hop in best.path:
+            shown = [names.get(t, t) for t in hop.targets[: self._max_path_names]]
+            more = len(hop.targets) - len(shown)
+            targets = ", ".join(shown) + (f" (+{more} more)" if more > 0 else "")
+            arrow = f"--{hop.relation}-->" if hop.direction == "out" else f"<--{hop.relation}--"
+            parts.append(f"{arrow} {targets}")
+        return " ".join(parts)
+
+    def prompt(self, question: str, walks: Sequence[str], nodes: Sequence[str]) -> list[Message]:
+        walk_text = "\n".join(f"- {w}" for w in walks) or "(none)"
+        node_text_ = "\n".join(nodes) or "(none)"
+        user = (
+            f"Walks through the graph toward the answer:\n{walk_text}\n\n"
+            f"Facts about the entities on those walks:\n{node_text_}\n\n"
+            f"Question: {question}\n\n{READER_INSTRUCTIONS}"
+        )
+        return [Message(role="system", content=READER_SYSTEM), Message(role="user", content=user)]
+
+    async def answer(self, question: EvalQuestion) -> SystemAnswer:
+        started = time.perf_counter()
+        entries, link = await self._entries(question.question)
+        if not entries:
+            return SystemAnswer(
+                answers=(),
+                answer_set=(),
+                status="no_entry",
+                latency_s=time.perf_counter() - started,
+                start=(),
+                decision_calls=link.decision_calls,
+                input_tokens=link.input_tokens,
+                output_tokens=link.output_tokens,
+                cost_usd=link.cost_usd if link.decision_calls else None,
+                detail={"linking": link.detail},
+            )
+        results = await asyncio.gather(
+            *(self._traverser.traverse(question.question, (e,)) for e in entries)
+        )
+        order: list[NodeId] = list(entries)
+        for result in results:
+            best = result.best
+            if best is None:
+                continue
+            for hop in best.path:
+                order.extend(hop.targets[: self._max_path_names])
+        order = list(dict.fromkeys(order))[: self._max_nodes]
+        found = await self._store.get_nodes(order)
+        names = {node_id: node.name for node_id, node in found.items()}
+        walks = [w for r in results if (w := self._walk_line(r, names)) is not None]
+        lines: list[str] = []
+        for node_id in order:
+            node = found.get(node_id)
+            if node is None:
+                continue
+            facts = await node_facts(self._store, node, self._max_facts)
+            lines.append(node_line(node) + "".join(f"\n  - {f}" for f in facts))
+        decision_calls = link.decision_calls + sum(r.trace.totals.decision_calls for r in results)
+        tokens_in = link.input_tokens + sum(r.trace.totals.input_tokens for r in results)
+        tokens_out = link.output_tokens + sum(r.trace.totals.output_tokens for r in results)
+        costs: list[float | None] = [r.trace.totals.cost_usd for r in results]
+        if link.decision_calls:
+            costs.append(link.cost_usd)
+        walk_s = time.perf_counter() - started
+        detail: dict[str, JsonValue] = {
+            "entries": list[JsonValue](entries),
+            "walks": list[JsonValue](walks),
+            "nodes": len(lines),
+            "walk_s": walk_s,
+        }
+        try:
+            result = await self._llm.complete(self.prompt(question.question, walks, lines))
+        except LLMError as error:
+            return SystemAnswer(
+                answers=(),
+                answer_set=(),
+                status="error",
+                error=str(error),
+                latency_s=walk_s,
+                decision_calls=decision_calls,
+                llm_calls=1,
+                input_tokens=tokens_in,
+                output_tokens=tokens_out,
+                start=tuple(entries),
+                detail=detail,
+            )
+        costs.append(result.cost_usd)
+        answers = tuple(parse_answers(result.text))[:1]
+        detail["raw"] = result.text
+        return SystemAnswer(
+            answers=answers,
+            answer_set=answers,
+            # Walks plus the reader call itself; excludes client-side rate-limit waits.
+            latency_s=walk_s + result.latency_s,
+            decision_calls=decision_calls,
+            llm_calls=1,
+            input_tokens=tokens_in + result.input_tokens,
+            output_tokens=tokens_out + result.output_tokens,
+            cost_usd=None if any(c is None for c in costs) else math.fsum(c or 0 for c in costs),
+            start=tuple(entries),
+            detail=detail,
         )
