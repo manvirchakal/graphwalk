@@ -220,3 +220,74 @@ questions. The obvious next experiment is a hybrid: combine the walk's paragraph
 retrieved ones, and let the reader search again when the walk runs out. At that point
 graphwalk is a component of a RAG system rather than an alternative to it, and it
 should be evaluated as one.
+
+## Step 2: FanOutQA, where walking should win on text
+
+FanOutQA (dev set) asks fan-out questions over Wikipedia whose answers are sets or
+item -> value maps, e.g. "the batting hand of each of the first five picks in the 1998
+MLB draft". If walking a text-derived graph beats retrieval anywhere, it should be
+here: a relation-mode hop takes *all* targets of a relation at once, which is what
+beat RAG on MetaQA.
+
+**Setup** (`scripts/fanout.py`; run `results/20260929T211957Z-fanoutqa/`):
+
+- 40 dev questions (seed 0) and their 233 evidence pages, from a pinned community
+  mirror of the FanOutQA corpus. Wikipedia's API now rate-limits bulk fetches: 11 of
+  233 pages arrived in 9 minutes. Page ids match all 1,562 dev evidence pages;
+  revisions can't be checked.
+- Pages are truncated to 8,000 characters. That keeps 89.4% of reference strings,
+  versus 92.4% for full pages, whose median length is 98k characters. Every system
+  reads the same truncated pages, pooled into one graph (1,220 chunks) and one
+  page-level RAG index.
+- Systems, all on `gpt-6-luna` with a list-style answer prompt:
+  - graphwalk + reader over extracted facts, and over source pages (up to 20), both
+    with relation-mode walks (`relation-v2`);
+  - one-shot RAG (top 10 pages);
+  - multi-step RAG (up to 20 pages, title search).
+- Metric: FanOutQA's accuracy (the share of reference strings, keys and values, found
+  in the answer; strict = all found), without its lemmatizer.
+
+| system | loose acc | strict acc | $/1k q | p50 s |
+|---|---|---|---|---|
+| graphwalk + reader, extracted facts | 0.364 | 0.050 | 1.09 | 6.0 |
+| graphwalk + reader, source pages | 0.482 | 0.050 | 2.64 | 6.4 |
+| text RAG (top 10 pages) | 0.589 | 0.200 | 2.95 | 4.7 |
+| **text multi-step RAG** | **0.670** | **0.300** | 6.04 | 6.5 |
+| ceiling (strings present in the truncated pages) | 0.894 | | | |
+
+Head to head, per question: multi-step RAG is better on 20, tied on 15, and worse on 5
+than graphwalk + reader over source pages.
+
+**Why walking still loses here**
+
+- **The walks do find sets.** For example, Supreme Court ← `associate_justice_of` ←
+  all the justices; IBM Award ← `won` ← nine players; Solar System ← `planet_of` ←
+  all planets.
+- **But most FanOutQA sets are ranked or time-bound:** "the most recent four
+  justices", "the top 5 highest-grossing films", "the 5 most recent Olympics". The
+  extracted graph holds the set but not the order (ranks, dates), so the walk returns
+  a superset and the reader has to guess. Multi-step RAG reads the ordered table on
+  the list page, then fetches each item's page by title. That is exactly the fan-out
+  strategy, and on Wikipedia every item has its own page.
+- **Entry linking and noisy walks still cost questions.** The Olympics question started
+  at "Low Countries" and scored 0; another walk meandered Avatar → `music_by` → James
+  Horner → Titanic instead of reading the ranked list.
+- **Cost is graphwalk's one advantage:** about 44% of multi-step RAG's per-query cost
+  over source pages, 18% over facts. That's before ingestion, which cost about $2 for
+  233 pages. Multi-step RAG needs none.
+
+**Cost of step 2:** $2.69 of API usage (key usage $6.20 → $8.89). That's above my
+$1.90 estimate, because the pages split into 1,220 chunks rather than about 920.
+
+## Verdict on graphwalk over text
+
+Across 2Wiki, HotpotQA and FanOutQA, walking a graph built from text by a small
+extractor does not beat multi-step RAG over the same text. It loses 9–15 F1 on
+single-answer questions (after the walk-then-read-source fix) and 19 points of loose
+accuracy on fan-out questions. The test designed to favor walking (set-valued
+answers) did not change that. The failure is not the walk's decision-making: walks
+reach the right sets. The problem is that text-to-graph extraction drops exactly what
+these questions need (orderings, dates, qualifiers), while retrieval keeps the source.
+
+graphwalk's demonstrated advantage remains curated knowledge graphs (MetaQA, M5), and
+that claim still needs the strongest competitor there: an LLM writing a graph query.
