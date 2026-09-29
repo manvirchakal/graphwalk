@@ -37,13 +37,15 @@ type RouteMethod = Literal["no_candidates", "exact", "decision", "llm", "fallbac
 
 NEW_LABEL = "NEW"
 ROUTE_TASK = (
-    "The instructions give an entity mentioned in the passage in the state. Is it the "
-    "same real-world entity as one of these existing knowledge-graph nodes? Choose that "
-    "node, or NEW if it is none of them. A similar name is not enough: the type, "
-    "description, and relations must fit the passage. Different spellings, "
-    "abbreviations, or fuller forms of the same name can be the same entity."
+    "The instructions give an entity mentioned in the passage in the state. Which existing "
+    "knowledge-graph node is that same real-world entity? Names can be spelled, "
+    "abbreviated, or titled differently (e.g. 'Count X of Y' and 'X, Count of Y'). A node "
+    "with the same or an equivalent name and a compatible type IS the same entity, unless "
+    "the passage or the node's facts contradict it (different dates, places, relatives, or "
+    "roles that cannot both be true). A node need not repeat the passage's facts. Choose "
+    "NEW only if no node is that entity."
 )
-NEW_DESCRIPTION = "None of these: a different entity, to be added as a new node."
+NEW_DESCRIPTION = "None of these nodes is this entity: add it as a new node."
 MAX_PASSAGE_CHARS = 4000
 
 _WORD = re.compile(r"\w+")
