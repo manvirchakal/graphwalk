@@ -127,6 +127,19 @@ def _retract_element[T: Node | Edge](element: T, gone: Collection[str]) -> T | N
     )
 
 
+async def _affected(store: GraphStore, gone: Collection[str]) -> tuple[list[Edge], list[Node]]:
+    """Edges and nodes that may carry provenance from ``gone``: found through the
+    store's provenance index if it has one (``elements_from``), else by a full scan."""
+    finder = getattr(store, "elements_from", None)
+    if finder is None:
+        return [e async for e in store.iter_edges()], [n async for n in store.iter_nodes()]
+    found: list[tuple[str, str]] = await finder(gone)
+    edges = [e for kind, i in found if kind == "edge" and (e := await store.get_edge(i))]
+    node_ids = [i for kind, i in found if kind == "node"]
+    got = await store.get_nodes(node_ids)
+    return edges, [got[i] for i in node_ids if i in got]
+
+
 async def retract(store: GraphStore, gone: Collection[str]) -> Retraction:
     """Remove every provenance record whose ``source_id`` is in ``gone``.
 
@@ -137,7 +150,7 @@ async def retract(store: GraphStore, gone: Collection[str]) -> Retraction:
     report = Retraction()
     if not gone:
         return report
-    edges = [e async for e in store.iter_edges()]
+    edges, nodes = await _affected(store, gone)
     for edge in edges:
         if not any(p.source_id in gone for p in edge.provenance):
             continue
@@ -148,7 +161,6 @@ async def retract(store: GraphStore, gone: Collection[str]) -> Retraction:
         else:
             await store.upsert_edge(kept)
             report.edges_updated += 1
-    nodes = [n async for n in store.iter_nodes()]
     for node in nodes:
         if not any(p.source_id in gone for p in node.provenance):
             continue

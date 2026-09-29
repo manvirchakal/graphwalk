@@ -87,25 +87,54 @@ class FileSource:
 
     def documents(self) -> Iterator[SourceDocument]:
         for path, name in self._files():
-            suffix = path.suffix.lower()
-            if suffix in TEXT_SUFFIXES:
-                text = path.read_text(encoding="utf-8")
-                yield SourceDocument(doc_id=name, text=text, title=path.stem)
-            elif suffix == ".csv":
-                with path.open(encoding="utf-8", newline="") as fh:
-                    yield from _records(name, csv.DictReader(fh))
-            elif suffix == ".jsonl":
-                with path.open(encoding="utf-8") as fh:
-                    rows = [json.loads(line) for line in fh if line.strip()]
-                yield from _records(name, rows)
-            elif suffix == ".json":
-                with path.open(encoding="utf-8") as fh:
-                    loaded: Any = json.load(fh)
-                rows = cast("list[Any]", loaded) if isinstance(loaded, list) else [loaded]
-                yield from _records(name, rows)
-            else:
-                msg = f"{path}: unsupported file type {suffix!r}"
-                raise ValueError(msg)
+            yield from _file_documents(path, name)
+
+    def document(self, doc_id: str) -> SourceDocument | None:
+        """Re-read one document by id, parsing only the file it lives in; ``None`` if it
+        no longer exists."""
+        candidates = [doc_id]
+        if "#" in doc_id:  # ``<file>#<record id>``; the file name may contain '#' too
+            candidates.append(doc_id.rsplit("#", 1)[0])
+        for name in candidates:
+            path = self._resolve(name)
+            if path is None:
+                continue
+            for doc in _file_documents(path, name):
+                if doc.doc_id == doc_id:
+                    return doc
+        return None
+
+    def _resolve(self, name: str) -> Path | None:
+        """The file named ``name`` in this source, if it exists inside the root."""
+        if self._path.is_file():
+            return self._path if name == self._path.name else None
+        root = self._path.resolve()
+        path = (root / name).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            return None
+        return path if path.suffix.lower() in SUFFIXES else None
+
+
+def _file_documents(path: Path, name: str) -> Iterator[SourceDocument]:
+    suffix = path.suffix.lower()
+    if suffix in TEXT_SUFFIXES:
+        text = path.read_text(encoding="utf-8")
+        yield SourceDocument(doc_id=name, text=text, title=path.stem)
+    elif suffix == ".csv":
+        with path.open(encoding="utf-8", newline="") as fh:
+            yield from _records(name, csv.DictReader(fh))
+    elif suffix == ".jsonl":
+        with path.open(encoding="utf-8") as fh:
+            rows = [json.loads(line) for line in fh if line.strip()]
+        yield from _records(name, rows)
+    elif suffix == ".json":
+        with path.open(encoding="utf-8") as fh:
+            loaded: Any = json.load(fh)
+        rows = cast("list[Any]", loaded) if isinstance(loaded, list) else [loaded]
+        yield from _records(name, rows)
+    else:
+        msg = f"{path}: unsupported file type {suffix!r}"
+        raise ValueError(msg)
 
 
 def _first(record: Mapping[str, Any], keys: tuple[str, ...]) -> str | None:

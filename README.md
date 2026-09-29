@@ -8,14 +8,14 @@ decision model returns a calibrated probability distribution over them. The bet 
 many cheap, calibrated decisions beat LLM-driven graph RAG on cost and latency at
 competitive accuracy. The built-in eval harness exists to test exactly that bet.
 
-> **Status: pre-alpha.** Graph store, Jev decision backend, traversal engine (greedy /
-> beam / sample, entity and relation hops), and the eval harness work. Ingestion and Neo4j
-> are still being built. First results: [`docs/results-m5.md`](docs/results-m5.md). Design:
-> [`docs/design.md`](docs/design.md).
+> **Status: pre-alpha.** Ingestion, graph stores (NetworkX, SQLite), traversal, the
+> `locate`/`read` retriever, and the eval harness work. Results so far:
+> [`docs/results-m7.md`](docs/results-m7.md) (graph walking has not beaten multi-step
+> RAG yet). Design: [`docs/design.md`](docs/design.md). Plan: [`roadmap.md`](roadmap.md).
 
 ```bash
-uv run graphwalk query graph.json "Where was the director of Inception born?" \
-    --strategy beam --beam-width 3 --trace trace.json
+graphwalk ingest docs/ --graph my.db
+graphwalk locate my.db "Where was the director of Inception born?"
 ```
 
 ## Quickstart
@@ -33,28 +33,56 @@ Optional extras:
 
 | Extra        | Enables                                           |
 |--------------|---------------------------------------------------|
-| `neo4j`      | `Neo4jStore` (official async driver)              |
-| `embeddings` | local sentence-transformers embedder for prefilter |
+| `embeddings` | local fastembed embedder (prefilter, dense locate) |
 | `llm`        | LiteLLM backend for ingestion and the RAG baseline |
 | `eval`       | dataset download for the eval harness             |
 
 ```bash
-uv sync --extra neo4j --extra embeddings
+uv sync --extra llm --extra embeddings
 ```
 
 ## Ingestion
 
 ```bash
 uv sync --extra llm --extra embeddings
-graphwalk ingest docs/ --graph my.graph.json --report ingest-report.json
-graphwalk query --graph my.graph.json "Who directed ...?"
+graphwalk ingest docs/ --graph my.db --report ingest-report.json
+graphwalk locate my.db "Who directed ...?" -k 5 --context 200
 ```
+
+A `.db` graph is SQLite (write-ahead logging, so it can be read while ingestion
+writes); any other path is NetworkX JSON. `graphwalk migrate graph.json graph.db`
+converts one to the other.
 
 `ingest` reads `.txt`/`.md` files (one document each) and `.json`/`.jsonl`/`.csv`
 records (one document per record). An LLM extracts entities and relations, and Jev
 decides for each entity whether it is an existing node or a new one. Low-confidence
 decisions go to the LLM. Re-running is idempotent: unchanged documents are skipped, and
 changed ones are retracted and re-ingested (`--prune` also retracts deleted ones).
+
+## Library: `locate` and `read`
+
+The graph is an index over your text. `locate` walks it from the entities a question
+names and returns the source spans behind the walk (each extracted fact records the
+sentence it came from), with the path that reached them; `read` returns the text.
+
+```python
+from graphwalk import Index
+
+async with Index.open("my.db", llm=llm, decider=decider) as index:
+    await index.ingest("docs/")
+    for location in await index.locate("Where was Marie Curie's husband born?", k=5):
+        passage = await index.read(location, context=100)
+        print(location.key, location.path, passage.text)
+```
+
+`mode="dense"` ranks text chunks by embedding similarity instead, and `mode="hybrid"`
+fuses both (needs `embedder=`). Which default is best is still an open experiment
+(E1 in the roadmap). `read` detects documents that changed since `locate` ran and
+flags the passage as `stale` (or refuses, with `on_stale="refuse"`). By default the
+text is kept in the store; `IngestConfig(store_text=False)` with `FileDocuments`
+re-reads it from disk instead.
+
+Only names exported from `graphwalk` are public API; submodules may change.
 
 ## Decision backend
 

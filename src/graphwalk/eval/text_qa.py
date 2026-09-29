@@ -110,12 +110,25 @@ def source_documents(
     }
 
 
+LEGACY_DEFAULTS: dict[str, JsonValue] = {"evidence": False, "store_text": True}
+"""Config fields added after graphs were cached, with the values that reproduce the old
+behavior. Left out of the key at those values, so existing cache names still match."""
+
+
+def legacy_config_dump(config: IngestConfig) -> dict[str, JsonValue]:
+    dump = config.model_dump(mode="json")
+    for field, value in LEGACY_DEFAULTS.items():
+        if dump.get(field) == value:
+            del dump[field]
+    return dump
+
+
 def graph_key(dataset: str, records: Sequence[Mapping[str, Any]], config: IngestConfig) -> str:
     """Names a cached ingested graph: the dataset, the pooled paragraphs, the config."""
     material = json.dumps(
         {
             "docs": [(d.doc_id, d.text) for d in documents(records)],
-            "config": config.model_dump(mode="json"),
+            "config": legacy_config_dump(config),
         },
         sort_keys=True,
         ensure_ascii=False,

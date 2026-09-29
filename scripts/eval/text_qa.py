@@ -56,7 +56,7 @@ async def main(args: argparse.Namespace) -> None:
 
     embedder = FastEmbedEmbedder(EMBED)
     decider = _make_backend()
-    config = IngestConfig(routing="jev", escalate=args.escalation_model is not None)
+    config = IngestConfig(routing="jev", escalate=args.escalation_model is not None, evidence=False)
     cache_path = cache_dir() / "extractions" / (re.sub(r"[^\w.-]+", "_", args.llm) + ".json")
     cache = JsonFileCache(cache_path)
     graph_path = (

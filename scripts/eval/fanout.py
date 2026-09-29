@@ -46,7 +46,7 @@ from graphwalk.llm.litellm_backend import LiteLLMBackend
 
 EMBED = "BAAI/bge-small-en-v1.5"
 PRESET = "relation-v2"
-INGEST = IngestConfig(routing="jev", escalate=True)
+INGEST = IngestConfig(routing="jev", escalate=True, evidence=False)
 
 
 def score_table(runs, reference) -> str:

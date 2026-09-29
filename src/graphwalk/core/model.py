@@ -37,6 +37,21 @@ class Provenance(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     content_hash: str = Field(min_length=1)
     """Hash of the chunk or record this was derived from (see :func:`content_hash`)."""
+    start: int | None = Field(default=None, ge=0)
+    """Character offset in the source document where the supporting text begins."""
+    end: int | None = Field(default=None, ge=0)
+    """Offset just past the supporting text. ``start``/``end`` are both set or both
+    ``None`` (records from before offsets were tracked, or with no text behind them)."""
+
+    @model_validator(mode="after")
+    def _span_is_valid(self) -> Self:
+        if (self.start is None) != (self.end is None):
+            msg = "start and end must both be set or both be None"
+            raise ValueError(msg)
+        if self.start is not None and self.end is not None and self.end < self.start:
+            msg = f"end ({self.end}) is before start ({self.start})"
+            raise ValueError(msg)
+        return self
 
 
 class ConflictingValue(BaseModel):
@@ -158,3 +173,24 @@ class Neighbor(BaseModel):
 def utc_now() -> datetime:
     """Current time as an aware UTC datetime (for provenance timestamps)."""
     return datetime.now(UTC)
+
+
+class StoredDocument(BaseModel):
+    """A source document as ingested: what locations point into.
+
+    ``key`` is the provenance ``source_id`` of everything derived from the document
+    (``<source id>/<doc id>``). ``text`` is ``None`` when only the hash was kept; the
+    text is then re-read from where it came from (see ``graphwalk.documents``).
+    """
+
+    model_config = _FROZEN
+
+    key: str = Field(min_length=1)
+    source_id: str = Field(min_length=1)
+    doc_id: str = Field(min_length=1)
+    title: str | None = None
+    text: str | None = None
+    text_hash: str = Field(min_length=1)
+    """``content_hash(text)`` of the text at ingestion."""
+    length: int = Field(ge=0)
+    ingested_at: AwareDatetime

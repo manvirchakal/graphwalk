@@ -21,15 +21,16 @@ from typing import cast
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from graphwalk.core.hashing import content_hash
-from graphwalk.core.model import NodeId, Provenance, utc_now
+from graphwalk.core.model import NodeId, Provenance, StoredDocument, utc_now
 from graphwalk.decisions.base import DecisionBackend
 from graphwalk.embeddings.base import Embedder
-from graphwalk.ingest.chunking import chunk_text
+from graphwalk.ingest.chunking import TextChunk, chunk_spans
 from graphwalk.ingest.extraction import (
-    EXTRACTOR_VERSION,
     Extraction,
     ExtractionResult,
     extract,
+    extractor_version,
+    find_evidence,
     name_key,
 )
 from graphwalk.ingest.resolution import Retraction, retract, upsert_entity, upsert_relation
@@ -37,7 +38,7 @@ from graphwalk.ingest.routing import NodeIndex, RouteBatch, Router, RoutingMode
 from graphwalk.ingest.sources import Source, SourceDocument
 from graphwalk.ingest.spend import Spend
 from graphwalk.llm.base import LLMBackend
-from graphwalk.stores.base import GraphStore
+from graphwalk.stores.base import DocumentStore, GraphStore
 
 LEDGER_PREFIX = "ingest:ledger:"
 INCOMPLETE = "incomplete"
@@ -67,6 +68,18 @@ class IngestConfig(BaseModel):
     """Retract documents in the ledger that the source no longer yields."""
     min_similarity: float = Field(default=0.75, ge=-1.0, le=1.0)
     """Embedding similarity for a node to be a routing candidate."""
+    evidence: bool = True
+    """Ask the extractor for the sentence supporting each entity and relation, and
+    record its offsets in provenance. Off, provenance spans the whole chunk. It changes
+    the prompt, so switching it re-ingests every document, and extractions cached with
+    the other setting are not reused."""
+    store_text: bool = True
+    """Keep document text in the store (if it is a ``DocumentStore``), so locations can
+    be read back from it. Off, only a hash is kept and text is re-read from the source."""
+
+    @property
+    def extractor(self) -> str:
+        return extractor_version(evidence=self.evidence)
 
 
 class RouteRecord(BaseModel):
@@ -118,6 +131,10 @@ class IngestReport(BaseModel):
     output_tokens: int = 0
     cost_usd: float | None = 0.0
     extraction_cache_hits: int = 0
+    evidence_found: int = 0
+    """Entities and relations whose quoted evidence was found in the chunk."""
+    evidence_missing: int = 0
+    """Those whose evidence was absent or not found: their provenance spans the chunk."""
     elapsed_s: float = 0.0
     extract_wait_s: float = 0.0
     """Time routing spent waiting for extractions (extraction runs ahead concurrently)."""
@@ -138,12 +155,12 @@ class IngestReport(BaseModel):
         self.cost_usd = total.cost_usd
 
 
-def document_hash(doc: SourceDocument) -> str:
-    return content_hash({"title": doc.title, "text": doc.text, "extractor": EXTRACTOR_VERSION})
+def document_hash(doc: SourceDocument, extractor: str = "1") -> str:
+    return content_hash({"title": doc.title, "text": doc.text, "extractor": extractor})
 
 
-def chunk_key(chunk: str, title: str | None) -> str:
-    return content_hash({"title": title, "chunk": chunk, "extractor": EXTRACTOR_VERSION})
+def chunk_key(chunk: str, title: str | None, extractor: str = "1") -> str:
+    return content_hash({"title": title, "chunk": chunk, "extractor": extractor})
 
 
 def provenance_id(source_id: str, doc_id: str) -> str:
@@ -158,18 +175,32 @@ def _passage(chunk: "_Chunk") -> str:
 @dataclass
 class _Chunk:
     doc: SourceDocument
-    text: str
+    span: TextChunk
     key: str
     result: ExtractionResult | None = None
+
+    @property
+    def text(self) -> str:
+        return self.span.text
+
+    def locate(self, quote: str | None) -> tuple[int, int] | None:
+        """Document offsets of ``quote`` in this chunk, if it is there."""
+        found = find_evidence(self.span.text, quote)
+        return None if found is None else self.span.to_doc(*found)
 
 
 class _Progress:
     """Marks a document ingested in the ledger once all its chunks are applied."""
 
     def __init__(
-        self, todo: list[SourceDocument], chunks: list[_Chunk], ledger: dict[str, str]
+        self,
+        todo: list[SourceDocument],
+        chunks: list[_Chunk],
+        ledger: dict[str, str],
+        extractor: str,
     ) -> None:
         self._ledger = ledger
+        self._extractor = extractor
         self._docs = {doc.doc_id: doc for doc in todo}
         self._remaining: dict[str, int] = {}
         self._ok: dict[str, bool] = {}
@@ -178,7 +209,7 @@ class _Progress:
             self._remaining[doc_id] = self._remaining.get(doc_id, 0) + 1
         for doc in todo:  # no chunks (empty text): nothing to do
             if doc.doc_id not in self._remaining:
-                ledger[doc.doc_id] = document_hash(doc)
+                ledger[doc.doc_id] = document_hash(doc, extractor)
 
     def done(self, chunk: _Chunk, *, ok: bool, report: IngestReport) -> None:
         doc_id = chunk.doc.doc_id
@@ -187,7 +218,9 @@ class _Progress:
         if self._remaining[doc_id] == 0:
             complete = self._ok[doc_id]
             report.failed += not complete
-            self._ledger[doc_id] = document_hash(self._docs[doc_id]) if complete else INCOMPLETE
+            self._ledger[doc_id] = (
+                document_hash(self._docs[doc_id], self._extractor) if complete else INCOMPLETE
+            )
 
 
 type ExtractionCache = MutableMapping[str, JsonValue]
@@ -247,17 +280,18 @@ class IngestPipeline:
         retraction: Retraction = await retract(self._store, gone)
         report.nodes_deleted += retraction.nodes_deleted
         report.edges_deleted += retraction.edges_deleted
+        await self._record_documents(source.source_id, todo, gone)
         chunks = [
-            _Chunk(doc, text, chunk_key(text, doc.title))
+            _Chunk(doc, span, chunk_key(span.text, doc.title, cfg.extractor))
             for doc in todo
-            for text in chunk_text(doc.text, max_chars=cfg.max_chunk_chars)
+            for span in chunk_spans(doc.text, max_chars=cfg.max_chunk_chars)
         ]
         report.chunks = len(chunks)
         index = await NodeIndex.build(
             self._store, self._embedder, min_similarity=cfg.min_similarity
         )
         router = self._router(index)
-        progress = _Progress(todo, chunks, ledger)
+        progress = _Progress(todo, chunks, ledger, cfg.extractor)
         semaphore = asyncio.Semaphore(cfg.concurrency)
         tasks = [asyncio.create_task(self._extract_one(c, semaphore, report)) for c in chunks]
         try:
@@ -296,7 +330,7 @@ class IngestPipeline:
         gone: set[str] = set()
         for doc in docs:
             before = ledger.get(doc.doc_id)
-            if before == document_hash(doc):
+            if before == document_hash(doc, self.config.extractor):
                 report.unchanged += 1
                 continue
             todo.append(doc)
@@ -324,6 +358,38 @@ class IngestPipeline:
             route_threshold=cfg.route_threshold,
             max_relations=cfg.max_relations,
         )
+
+    async def _record_documents(
+        self, source_id: str, todo: list[SourceDocument], gone: set[str]
+    ) -> None:
+        """Keep the documents being ingested (and drop retracted ones) for ``read``."""
+        if not isinstance(self._store, DocumentStore):
+            return
+        for key in sorted(gone):
+            await self._store.delete_document(key)
+        now = utc_now()
+        for doc in todo:
+            await self._store.put_document(
+                StoredDocument(
+                    key=provenance_id(source_id, doc.doc_id),
+                    source_id=source_id,
+                    doc_id=doc.doc_id,
+                    title=doc.title,
+                    text=doc.text if self.config.store_text else None,
+                    text_hash=content_hash(doc.text),
+                    length=len(doc.text),
+                    ingested_at=now,
+                )
+            )
+
+    def _span(self, chunk: _Chunk, quote: str | None, report: IngestReport) -> tuple[int, int]:
+        found = chunk.locate(quote) if self.config.evidence else None
+        if self.config.evidence:
+            if found is None:
+                report.evidence_missing += 1
+            else:
+                report.evidence_found += 1
+        return found or (chunk.span.start, chunk.span.end)
 
     async def _save_ledger(self, source_id: str, ledger: dict[str, str]) -> None:
         await self._store.set_metadata(LEDGER_PREFIX + source_id, cast("JsonValue", dict(ledger)))
@@ -374,7 +440,9 @@ class IngestPipeline:
             report.extraction_cache_hits += 1
             return
         async with semaphore:
-            chunk.result = await extract(self._llm, chunk.text, title=chunk.doc.title)
+            chunk.result = await extract(
+                self._llm, chunk.text, title=chunk.doc.title, evidence=self.config.evidence
+            )
         report.add_spend(chunk.result.spend)
         if self._cache is not None and chunk.result.error is None:
             self._cache[chunk.key] = chunk.result.extraction.model_dump(mode="json")
@@ -422,11 +490,14 @@ class IngestPipeline:
         for route in batch.routes:
             if route.method == "llm":
                 report.escalations += 1
+            start, end = self._span(chunk, route.mention.evidence, report)
             provenance = Provenance(
                 source_id=doc_source,
                 ingested_at=now,
                 confidence=route.probability if route.method == "decision" else 1.0,
                 content_hash=chunk.key,
+                start=start,
+                end=end,
             )
             chosen = None if route.target is None else await self._store.get_node(route.target)
             node, created = await upsert_entity(
@@ -454,8 +525,14 @@ class IngestPipeline:
                 )
             )
         for relation in extraction.relations:
+            start, end = self._span(chunk, relation.evidence, report)
             provenance = Provenance(
-                source_id=doc_source, ingested_at=now, confidence=1.0, content_hash=chunk.key
+                source_id=doc_source,
+                ingested_at=now,
+                confidence=1.0,
+                content_hash=chunk.key,
+                start=start,
+                end=end,
             )
             outcome = await upsert_relation(
                 self._store,

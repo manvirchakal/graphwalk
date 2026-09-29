@@ -13,7 +13,15 @@ from pydantic import JsonValue
 
 from graphwalk.core.errors import EdgeNotFoundError, NodeNotFoundError
 from graphwalk.core.merge import merge_edge_data, merge_node_data, rewire_edge
-from graphwalk.core.model import Direction, Edge, EdgeId, Neighbor, Node, NodeId
+from graphwalk.core.model import (
+    Direction,
+    Edge,
+    EdgeId,
+    Neighbor,
+    Node,
+    NodeId,
+    StoredDocument,
+)
 
 FILE_FORMAT = "graphwalk.networkx"
 FILE_VERSION = 1
@@ -34,6 +42,7 @@ class NetworkXStore:
         self._graph: nx.MultiDiGraph[NodeId] = nx.MultiDiGraph()
         self._edge_index: dict[EdgeId, tuple[NodeId, NodeId]] = {}
         self._metadata: dict[str, JsonValue] = {}
+        self._documents: dict[str, StoredDocument] = {}
 
     # ------------------------------------------------------------------ internals
 
@@ -208,6 +217,25 @@ class NetworkXStore:
         else:
             self._metadata[key] = copy.deepcopy(value)
 
+    def metadata_items(self) -> dict[str, JsonValue]:
+        """A copy of every metadata entry (for migrating to another store)."""
+        return copy.deepcopy(self._metadata)
+
+    # ------------------------------------------------------------------ DocumentStore
+
+    async def put_document(self, document: StoredDocument) -> None:
+        self._documents[document.key] = document
+
+    async def get_document(self, key: str) -> StoredDocument | None:
+        return self._documents.get(key)
+
+    async def delete_document(self, key: str) -> None:
+        self._documents.pop(key, None)
+
+    async def iter_documents(self) -> AsyncIterator[StoredDocument]:
+        for key in sorted(self._documents):
+            yield self._documents[key]
+
     async def counts(self) -> tuple[int, int]:
         return self._graph.number_of_nodes(), self._graph.number_of_edges()
 
@@ -215,6 +243,7 @@ class NetworkXStore:
         self._graph.clear()
         self._edge_index.clear()
         self._metadata.clear()
+        self._documents.clear()
 
     async def close(self) -> None:
         return None
@@ -232,6 +261,9 @@ class NetworkXStore:
                 if (edge := self._edge(edge_id)) is not None
             ],
             "metadata": copy.deepcopy(self._metadata),
+            "documents": [
+                self._documents[key].model_dump(mode="json") for key in sorted(self._documents)
+            ],
         }
 
     async def save(self, path: str | os.PathLike[str]) -> None:
@@ -255,6 +287,9 @@ class NetworkXStore:
         for raw in document["edges"]:
             await store.upsert_edge(Edge.model_validate(raw))
         store._metadata = dict(document.get("metadata") or {})  # absent in older files
+        for raw in document.get("documents") or ():  # absent in older files
+            doc = StoredDocument.model_validate(raw)
+            store._documents[doc.key] = doc
         return store
 
 

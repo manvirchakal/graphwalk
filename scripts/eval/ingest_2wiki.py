@@ -28,9 +28,9 @@ from graphwalk.ingest import IngestConfig, JsonFileCache
 from graphwalk.llm.litellm_backend import LiteLLMBackend
 
 VARIANTS = {
-    "exact": IngestConfig(routing="exact"),
-    "jev": IngestConfig(routing="jev", escalate=False),
-    "jev+llm": IngestConfig(routing="jev", escalate=True),
+    "exact": IngestConfig(routing="exact", evidence=False),
+    "jev": IngestConfig(routing="jev", escalate=False, evidence=False),
+    "jev+llm": IngestConfig(routing="jev", escalate=True, evidence=False),
 }
 
 

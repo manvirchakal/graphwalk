@@ -25,10 +25,17 @@ from graphwalk.ingest import (
     provenance_id,
     retract,
 )
-from graphwalk.ingest.extraction import EXTRACT_SYSTEM, clean, parse_extraction
+from graphwalk.ingest.extraction import (
+    EXTRACT_SYSTEM,
+    EXTRACT_SYSTEM_EVIDENCE,
+    clean,
+    parse_extraction,
+)
 from graphwalk.ingest.routing import NEW_LABEL, content_words, parse_label
 from graphwalk.llm import FakeLLM, Message
 from graphwalk.stores.networkx_store import NetworkXStore
+
+EXTRACT_PROMPTS = (EXTRACT_SYSTEM, EXTRACT_SYSTEM_EVIDENCE)
 
 if TYPE_CHECKING:
     from pydantic import JsonValue
@@ -179,7 +186,7 @@ class Scripted:
         self.llm = FakeLLM(self.respond, cost_per_call=0.001)
 
     def respond(self, messages: Sequence[Message]) -> str:
-        if messages[0].content != EXTRACT_SYSTEM:
+        if messages[0].content not in EXTRACT_PROMPTS:
             return self.escalate
         passage = _passage(messages)
         if passage in self.fail:
@@ -187,7 +194,7 @@ class Scripted:
         return json.dumps(EXTRACTIONS[passage])
 
     def extraction_calls(self) -> int:
-        return sum(1 for m in self.llm.calls if m[0].content == EXTRACT_SYSTEM)
+        return sum(1 for m in self.llm.calls if m[0].content in EXTRACT_PROMPTS)
 
 
 def choose(label: str) -> FakeDecisionBackend:

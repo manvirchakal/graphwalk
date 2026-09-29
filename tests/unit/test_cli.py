@@ -131,3 +131,55 @@ def test_ingest_builds_and_updates_a_graph(tmp_path: Path, monkeypatch: pytest.M
     assert bad.exit_code == 2
     missing = runner.invoke(app, ["ingest", str(tmp_path / "nope"), "--graph", str(graph)])
     assert missing.exit_code == 2
+
+
+def test_ingest_into_sqlite_then_locate_and_migrate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from test_index import PIERRE, QUERY, extract, walker
+
+    from graphwalk.embeddings import FakeEmbedder
+    from graphwalk.llm import FakeLLM
+
+    monkeypatch.setattr(cli, "_ingest_backends", lambda *_a: (FakeLLM(extract), None, None))
+    monkeypatch.setattr(cli, "_make_backend", walker)
+    monkeypatch.setattr(cli, "_locate_embedder", lambda _m: FakeEmbedder())
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "pierre.txt").write_text(PIERRE, encoding="utf-8")
+    db = tmp_path / "g.db"
+    args = ["ingest", str(docs), "--graph", str(db), "--routing", "exact", "--source-id", "d"]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    assert "(2 nodes, 1 edges)" in result.output
+
+    query = "Where was Pierre Curie born?"
+    located = runner.invoke(app, ["locate", str(db), query, "-k", "2"])
+    assert located.exit_code == 0, located.output
+    assert "1. d/pierre.txt" in located.output
+    assert "via Pierre Curie --born_in--> Paris" in located.output
+    assert "Pierre Curie was born in Paris, France, in 1859." in located.output
+    as_json = runner.invoke(app, ["locate", str(db), query, "--json", "--mode", "hybrid"])
+    assert as_json.exit_code == 0, as_json.output
+    first = json.loads(as_json.output.splitlines()[0])
+    assert first["location"]["via"] == "hybrid"
+    nothing = runner.invoke(app, ["locate", str(db), QUERY.replace("Marie", "Nobody")])
+    assert nothing.exit_code == 0
+    assert runner.invoke(app, ["locate", str(db), query, "--mode", "x"]).exit_code == 2
+    assert runner.invoke(app, ["locate", str(tmp_path / "no.db"), query]).exit_code == 2
+
+    graph = tmp_path / "g.json"
+    json_args = ["ingest", str(docs), "--graph", str(graph), "--routing", "exact"]
+    assert runner.invoke(app, json_args).exit_code == 0
+    target = tmp_path / "migrated.db"
+    migrated = runner.invoke(app, ["migrate", str(graph), str(target)])
+    assert migrated.exit_code == 0, migrated.output
+    assert "2 nodes, 1 edges, 1 metadata entries, 1 documents" in migrated.output
+    exists = runner.invoke(app, ["migrate", str(graph), str(target)])
+    assert exists.exit_code == 1
+    assert "already exists" in exists.output
+    assert runner.invoke(app, ["migrate", str(graph), str(target), "--overwrite"]).exit_code == 0
+    again = runner.invoke(app, ["locate", str(target), query])
+    assert "Pierre Curie was born in Paris" in again.output

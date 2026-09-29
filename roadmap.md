@@ -94,7 +94,7 @@ and runs in parallel with Phases 2–3.
 **Exit:** CI is green on the default branch; a fresh clone passes `uv sync && uv run
 pytest`.
 
-### Phase 1: The retriever core (`locate` / `read`)
+### Phase 1: The retriever core (`locate` / `read`) (done)
 
 1. **Offset provenance.**
    - Chunks record `(doc_id, start, end)` in the source text.
@@ -124,6 +124,17 @@ pytest`.
 **Exit:** `Index.open("my.db").locate("…")` returns locations whose `read()` text
 contains the gold evidence on a small fixture. The store contract tests pass for both
 NetworkX and SQLite.
+
+**As built** (differences from the plan above):
+- Evidence extraction is a new prompt version, so extractions cached under the old
+  prompt are not reused when it is on. The eval scripts pin `evidence=False`, which
+  keeps every existing cache key (extraction and graph) valid.
+- Graph `locate` needs a decider for the walk; `Index` builds Jev from the environment
+  if none is given. Provider configuration proper is Phase 2.
+- Location scores are informational; the list order is the ranking. Graph spans rank
+  per answer (walked edges in hop order, then answer nodes), then entry nodes.
+- The exit test uses scripted extraction and decisions. Whether `locate` finds gold
+  evidence on real data, and whether graph beats dense, is E1.
 
 ### Phase 2: Providers and configuration
 

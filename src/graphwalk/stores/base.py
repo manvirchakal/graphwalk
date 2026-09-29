@@ -9,6 +9,7 @@ contract pins down, so traversal is reproducible across backends:
 * ``neighbors`` is ordered by ``(direction, edge.type, node.id)`` with ``out`` before
   ``in``. With ``direction="both"`` a self-loop is reported once, as ``out``.
 * ``iter_nodes`` yields nodes ordered by id; ``find_nodes`` returns them ordered by id.
+* ``clear`` also removes stored documents (see :class:`DocumentStore`).
 * Metadata (``get_metadata``/``set_metadata``) is a small key -> JSON map kept with the
   graph, e.g. the ingestion ledger. It is persisted with the graph and removed by
   ``clear``.
@@ -19,7 +20,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import JsonValue
 
-from graphwalk.core.model import Direction, Edge, EdgeId, Neighbor, Node, NodeId
+from graphwalk.core.model import Direction, Edge, EdgeId, Neighbor, Node, NodeId, StoredDocument
 
 
 @runtime_checkable
@@ -121,3 +122,26 @@ class GraphStore(Protocol):
         ...
 
     async def close(self) -> None: ...
+
+
+@runtime_checkable
+class DocumentStore(Protocol):
+    """Source documents kept next to the graph, so locations can be read back.
+
+    Optional for a :class:`GraphStore`: ingestion records documents only in stores that
+    implement this too. Contract: ``tests/contract/test_document_store.py``.
+    """
+
+    async def put_document(self, document: StoredDocument) -> None:
+        """Insert ``document``, or replace the stored one with the same key."""
+        ...
+
+    async def get_document(self, key: str) -> StoredDocument | None: ...
+
+    async def delete_document(self, key: str) -> None:
+        """Delete the document under ``key``; a missing key is not an error."""
+        ...
+
+    def iter_documents(self) -> AsyncIterator[StoredDocument]:
+        """Yield every document, ordered by key."""
+        ...

@@ -3,7 +3,9 @@
 Add a backend by adding a param to the ``store`` fixture. Tests only use the protocol.
 """
 
+import tempfile
 from collections.abc import AsyncIterator, Callable, Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -12,13 +14,15 @@ from factories import edge, node, prov
 from graphwalk.core.errors import EdgeNotFoundError, NodeNotFoundError
 from graphwalk.core.merge import merge_edge_data
 from graphwalk.core.model import AttributeConflict, ConflictingValue, Direction, Neighbor, Node
-from graphwalk.stores import GraphStore, NetworkXStore
+from graphwalk.stores import GraphStore, NetworkXStore, SQLiteStore
 
 if TYPE_CHECKING:
     from pydantic import JsonValue
 
 STORE_FACTORIES: dict[str, Callable[[], GraphStore]] = {
     "networkx": NetworkXStore,
+    "sqlite": lambda: SQLiteStore(":memory:"),
+    "sqlite-file": lambda: SQLiteStore(Path(tempfile.mkdtemp()) / "graph.db"),
     # "neo4j": added in M4 with pytest.mark.neo4j
 }
 

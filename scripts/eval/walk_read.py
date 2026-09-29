@@ -45,7 +45,7 @@ from graphwalk.ingest.normalize import normalize_graph
 from graphwalk.llm.litellm_backend import LiteLLMBackend
 from graphwalk.stores.networkx_store import NetworkXStore
 
-M7_INGEST = IngestConfig(routing="jev", escalate=True)
+M7_INGEST = IngestConfig(routing="jev", escalate=True, evidence=False)
 """The config scripts/eval/text_qa.py ingested with (it names the cached graph)."""
 
 

@@ -1,4 +1,4 @@
-"""Command-line interface: ``graphwalk ingest | query | eval``."""
+"""Command-line interface: ``graphwalk ingest | locate | query | migrate | eval``."""
 
 import asyncio
 import math
@@ -12,7 +12,9 @@ from graphwalk import __version__
 from graphwalk.config import GraphwalkSettings
 from graphwalk.core.errors import GraphwalkError
 from graphwalk.decisions import DecisionBackend
+from graphwalk.stores.base import GraphStore
 from graphwalk.stores.networkx_store import NetworkXStore
+from graphwalk.stores.sqlite_store import SQLiteStore
 from graphwalk.traversal import NameEntryResolver, TraversalConfig, TraversalResult, Traverser
 
 if TYPE_CHECKING:
@@ -41,6 +43,17 @@ def main(
     ] = False,
 ) -> None:
     """Fast, probabilistic knowledge-graph traversal and ingestion."""
+
+
+SQLITE_SUFFIXES = frozenset({".db", ".sqlite", ".sqlite3"})
+
+
+async def _open_graph(path: Path) -> GraphStore:
+    """A SQLite database for ``.db``/``.sqlite`` paths, else a NetworkX JSON file."""
+    if path.suffix.lower() in SQLITE_SUFFIXES:
+        return SQLiteStore(path)
+    exists = await asyncio.to_thread(path.exists)
+    return await NetworkXStore.load(path) if exists else NetworkXStore()
 
 
 def _make_backend() -> DecisionBackend:
@@ -201,7 +214,10 @@ def _ingest_backends(
 @app.command()
 def ingest(  # noqa: PLR0917 - Typer maps parameters to CLI options
     path: Annotated[Path, typer.Argument(help="A file or directory (txt, md, json, jsonl, csv).")],
-    graph: Annotated[Path, typer.Option(help="Graph JSON to update (created if missing).")],
+    graph: Annotated[
+        Path,
+        typer.Option(help="Graph to update (created if missing): SQLite (.db) or JSON."),
+    ],
     source_id: Annotated[
         str | None, typer.Option(help="Ledger/provenance name (default: file:<abs path>).")
     ] = None,
@@ -234,6 +250,9 @@ def ingest(  # noqa: PLR0917 - Typer maps parameters to CLI options
     report: Annotated[
         Path | None, typer.Option(help="Write the full report (with routes) as JSON.")
     ] = None,
+    evidence: Annotated[
+        bool, typer.Option(help="Record the supporting sentence of each fact (for locate).")
+    ] = True,
 ) -> None:
     """Ingest a data source into the graph (idempotent; changed documents are re-derived)."""
     from graphwalk.ingest import FileSource, IngestConfig, IngestPipeline  # noqa: PLC0415
@@ -250,6 +269,7 @@ def ingest(  # noqa: PLR0917 - Typer maps parameters to CLI options
             prune_missing=prune,
             max_chunk_chars=max_chunk_chars,
             concurrency=concurrency,
+            evidence=evidence,
         )
     except (FileNotFoundError, ValidationError) as error:
         typer.echo(str(error), err=True)
@@ -259,18 +279,20 @@ def ingest(  # noqa: PLR0917 - Typer maps parameters to CLI options
     )
 
     async def run() -> None:
-        store = await NetworkXStore.load(graph) if graph.exists() else NetworkXStore()
+        store = await _open_graph(graph)
         decider = _make_backend() if routing == "jev" else None
         try:
             pipeline = IngestPipeline(
                 store, llm, decider, embedder=embedder, config=config, escalation_llm=escalation_llm
             )
             result = await pipeline.ingest(source)
+            if isinstance(store, NetworkXStore):
+                await store.save(graph)
+            nodes, edges = await store.counts()
         finally:
             if decider is not None:
                 await decider.aclose()
-        await store.save(graph)
-        nodes, edges = await store.counts()
+            await store.close()
         cost = "n/a" if result.cost_usd is None else f"${result.cost_usd:.4f}"
         esc = result.escalation_cost_usd
         escalation_line = (
@@ -378,3 +400,83 @@ def eval_(  # noqa: PLR0917 - Typer maps parameters to CLI options
         return paths
 
     asyncio.run(run_all())
+
+
+def _locate_embedder(model: str) -> "Embedder":
+    """The embedder for ``graphwalk locate --mode dense|hybrid`` (replaced in tests)."""
+    from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder  # noqa: PLC0415
+
+    return FastEmbedEmbedder(model)
+
+
+@app.command()
+def locate(  # noqa: PLR0917 - Typer maps parameters to CLI options
+    graph: Annotated[Path, typer.Argument(help="SQLite graph (.db) built by ingest.")],
+    question: Annotated[str, typer.Argument(help="The natural-language query.")],
+    k: Annotated[int, typer.Option("-k", help="Locations to return.")] = 5,
+    mode: Annotated[str, typer.Option(help="graph | dense | hybrid")] = "graph",
+    context: Annotated[int, typer.Option(help="Characters of context around each span.")] = 0,
+    embed_model: Annotated[
+        str, typer.Option(help="fastembed model (dense and hybrid modes).")
+    ] = "BAAI/bge-small-en-v1.5",
+    as_json: Annotated[bool, typer.Option("--json", help="Print JSON lines.")] = False,
+) -> None:
+    """Find the source passages that answer a question, and print them."""
+    from graphwalk.index import Index  # noqa: PLC0415
+
+    if mode not in ("graph", "dense", "hybrid"):
+        typer.echo("mode must be graph, dense, or hybrid", err=True)
+        raise typer.Exit(code=2)
+    if graph.suffix.lower() not in SQLITE_SUFFIXES or not graph.exists():
+        typer.echo(f"{graph}: not an existing SQLite graph (.db)", err=True)
+        raise typer.Exit(code=2)
+
+    async def run() -> None:
+        decider = _make_backend() if mode != "dense" else None
+        embedder = _locate_embedder(embed_model) if mode != "graph" else None
+        index = Index(SQLiteStore(graph), decider=decider, embedder=embedder)
+        try:
+            locations = await index.locate(question, k, mode=mode)  # pyright: ignore[reportArgumentType]
+            if not locations:
+                typer.echo("no locations (the question names nothing the graph knows)")
+            for rank, location in enumerate(locations, 1):
+                passage = await index.read(location, context=context)
+                if as_json:
+                    typer.echo(passage.model_dump_json())
+                    continue
+                span = f"{passage.start}-{passage.end}"
+                stale = " (STALE)" if passage.stale else ""
+                typer.echo(f"{rank}. {location.key} [{span}] {location.title or ''}{stale}")
+                for step in location.path:
+                    typer.echo(f"   via {step}")
+                typer.echo(f"   {' '.join(passage.text.split())}")
+        finally:
+            if decider is not None:
+                await decider.aclose()
+            await index.close()
+
+    try:
+        asyncio.run(run())
+    except (GraphwalkError, ValueError, OSError) as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=1) from None
+
+
+@app.command()
+def migrate(
+    source: Annotated[Path, typer.Argument(help="Graph JSON written by NetworkXStore.save.")],
+    target: Annotated[Path, typer.Argument(help="SQLite database to create (.db).")],
+    overwrite: Annotated[bool, typer.Option(help="Replace the target if it exists.")] = False,
+) -> None:
+    """Convert a NetworkX JSON graph to SQLite."""
+    from graphwalk.stores.migrate import networkx_to_sqlite  # noqa: PLC0415
+
+    try:
+        done = asyncio.run(networkx_to_sqlite(source, target, overwrite=overwrite))
+    except (FileExistsError, FileNotFoundError, ValueError, RuntimeError) as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(
+        f"{target}: {done.nodes} nodes, {done.edges} edges, {done.metadata} metadata "
+        f"entries, {done.documents} documents"
+    )

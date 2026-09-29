@@ -12,8 +12,25 @@ in [`roadmap.md`](roadmap.md).
 
 ### Added
 
+- The retriever core (roadmap Phase 1):
+  - `graphwalk.Index` with `ingest`, `locate`, `read`, and `neighbors`; the public
+    API is now what `graphwalk` exports.
+  - Offset provenance: `Provenance.start`/`end`; chunks map back to document
+    offsets; extraction asks for each fact's supporting sentence (`IngestConfig.evidence`,
+    on by default) and falls back to the chunk when the quote is not found.
+  - `locate` in three modes: graph (walk, then rank the provenance spans of walked
+    edges and reached nodes), dense (embedding similarity over chunks), and hybrid
+    (reciprocal rank fusion).
+  - `read` through `StoredDocuments` (text in the store) or `FileDocuments` (re-read
+    from disk), with stale-document detection.
+  - `SQLiteStore` (write-ahead logging, indexed provenance, a documents table) and a
+    `DocumentStore` protocol, both covered by contract tests; retraction uses the
+    provenance index when the store has one.
+  - `graphwalk locate` and `graphwalk migrate` (NetworkX JSON to SQLite); `ingest`
+    writes SQLite for `.db` paths.
+
 - Core graph model with provenance, conflict-preserving merges, and retraction;
-  `GraphStore` protocol with NetworkX and Neo4j stores, including store metadata.
+  `GraphStore` protocol with a NetworkX store, including store metadata.
 - Decision-driven traversal: greedy, beam, and sampled strategies over calibrated
   choice questions (Jev via TypeSafe or OpenRouter), with batching, guardrails,
   and traces.
