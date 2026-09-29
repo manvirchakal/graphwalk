@@ -63,7 +63,7 @@ Extraction dominates cost: Jev routing adds about 30% on top.
 ## Caveats
 
 - One small sample (40 questions, 309 paragraphs), a small extraction model, and one
-  seed. The differences between variants are 3.5 chains out of 40 and 9 points of
+  seed. The differences between variants are 7 chains out of 40 and 9 points of
   triple recall. They are consistent across the tuning and main samples, but they
   are not tight estimates.
 - There is no QA here: whether 60% complete chains turns into answers is M7.
