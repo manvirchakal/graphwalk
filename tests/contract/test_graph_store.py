@@ -4,6 +4,7 @@ Add a backend by adding a param to the ``store`` fixture. Tests only use the pro
 """
 
 from collections.abc import AsyncIterator, Callable, Sequence
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,6 +13,9 @@ from graphwalk.core.errors import EdgeNotFoundError, NodeNotFoundError
 from graphwalk.core.merge import merge_edge_data
 from graphwalk.core.model import AttributeConflict, ConflictingValue, Direction, Neighbor, Node
 from graphwalk.stores import GraphStore, NetworkXStore
+
+if TYPE_CHECKING:
+    from pydantic import JsonValue
 
 STORE_FACTORIES: dict[str, Callable[[], GraphStore]] = {
     "networkx": NetworkXStore,
@@ -323,3 +327,19 @@ async def test_merge_nodes_errors(store: GraphStore) -> None:
     with pytest.raises(NodeNotFoundError):
         await store.merge_nodes("ghost", "a")
     assert await store.counts() == (1, 0)
+
+
+async def test_metadata_round_trip(store: GraphStore) -> None:
+    assert await store.get_metadata("ledger") is None
+    value: dict[str, JsonValue] = {"doc": {"hash": "sha256:1"}}
+    await store.set_metadata("ledger", value)
+    got = await store.get_metadata("ledger")
+    assert got == value
+    assert isinstance(got, dict)
+    got["doc"] = "mutated"
+    assert await store.get_metadata("ledger") == value
+    await store.set_metadata("ledger", None)
+    assert await store.get_metadata("ledger") is None
+    await store.set_metadata("ledger", value)
+    await store.clear()
+    assert await store.get_metadata("ledger") is None

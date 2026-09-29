@@ -19,13 +19,6 @@ def test_version() -> None:
     assert result.output.strip() == __version__
 
 
-@pytest.mark.parametrize("command", ["ingest"])
-def test_commands_exist_and_report_not_implemented(command: str) -> None:
-    result = runner.invoke(app, [command])
-    assert result.exit_code == 2
-    assert "not implemented yet" in result.output
-
-
 @pytest.fixture
 def graph_file(tmp_path: Path) -> Path:
     path = tmp_path / "movies.json"
@@ -100,3 +93,41 @@ def test_query_with_explicit_start_and_bad_options(
     missing = runner.invoke(app, ["query", str(graph_file), "q", "--start", "ghost"])
     assert missing.exit_code == 1
     assert "ghost" in missing.output
+
+
+def test_ingest_builds_and_updates_a_graph(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import json
+
+    from graphwalk.llm import FakeLLM
+    from graphwalk.stores.networkx_store import NetworkXStore
+
+    reply = {
+        "entities": [{"name": "Ada Lovelace", "type": "person"}, {"name": "London"}],
+        "relations": [{"source": "Ada Lovelace", "type": "born_in", "target": "London"}],
+    }
+    llm = FakeLLM(lambda _m: json.dumps(reply))
+    monkeypatch.setattr(cli, "_ingest_backends", lambda *_a: (llm, None))
+    monkeypatch.setattr(cli, "_make_backend", FakeDecisionBackend)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "ada.txt").write_text("Ada Lovelace was born in London.", encoding="utf-8")
+    graph = tmp_path / "g.json"
+    report = tmp_path / "report.json"
+    args = ["ingest", str(docs), "--graph", str(graph), "--source-id", "docs"]
+    result = runner.invoke(app, [*args, "--report", str(report)])
+    assert result.exit_code == 0, result.output
+    assert "1 new" in result.output
+    assert "(2 nodes, 1 edges)" in result.output
+    assert json.loads(report.read_text(encoding="utf-8"))["nodes_created"] == 2
+    store = asyncio.run(NetworkXStore.load(graph))
+    assert asyncio.run(store.get_metadata("ingest:ledger:docs")) is not None
+
+    again = runner.invoke(app, args)
+    assert again.exit_code == 0, again.output
+    assert "1 unchanged" in again.output
+    assert len(llm.calls) == 1
+
+    bad = runner.invoke(app, [*args, "--routing", "nope"])
+    assert bad.exit_code == 2
+    missing = runner.invoke(app, ["ingest", str(tmp_path / "nope"), "--graph", str(graph)])
+    assert missing.exit_code == 2

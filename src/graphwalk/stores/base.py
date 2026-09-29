@@ -9,10 +9,15 @@ contract pins down, so traversal is reproducible across backends:
 * ``neighbors`` is ordered by ``(direction, edge.type, node.id)`` with ``out`` before
   ``in``. With ``direction="both"`` a self-loop is reported once, as ``out``.
 * ``iter_nodes`` yields nodes ordered by id; ``find_nodes`` returns them ordered by id.
+* Metadata (``get_metadata``/``set_metadata``) is a small key -> JSON map kept with the
+  graph, e.g. the ingestion ledger. It is persisted with the graph and removed by
+  ``clear``.
 """
 
 from collections.abc import AsyncIterator, Collection, Sequence
 from typing import Protocol, runtime_checkable
+
+from pydantic import JsonValue
 
 from graphwalk.core.model import Direction, Edge, EdgeId, Neighbor, Node, NodeId
 
@@ -97,6 +102,14 @@ class GraphStore(Protocol):
         the two are dropped, and re-pointed edges that collide with an existing edge are
         merged with :func:`~graphwalk.core.merge.merge_edge_data`. Returns the merged node.
         """
+        ...
+
+    async def get_metadata(self, key: str) -> JsonValue | None:
+        """The metadata value stored under ``key``, or ``None``."""
+        ...
+
+    async def set_metadata(self, key: str, value: JsonValue | None) -> None:
+        """Store ``value`` under ``key``; ``None`` deletes the key."""
         ...
 
     async def counts(self) -> tuple[int, int]:

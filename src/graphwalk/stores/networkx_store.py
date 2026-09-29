@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Literal, Self
 
 import networkx as nx
+from pydantic import JsonValue
 
 from graphwalk.core.errors import EdgeNotFoundError, NodeNotFoundError
 from graphwalk.core.merge import merge_edge_data, merge_node_data, rewire_edge
@@ -32,6 +33,7 @@ class NetworkXStore:
     def __init__(self) -> None:
         self._graph: nx.MultiDiGraph[NodeId] = nx.MultiDiGraph()
         self._edge_index: dict[EdgeId, tuple[NodeId, NodeId]] = {}
+        self._metadata: dict[str, JsonValue] = {}
 
     # ------------------------------------------------------------------ internals
 
@@ -197,12 +199,22 @@ class NetworkXStore:
             self._put_edge(moved if existing is None else merge_edge_data(existing, moved))
         return _copy(merged)
 
+    async def get_metadata(self, key: str) -> JsonValue | None:
+        return copy.deepcopy(self._metadata.get(key))
+
+    async def set_metadata(self, key: str, value: JsonValue | None) -> None:
+        if value is None:
+            self._metadata.pop(key, None)
+        else:
+            self._metadata[key] = copy.deepcopy(value)
+
     async def counts(self) -> tuple[int, int]:
         return self._graph.number_of_nodes(), self._graph.number_of_edges()
 
     async def clear(self) -> None:
         self._graph.clear()
         self._edge_index.clear()
+        self._metadata.clear()
 
     async def close(self) -> None:
         return None
@@ -219,6 +231,7 @@ class NetworkXStore:
                 for edge_id in sorted(self._edge_index)
                 if (edge := self._edge(edge_id)) is not None
             ],
+            "metadata": copy.deepcopy(self._metadata),
         }
 
     async def save(self, path: str | os.PathLike[str]) -> None:
@@ -241,6 +254,7 @@ class NetworkXStore:
             await store.upsert_node(Node.model_validate(raw))
         for raw in document["edges"]:
             await store.upsert_edge(Edge.model_validate(raw))
+        store._metadata = dict(document.get("metadata") or {})  # absent in older files
         return store
 
 

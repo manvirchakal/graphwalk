@@ -21,9 +21,11 @@ async def build() -> NetworkXStore:
 
 async def test_save_load_round_trip(tmp_path: Path) -> None:
     store = await build()
+    await store.set_metadata("ledger", {"doc": ["sha256:1", 2]})
     path = tmp_path / "nested" / "g.graph.json"
     await store.save(path)
     loaded = await NetworkXStore.load(path)
+    assert await loaded.get_metadata("ledger") == {"doc": ["sha256:1", 2]}
     assert [n async for n in loaded.iter_nodes()] == [n async for n in store.iter_nodes()]
     assert [e async for e in loaded.iter_edges()] == [e async for e in store.iter_edges()]
     assert await loaded.counts() == await store.counts()

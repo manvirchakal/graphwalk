@@ -16,18 +16,15 @@ from graphwalk.stores.networkx_store import NetworkXStore
 from graphwalk.traversal import NameEntryResolver, TraversalConfig, TraversalResult, Traverser
 
 if TYPE_CHECKING:
+    from graphwalk.embeddings import Embedder
     from graphwalk.eval.suite import Factories
+    from graphwalk.llm import LLMBackend
 
 app = typer.Typer(
     name="graphwalk",
     help="Fast, probabilistic knowledge-graph traversal and ingestion.",
     no_args_is_help=True,
 )
-
-
-def _not_implemented(command: str, milestone: str) -> None:
-    typer.echo(f"`graphwalk {command}` is not implemented yet (planned for {milestone}).", err=True)
-    raise typer.Exit(code=2)
 
 
 def _version_callback(value: bool) -> None:
@@ -44,12 +41,6 @@ def main(
     ] = False,
 ) -> None:
     """Fast, probabilistic knowledge-graph traversal and ingestion."""
-
-
-@app.command()
-def ingest() -> None:
-    """Ingest a data source into the graph."""
-    _not_implemented("ingest", "M6")
 
 
 def _make_backend() -> DecisionBackend:
@@ -181,6 +172,115 @@ def _eval_factories(llm_model: str, embed_model: str, llm_rpm: float | None) -> 
             max_rpm=llm_rpm,
         ),
     )
+
+
+def _ingest_backends(
+    llm_model: str, embed_model: str | None, llm_rpm: float | None
+) -> "tuple[LLMBackend, Embedder | None]":
+    """Real extraction LLM and embedder for ``graphwalk ingest`` (replaced in tests)."""
+    from graphwalk.llm.litellm_backend import LiteLLMBackend  # noqa: PLC0415
+
+    key = GraphwalkSettings().openrouter_api_key
+    llm = LiteLLMBackend(
+        llm_model,
+        api_key=None if key is None else key.get_secret_value(),
+        max_tokens=4096,
+        max_rpm=llm_rpm,
+    )
+    if embed_model is None:
+        return llm, None
+    from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder  # noqa: PLC0415
+
+    return llm, FastEmbedEmbedder(embed_model)
+
+
+@app.command()
+def ingest(  # noqa: PLR0917 - Typer maps parameters to CLI options
+    path: Annotated[Path, typer.Argument(help="A file or directory (txt, md, json, jsonl, csv).")],
+    graph: Annotated[Path, typer.Option(help="Graph JSON to update (created if missing).")],
+    source_id: Annotated[
+        str | None, typer.Option(help="Ledger/provenance name (default: file:<abs path>).")
+    ] = None,
+    routing: Annotated[str, typer.Option(help="jev | exact")] = "jev",
+    escalate: Annotated[
+        bool, typer.Option(help="Send low-confidence routing decisions to the LLM.")
+    ] = True,
+    route_threshold: Annotated[float, typer.Option(help="Escalation threshold.")] = 0.6,
+    prune: Annotated[
+        bool, typer.Option(help="Retract documents that are no longer in the source.")
+    ] = False,
+    max_chunk_chars: Annotated[int, typer.Option(help="Chunk size.")] = 2000,
+    concurrency: Annotated[int, typer.Option(help="Concurrent extraction calls.")] = 4,
+    llm_model: Annotated[
+        str, typer.Option(help="LiteLLM model id for extraction.")
+    ] = "openrouter/openai/gpt-6-luna",
+    embed_model: Annotated[
+        str | None, typer.Option(help="fastembed model for routing candidates.")
+    ] = "BAAI/bge-small-en-v1.5",
+    no_embed: Annotated[
+        bool, typer.Option("--no-embed", help="Name matching only for candidates.")
+    ] = False,
+    llm_rpm: Annotated[float | None, typer.Option(help="Cap LLM requests/min.")] = 18.0,
+    report: Annotated[
+        Path | None, typer.Option(help="Write the full report (with routes) as JSON.")
+    ] = None,
+) -> None:
+    """Ingest a data source into the graph (idempotent; changed documents are re-derived)."""
+    from graphwalk.ingest import FileSource, IngestConfig, IngestPipeline  # noqa: PLC0415
+
+    if routing not in ("jev", "exact"):
+        typer.echo("routing must be jev or exact", err=True)
+        raise typer.Exit(code=2)
+    try:
+        source = FileSource(path, source_id=source_id)
+        config = IngestConfig(
+            routing=routing,  # pyright: ignore[reportArgumentType] - validated above
+            escalate=escalate,
+            route_threshold=route_threshold,
+            prune_missing=prune,
+            max_chunk_chars=max_chunk_chars,
+            concurrency=concurrency,
+        )
+    except (FileNotFoundError, ValidationError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from None
+    llm, embedder = _ingest_backends(llm_model, None if no_embed else embed_model, llm_rpm)
+
+    async def run() -> None:
+        store = await NetworkXStore.load(graph) if graph.exists() else NetworkXStore()
+        decider = _make_backend() if routing == "jev" else None
+        try:
+            pipeline = IngestPipeline(store, llm, decider, embedder=embedder, config=config)
+            result = await pipeline.ingest(source)
+        finally:
+            if decider is not None:
+                await decider.aclose()
+        await store.save(graph)
+        nodes, edges = await store.counts()
+        cost = "n/a" if result.cost_usd is None else f"${result.cost_usd:.4f}"
+        typer.echo(
+            f"documents: {result.documents} ({result.new} new, {result.changed} changed, "
+            f"{result.unchanged} unchanged, {result.removed} removed, {result.failed} failed)\n"
+            f"chunks: {result.chunks}; entities: {result.entities}; "
+            f"relations: {result.relations}\n"
+            f"nodes: +{result.nodes_created} created, {result.nodes_merged} merged, "
+            f"-{result.nodes_deleted} deleted; edges: +{result.edges_created} created, "
+            f"{result.edges_merged} merged, -{result.edges_deleted} deleted\n"
+            f"calls: {result.llm_calls} LLM, {result.decision_calls} decision "
+            f"({result.escalations} escalations); cost: {cost}; {result.elapsed_s:.1f}s\n"
+            f"graph: {graph} ({nodes} nodes, {edges} edges)"
+        )
+        for error in result.errors[:10]:
+            typer.echo(f"error: {error}", err=True)
+        if report is not None:
+            report.write_text(result.model_dump_json(indent=2), encoding="utf-8")
+            typer.echo(f"report written to {report}")
+
+    try:
+        asyncio.run(run())
+    except GraphwalkError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=1) from None
 
 
 @app.command("eval")
