@@ -19,7 +19,7 @@ import hashlib
 import json
 import math
 import random
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 from pathlib import Path
@@ -57,6 +57,7 @@ READER = "graphwalk-reader"
 TEXT_RAG = "text-rag"
 TEXT_ITER_RAG = "text-iter-rag"
 TEXT_SYSTEMS = (GRAPHWALK, READER, TEXT_RAG, TEXT_ITER_RAG)
+MAX_ANSWER_TYPES = 50
 
 
 def stratified(
@@ -148,7 +149,10 @@ async def build_text_systems(
     rag_k: int = 5,
 ) -> list[QASystem]:
     systems: list[QASystem] = []
-    node_types = sorted({node.type async for node in store.iter_nodes()})
+    # LLM-extracted graphs have hundreds of free-form types (337 on 2Wiki): offer the
+    # answer-type question only the most common ones.
+    type_counts = Counter([node.type async for node in store.iter_nodes()])
+    node_types = sorted(t for t, _ in type_counts.most_common(MAX_ANSWER_TYPES))
     index: DocIndex | None = None
     traverser: Traverser | None = None
     for name in names:

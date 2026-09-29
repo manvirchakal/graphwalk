@@ -539,3 +539,11 @@ async def test_answer_type_is_turned_off_without_node_types(
         node_types=["entity"],
     )
     assert one_type.config.answer_type == "off"
+    too_many = Traverser(
+        await movie_store(),
+        FakeDecisionBackend(max_options=3),
+        config=cfg(answer_type="hint"),
+        node_types=["a", "b", "c", "d"],
+    )
+    assert too_many.config.answer_type == "off"
+    assert "exceed the decider's 3 options" in caplog.text

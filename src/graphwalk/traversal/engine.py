@@ -154,6 +154,16 @@ class Traverser:
                 list(self.node_types),
             )
             self.config = self.config.model_copy(update={"answer_type": "off"})
+        elif self.config.answer_type != "off" and len(self.node_types) > decider.max_options:
+            # E.g. a graph extracted by an LLM, with hundreds of free-form types.
+            logger.warning(
+                "answer_type=%r: %d node types exceed the decider's %d options; turning it "
+                "off (pass fewer node_types to keep it)",
+                self.config.answer_type,
+                len(self.node_types),
+                decider.max_options,
+            )
+            self.config = self.config.model_copy(update={"answer_type": "off"})
         self._cache = None if embedder is None else EmbeddingCache(embedder)
         if decider.max_options < 2:  # noqa: PLR2004 - STOP plus one move
             msg = "decision backend must allow at least 2 options"
