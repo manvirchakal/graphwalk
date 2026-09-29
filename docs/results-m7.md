@@ -148,3 +148,75 @@ distractor setting keeps each pool small and on-topic.
   types, and the answer-type question offered all of them, which is over Jev's
   255-option limit. The engine now turns that question off in this case, and the
   harness offers only the 50 most common types.
+
+## Follow-up: walk, then read the source; and a fixed relation schema
+
+Two changes aimed at the failure analysis above, evaluated on the **same** 120 + 120
+questions, pooled paragraphs, and cached graphs
+(`results/20260929T180802Z-2wiki-walkread/`,
+`results/20260929T182414Z-hotpotqa-walkread/`; script `scripts/walk_read.py`).
+
+- **Walk, then read the source.** The reader no longer reads extracted facts. The walk
+  chooses which paragraphs to read, and the reader reads their original text. It takes
+  up to 5 paragraphs, the same budget one-shot RAG gets, in this order: each question
+  entity's own paragraph, then the paragraphs supporting each walked edge (from edge
+  provenance), then walked entities' own paragraphs.
+- **A fixed relation schema** (`ingest/normalize.py`):
+  - 38 general relations, chosen a priori from common Wikidata properties, each
+    offered as-is or reversed.
+  - Every distinct extracted relation type is mapped onto the schema with a batched
+    Jev choice question, shown three example edges.
+  - Entity-valued attributes become edges.
+  - Results: 2Wiki mapped 501 of 1,476 types, rewriting 3,246 edges and adding 94
+    attribute edges, in 53 Jev calls for $0.13. HotpotQA mapped 721 of 2,545 types
+    (3,545 edges, 124 attribute edges) in 91 calls for $0.22.
+
+| F1 (EM) | 2Wiki | HotpotQA |
+|---|---|---|
+| graphwalk + reader, extracted facts (M7) | 0.539 (0.492) | 0.550 (0.458) |
+| **graphwalk + reader, source paragraphs** | **0.650 (0.592)** | **0.668 (0.567)** |
+| … on the schema-normalized graph | 0.662 (0.600) | 0.665 (0.558) |
+| graphwalk graph-only (M7) | 0.254 (0.167) | 0.182 (0.075) |
+| … on the schema-normalized graph | 0.251 (0.167) | 0.186 (0.075) |
+| text RAG (M7) | 0.368 (0.325) | 0.755 (0.675) |
+| text multi-step RAG (M7) | 0.749 (0.683) | 0.817 (0.700) |
+
+| 2Wiki F1 by type | compositional | inference | comparison | bridge-comparison |
+|---|---|---|---|---|
+| reader, source paragraphs | 0.328 | 0.838 | 0.700 | 0.733 |
+| text multi-step RAG | 0.299 | 0.832 | 0.900 | 0.967 |
+
+| HotpotQA F1 by type | bridge | comparison |
+|---|---|---|
+| reader, source paragraphs | 0.667 | 0.668 |
+| text RAG | 0.652 | 0.857 |
+| text multi-step RAG | 0.784 | 0.849 |
+
+**What changed**
+
+- **Reading source text is a real gain: +11 to +12 F1 on both datasets** at the same
+  cost ($0.34–0.37 per 1k queries). It confirms the diagnosis: extraction, not the
+  walk's choice of entities, was losing the answers. On 2Wiki's single-chain
+  questions the walk now picks paragraphs as well as multi-step RAG does (inference
+  0.838 vs. 0.832; compositional 0.328 vs. 0.299).
+- **The relation schema did nothing** (+1.2 / −0.3 F1, within noise), for graph-only
+  walks or the reader. Only a third of relation types mapped, although those cover
+  half the edges, and walks on 2Wiki were rarely lost *only* because of relation
+  names. Missing links and wrong entry points matter more. It isn't worth its
+  complexity here.
+- **Still behind multi-step RAG, by 9–15 F1.** The gap is almost entirely comparison
+  questions (−20 to −23 F1 on both datasets) plus HotpotQA bridge questions (−12). For
+  comparisons, both entities are usually linked, but the 5 walk-chosen paragraphs
+  miss the compared fact more often than retrieval does. Multi-step RAG searches
+  again for whatever is still missing; a walk can't. Parity was not reached.
+
+**Cost of the follow-up:** $0.56 of API usage (key usage $5.54 → $6.10), including the
+two normalization passes.
+
+**Where this leaves graphwalk on text:** the graph is useful as a *navigator*,
+choosing which source paragraphs to read, and matches multi-step RAG on single-chain
+questions. It doesn't replace retrieval for comparisons or loosely connected
+questions. The obvious next experiment is a hybrid: combine the walk's paragraphs with
+retrieved ones, and let the reader search again when the walk runs out. At that point
+graphwalk is a component of a RAG system rather than an alternative to it, and it
+should be evaluated as one.

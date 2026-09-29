@@ -672,6 +672,10 @@ are deleted, and the rest are re-derived. Only affected nodes are touched.
   `datasets/hotpotqa.py` loader via the HF rows API, with its revision checked).
 - Result: RAG over the paragraphs wins on both datasets. Multi-step RAG scores 0.75 /
   0.82 F1 against 0.54 / 0.55 for graphwalk + reader. See `docs/results-m7.md`.
+- Follow-up: `GraphReaderSystem(documents=...)` reads the source paragraphs the walk
+  reached (via provenance) instead of extracted facts. That gives +11/+12 F1 (0.65 /
+  0.67), still 9–15 behind multi-step RAG. `ingest/normalize.py` maps free-form
+  relation types onto a fixed schema with Jev; it had no measurable effect.
 
 ## 7. Testing
 
