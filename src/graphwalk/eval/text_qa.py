@@ -286,7 +286,9 @@ async def run_text_qa(
             f"nodes created, {ingest.nodes_merged} merged, {ingest.edges_created} edges; "
             f"{ingest.llm_calls} LLM + {ingest.decision_calls} decision calls "
             f"({ingest.extraction_cache_hits} cached extractions), {cost}, "
-            f"{ingest.elapsed_s:.0f}s.",
+            f"{ingest.elapsed_s:.0f}s (waiting on extraction {ingest.extract_wait_s:.0f}s, "
+            f"routing {ingest.route_s:.0f}s, writing {ingest.apply_s:.0f}s; "
+            f"{ingest.escalation_calls} escalations).",
             "",
         ]
     with (out / "summary.md").open("a", encoding="utf-8") as fh:

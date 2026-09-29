@@ -662,6 +662,17 @@ are deleted, and the rest are re-derived. Only affected nodes are touched.
   - The STOP gate (`answer_type="gate"`) is implemented but not chosen: it didn't help on
     dev.
 
+### As built in M7
+
+- `eval/text_qa.py` and `scripts/text_qa.py` run QA over a graph ingested from a
+  question sample's pooled paragraphs, against RAG over the same paragraphs. The
+  systems are graph-only graphwalk, graphwalk + LLM reader (`GraphReaderSystem`), and
+  one-shot and multi-step RAG (`TEXT_PROMPTS`).
+- The datasets are 2Wiki (all four question types) and HotpotQA distractor (a
+  `datasets/hotpotqa.py` loader via the HF rows API, with its revision checked).
+- Result: RAG over the paragraphs wins on both datasets. Multi-step RAG scores 0.75 /
+  0.82 F1 against 0.54 / 0.55 for graphwalk + reader. See `docs/results-m7.md`.
+
 ## 7. Testing
 
 - The default `uv run pytest` uses fakes only. A conftest autouse fixture blocks
