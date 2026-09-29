@@ -18,7 +18,6 @@ from graphwalk.config import GraphwalkSettings
 from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder
 from graphwalk.eval.datasets import hotpotqa, twowiki
 from graphwalk.eval.datasets.cache import cache_dir
-from graphwalk.eval.ingest_eval import load_cache, save_cache
 from graphwalk.eval.suite import preset_config
 from graphwalk.eval.text_qa import (
     TEXT_SYSTEMS,
@@ -28,7 +27,7 @@ from graphwalk.eval.text_qa import (
     run_text_qa,
     stratified,
 )
-from graphwalk.ingest import IngestConfig
+from graphwalk.ingest import IngestConfig, JsonFileCache
 from graphwalk.llm.litellm_backend import LiteLLMBackend
 
 TYPES = {
@@ -57,7 +56,7 @@ async def main(args: argparse.Namespace) -> None:
     decider = _make_backend()
     config = IngestConfig(routing="jev", escalate=args.escalation_model is not None)
     cache_path = cache_dir() / "extractions" / (re.sub(r"[^\w.-]+", "_", args.llm) + ".json")
-    cache = load_cache(cache_path)
+    cache = JsonFileCache(cache_path)
     graph_path = (
         cache_dir().parent / "graphs" / f"{graph_key(args.dataset, records, config)}.graph.json"
     )
@@ -75,7 +74,7 @@ async def main(args: argparse.Namespace) -> None:
             ),
             graph_path=graph_path,
         )
-        save_cache(cache_path, cache)
+        cache.flush()
         nodes, edges = await store.counts()
         print(f"graph: {nodes} nodes, {edges} edges ({graph_path})", flush=True)  # noqa: T201
         systems = await build_text_systems(
@@ -117,6 +116,7 @@ async def main(args: argparse.Namespace) -> None:
             on_progress=progress,
         )
     finally:
+        cache.flush()
         await decider.aclose()
     print((out / "summary.md").read_text(encoding="utf-8"))  # noqa: T201
 
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     parser.add_argument("--systems", nargs="+", default=list(TEXT_SYSTEMS))
     parser.add_argument("--llm", default="openrouter/openai/gpt-6-luna")
     parser.add_argument("--escalation-model", default="openrouter/xiaomi/mimo-v2.6-pro")
-    parser.add_argument("--rpm", type=float, default=60.0)
+    parser.add_argument("--rpm", type=float, default=240.0)
     parser.add_argument("--rag-k", type=int, default=5)
     parser.add_argument("--concurrency", type=int, default=8)
     asyncio.run(main(parser.parse_args()))

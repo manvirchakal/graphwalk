@@ -33,7 +33,7 @@ from graphwalk.ingest.extraction import (
     name_key,
 )
 from graphwalk.ingest.resolution import Retraction, retract, upsert_entity, upsert_relation
-from graphwalk.ingest.routing import NodeIndex, Router, RoutingMode
+from graphwalk.ingest.routing import NodeIndex, RouteBatch, Router, RoutingMode
 from graphwalk.ingest.sources import Source, SourceDocument
 from graphwalk.ingest.spend import Spend
 from graphwalk.llm.base import LLMBackend
@@ -55,8 +55,14 @@ class IngestConfig(BaseModel):
     escalate: bool = True
     max_relations: int = Field(default=8, ge=0)
     """Relations shown per candidate node in a routing question."""
-    concurrency: int = Field(default=4, ge=1)
+    concurrency: int = Field(default=8, ge=1)
     """Concurrent extraction calls."""
+    route_concurrency: int = Field(default=4, ge=1)
+    """Chunks routed at once, against the graph as it was before the window, then
+    applied in order. A mention routed NEW whose exact name was created by an earlier
+    chunk of the same window is routed again against the updated graph, so exact-name
+    repeats still get a decision. Only fuzzy-name repeats within a window can end up
+    as duplicates. 1 = strictly sequential."""
     prune_missing: bool = False
     """Retract documents in the ledger that the source no longer yields."""
     min_similarity: float = Field(default=0.75, ge=-1.0, le=1.0)
@@ -113,6 +119,12 @@ class IngestReport(BaseModel):
     cost_usd: float | None = 0.0
     extraction_cache_hits: int = 0
     elapsed_s: float = 0.0
+    extract_wait_s: float = 0.0
+    """Time routing spent waiting for extractions (extraction runs ahead concurrently)."""
+    route_s: float = 0.0
+    """Time in routing windows: candidates, decision calls, escalations."""
+    apply_s: float = 0.0
+    """Time writing routed entities and relations to the store."""
     errors: list[str] = Field(default_factory=list[str])
     routes: list[RouteRecord] = Field(default_factory=list[RouteRecord])
 
@@ -139,12 +151,43 @@ def provenance_id(source_id: str, doc_id: str) -> str:
     return f"{source_id}/{doc_id}"
 
 
+def _passage(chunk: "_Chunk") -> str:
+    return f"{chunk.doc.title}\n\n{chunk.text}" if chunk.doc.title else chunk.text
+
+
 @dataclass
 class _Chunk:
     doc: SourceDocument
     text: str
     key: str
     result: ExtractionResult | None = None
+
+
+class _Progress:
+    """Marks a document ingested in the ledger once all its chunks are applied."""
+
+    def __init__(
+        self, todo: list[SourceDocument], chunks: list[_Chunk], ledger: dict[str, str]
+    ) -> None:
+        self._ledger = ledger
+        self._docs = {doc.doc_id: doc for doc in todo}
+        self._remaining: dict[str, int] = {}
+        self._ok: dict[str, bool] = {}
+        for chunk in chunks:
+            doc_id = chunk.doc.doc_id
+            self._remaining[doc_id] = self._remaining.get(doc_id, 0) + 1
+        for doc in todo:  # no chunks (empty text): nothing to do
+            if doc.doc_id not in self._remaining:
+                ledger[doc.doc_id] = document_hash(doc)
+
+    def done(self, chunk: _Chunk, *, ok: bool, report: IngestReport) -> None:
+        doc_id = chunk.doc.doc_id
+        self._ok[doc_id] = self._ok.get(doc_id, True) and ok
+        self._remaining[doc_id] -= 1
+        if self._remaining[doc_id] == 0:
+            complete = self._ok[doc_id]
+            report.failed += not complete
+            self._ledger[doc_id] = document_hash(self._docs[doc_id]) if complete else INCOMPLETE
 
 
 type ExtractionCache = MutableMapping[str, JsonValue]
@@ -191,11 +234,54 @@ class IngestPipeline:
         if cfg.escalate:
             report.escalation_model = self._escalation_llm.model_id
         ledger = await self.ledger(source.source_id)
-        docs = list(source.documents())
+        todo, gone = self._plan(list(source.documents()), ledger, source.source_id, report)
+        retraction: Retraction = await retract(self._store, gone)
+        report.nodes_deleted += retraction.nodes_deleted
+        report.edges_deleted += retraction.edges_deleted
+        chunks = [
+            _Chunk(doc, text, chunk_key(text, doc.title))
+            for doc in todo
+            for text in chunk_text(doc.text, max_chars=cfg.max_chunk_chars)
+        ]
+        report.chunks = len(chunks)
+        index = await NodeIndex.build(
+            self._store, self._embedder, min_similarity=cfg.min_similarity
+        )
+        router = self._router(index)
+        progress = _Progress(todo, chunks, ledger)
+        semaphore = asyncio.Semaphore(cfg.concurrency)
+        tasks = [asyncio.create_task(self._extract_one(c, semaphore, report)) for c in chunks]
+        try:
+            for start in range(0, len(chunks), cfg.route_concurrency):
+                window = chunks[start : start + cfg.route_concurrency]
+                await self._window(
+                    source.source_id,
+                    window,
+                    tasks[start : start + len(window)],
+                    router=router,
+                    index=index,
+                    report=report,
+                    progress=progress,
+                )
+                await self._save_ledger(source.source_id, ledger)
+        finally:
+            for task in tasks:
+                task.cancel()
+        await self._save_ledger(source.source_id, ledger)
+        report.elapsed_s = time.perf_counter() - started
+        return report
+
+    def _plan(
+        self,
+        docs: list[SourceDocument],
+        ledger: dict[str, str],
+        source_id: str,
+        report: IngestReport,
+    ) -> tuple[list[SourceDocument], set[str]]:
+        """Documents to ingest, and provenance ids to retract first."""
         report.documents = len(docs)
         todo: list[SourceDocument] = []
         gone: set[str] = set()
-        present = {d.doc_id for d in docs}
         for doc in docs:
             before = ledger.get(doc.doc_id)
             if before == document_hash(doc):
@@ -206,28 +292,17 @@ class IngestPipeline:
                 report.new += 1
             else:
                 report.changed += 1
-                gone.add(provenance_id(source.source_id, doc.doc_id))
-        if cfg.prune_missing:
-            for doc_id in sorted(set(ledger) - present):
-                gone.add(provenance_id(source.source_id, doc_id))
+                gone.add(provenance_id(source_id, doc.doc_id))
+        if self.config.prune_missing:
+            for doc_id in sorted(set(ledger) - {d.doc_id for d in docs}):
+                gone.add(provenance_id(source_id, doc_id))
                 del ledger[doc_id]
                 report.removed += 1
-        retraction: Retraction = await retract(self._store, gone)
-        report.nodes_deleted += retraction.nodes_deleted
-        report.edges_deleted += retraction.edges_deleted
+        return todo, gone
 
-        chunks = [
-            _Chunk(doc, text, chunk_key(text, doc.title))
-            for doc in todo
-            for text in chunk_text(doc.text, max_chars=cfg.max_chunk_chars)
-        ]
-        report.chunks = len(chunks)
-        await self._extract_all(chunks, report)
-
-        index = await NodeIndex.build(
-            self._store, self._embedder, min_similarity=cfg.min_similarity
-        )
-        router = Router(
+    def _router(self, index: NodeIndex) -> Router:
+        cfg = self.config
+        return Router(
             self._store,
             index,
             self._decider if cfg.routing == "jev" else None,
@@ -237,63 +312,90 @@ class IngestPipeline:
             route_threshold=cfg.route_threshold,
             max_relations=cfg.max_relations,
         )
-        by_doc: dict[str, list[_Chunk]] = {}
-        for chunk in chunks:
-            by_doc.setdefault(chunk.doc.doc_id, []).append(chunk)
-        for doc in todo:
-            complete = True
-            for chunk in by_doc.get(doc.doc_id, []):
-                assert chunk.result is not None  # noqa: S101 - set by _extract_all
-                if chunk.result.error is not None:
-                    complete = False
-                    report.errors.append(f"{doc.doc_id}: {chunk.result.error}")
-                    continue
-                await self._apply(source.source_id, chunk, router, index, report)
-            if not complete:
-                report.failed += 1
-            ledger[doc.doc_id] = document_hash(doc) if complete else INCOMPLETE
-            await self._store.set_metadata(
-                LEDGER_PREFIX + source.source_id, cast("JsonValue", dict(ledger))
-            )
-        await self._store.set_metadata(
-            LEDGER_PREFIX + source.source_id, cast("JsonValue", dict(ledger))
+
+    async def _save_ledger(self, source_id: str, ledger: dict[str, str]) -> None:
+        await self._store.set_metadata(LEDGER_PREFIX + source_id, cast("JsonValue", dict(ledger)))
+
+    async def _window(
+        self,
+        source_id: str,
+        window: list["_Chunk"],
+        tasks: list["asyncio.Task[None]"],
+        *,
+        router: Router,
+        index: NodeIndex,
+        report: IngestReport,
+        progress: "_Progress",
+    ) -> None:
+        """Route ``window``'s chunks concurrently, then apply them in order."""
+        t0 = time.perf_counter()
+        await asyncio.gather(*tasks)
+        t1 = time.perf_counter()
+        ready = [c for c in window if c.result is not None and c.result.error is None]
+        batches = await asyncio.gather(
+            *(router.route(c.result.extraction.entities, _passage(c)) for c in ready)  # type: ignore[union-attr]
         )
-        report.elapsed_s = time.perf_counter() - started
-        return report
+        t2 = time.perf_counter()
+        routed = dict(zip((id(c) for c in ready), batches, strict=True))
+        created: set[NodeId] = set()
+        for chunk in window:
+            assert chunk.result is not None  # noqa: S101 - awaited above
+            error = chunk.result.error
+            if error is not None:
+                report.errors.append(f"{chunk.doc.doc_id}: {error}")
+            else:
+                await self._apply(
+                    source_id, chunk, routed[id(chunk)], router=router, index=index,
+                    report=report, created_in_window=created,
+                )  # fmt: skip
+            progress.done(chunk, ok=error is None, report=report)
+        report.extract_wait_s += t1 - t0
+        report.route_s += t2 - t1
+        report.apply_s += time.perf_counter() - t2
 
-    async def _extract_all(self, chunks: list[_Chunk], report: IngestReport) -> None:
-        semaphore = asyncio.Semaphore(self.config.concurrency)
-
-        async def one(chunk: _Chunk) -> None:
-            if self._cache is not None and chunk.key in self._cache:
-                extraction = Extraction.model_validate(self._cache[chunk.key])
-                chunk.result = ExtractionResult(extraction=extraction)
-                report.extraction_cache_hits += 1
-                return
-            async with semaphore:
-                chunk.result = await extract(self._llm, chunk.text, title=chunk.doc.title)
-            if self._cache is not None and chunk.result.error is None:
-                self._cache[chunk.key] = chunk.result.extraction.model_dump(mode="json")
-
-        await asyncio.gather(*(one(c) for c in chunks))
-        for chunk in chunks:
-            assert chunk.result is not None  # noqa: S101 - set above
-            report.add_spend(chunk.result.spend)
+    async def _extract_one(
+        self, chunk: _Chunk, semaphore: asyncio.Semaphore, report: IngestReport
+    ) -> None:
+        if self._cache is not None and chunk.key in self._cache:
+            extraction = Extraction.model_validate(self._cache[chunk.key])
+            chunk.result = ExtractionResult(extraction=extraction)
+            report.extraction_cache_hits += 1
+            return
+        async with semaphore:
+            chunk.result = await extract(self._llm, chunk.text, title=chunk.doc.title)
+        report.add_spend(chunk.result.spend)
+        if self._cache is not None and chunk.result.error is None:
+            self._cache[chunk.key] = chunk.result.extraction.model_dump(mode="json")
 
     async def _apply(
         self,
         source_id: str,
         chunk: _Chunk,
+        batch: RouteBatch,
+        *,
         router: Router,
         index: NodeIndex,
         report: IngestReport,
+        created_in_window: set[NodeId],
     ) -> None:
-        assert chunk.result is not None  # noqa: S101 - set by _extract_all
+        assert chunk.result is not None  # noqa: S101 - set by _extract_one
         extraction = chunk.result.extraction
         report.entities += len(extraction.entities)
         report.relations += len(extraction.relations)
-        passage = f"{chunk.doc.title}\n\n{chunk.text}" if chunk.doc.title else chunk.text
-        batch = await router.route(extraction.entities, passage)
+        stale = [
+            i
+            for i, route in enumerate(batch.routes)
+            if route.target is None
+            and any(n in created_in_window for n in index.exact(route.mention.name))
+        ]
+        if stale:
+            # Routed before an earlier chunk of this window created a same-name node:
+            # route those mentions again against the graph as it is now.
+            again = await router.route([batch.routes[i].mention for i in stale], _passage(chunk))
+            batch.spend.add(again.spend)
+            batch.escalation.add(again.escalation)
+            for i, route in zip(stale, again.routes, strict=True):
+                batch.routes[i] = route
         report.add_spend(batch.spend)
         report.add_spend(batch.escalation)
         report.escalation_calls += batch.escalation.llm_calls
@@ -321,6 +423,7 @@ class IngestPipeline:
             index.add(node)
             ids[name_key(route.mention.name)] = node.id
             if created:
+                created_in_window.add(node.id)
                 report.nodes_created += 1
             else:
                 report.nodes_merged += 1

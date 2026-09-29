@@ -18,15 +18,13 @@ from graphwalk.eval.datasets.cache import cache_dir
 from graphwalk.eval.datasets.twowiki import download, read_records
 from graphwalk.eval.ingest_eval import (
     VariantResult,
-    load_cache,
     run_dir,
     run_variants,
     sample_records,
-    save_cache,
     summary_table,
     write_results,
 )
-from graphwalk.ingest import IngestConfig
+from graphwalk.ingest import IngestConfig, JsonFileCache
 from graphwalk.llm.litellm_backend import LiteLLMBackend
 
 VARIANTS = {
@@ -58,12 +56,12 @@ async def main(
         )
     )
     cache_path = cache_dir() / "extractions" / (re.sub(r"[^\w.-]+", "_", model) + ".json")
-    cache = load_cache(cache_path)
+    cache = JsonFileCache(cache_path)
     decider = _make_backend()
     out = run_dir(Path("results"), "2wiki-ingest")
 
     def done(result: VariantResult) -> None:
-        save_cache(cache_path, cache)
+        cache.flush()
         print(summary_table([result]), flush=True)  # noqa: T201
 
     try:
@@ -79,7 +77,7 @@ async def main(
         )
     finally:
         await decider.aclose()
-        save_cache(cache_path, cache)
+        cache.flush()
     params = {
         "n": n,
         "seed": seed,

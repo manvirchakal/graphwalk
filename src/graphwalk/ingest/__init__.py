@@ -1,5 +1,6 @@
 """Ingestion: turn documents into graph nodes and edges, idempotently."""
 
+from graphwalk.ingest.cache import JsonFileCache
 from graphwalk.ingest.chunking import chunk_text
 from graphwalk.ingest.extraction import (
     ExtractedEntity,
@@ -29,6 +30,7 @@ __all__ = [
     "IngestConfig",
     "IngestPipeline",
     "IngestReport",
+    "JsonFileCache",
     "NodeIndex",
     "Route",
     "RouteRecord",

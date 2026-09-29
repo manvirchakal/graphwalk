@@ -7,6 +7,7 @@ call per chunk then asks, for every mention with candidates, a choice over
 to the LLM, if one is configured. Mentions with no candidates are NEW without a call.
 """
 
+import asyncio
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -62,25 +63,47 @@ def mention_text(entity: ExtractedEntity) -> str:
 
 
 class NodeIndex:
-    """Incremental candidate index over the store's nodes (names, aliases, embeddings)."""
+    """Incremental candidate index over the store's nodes (names, aliases, embeddings).
 
-    def __init__(self, embedder: Embedder | None = None, *, min_similarity: float = 0.75) -> None:
+    Built for ingestion's access pattern (many small additions between lookups):
+    vectors are cached by text, so a node created from a mention reuses the mention's
+    vector; :meth:`prime` embeds a chunk's texts in one batch; and node vectors live in
+    a matrix that grows in place (removed rows are zeroed), never re-stacked.
+    """
+
+    def __init__(
+        self,
+        embedder: Embedder | None = None,
+        *,
+        min_similarity: float = 0.75,
+        max_word_df: int = 200,
+    ) -> None:
         self._embedder = embedder
         self._min_similarity = min_similarity
+        self._max_word_df = max_word_df
         self._keys: dict[str, set[NodeId]] = {}
         self._postings: dict[str, set[NodeId]] = {}
         self._node_keys: dict[NodeId, list[str]] = {}
         self._node_words: dict[NodeId, list[frozenset[str]]] = {}
         self._texts: dict[NodeId, str] = {}
-        self._vectors: dict[NodeId, np.ndarray] = {}
         self._pending: set[NodeId] = set()
-        self._matrix: tuple[list[NodeId], np.ndarray] | None = None
+        self._text_vectors: dict[str, np.ndarray] = {}
+        self._rows = np.zeros((0, 0), dtype=np.float32)
+        self._row_ids: list[NodeId | None] = []
+        self._row_of: dict[NodeId, int] = {}
+        self._embed_lock = asyncio.Lock()
+        """One embedding call at a time: concurrent calls only fight over the CPU."""
 
     @classmethod
     async def build(
-        cls, store: GraphStore, embedder: Embedder | None = None, *, min_similarity: float = 0.75
+        cls,
+        store: GraphStore,
+        embedder: Embedder | None = None,
+        *,
+        min_similarity: float = 0.75,
+        max_word_df: int = 200,
     ) -> "NodeIndex":
-        index = cls(embedder, min_similarity=min_similarity)
+        index = cls(embedder, min_similarity=min_similarity, max_word_df=max_word_df)
         async for node in store.iter_nodes():
             index.add(node)
         return index
@@ -95,12 +118,16 @@ class NodeIndex:
             for word in words:
                 self._postings[word].discard(node_id)
         self._texts.pop(node_id, None)
-        self._vectors.pop(node_id, None)
         self._pending.discard(node_id)
-        self._matrix = None
+        row = self._row_of.pop(node_id, None)
+        if row is not None:
+            self._rows[row] = 0.0
+            self._row_ids[row] = None
 
     def add(self, node: Node) -> None:
         """Index ``node``, replacing any earlier version of it."""
+        previous_text = self._texts.get(node.id)
+        row = self._row_of.get(node.id)
         self.remove(node.id)
         names = list(dict.fromkeys((node.name, *node.aliases)))
         keys = list(dict.fromkeys(name_key(n) for n in names))
@@ -111,59 +138,100 @@ class NodeIndex:
             self._keys.setdefault(key, set()).add(node.id)
         for word in frozenset[str]().union(*words):
             self._postings.setdefault(word, set()).add(node.id)
-        self._texts[node.id] = node_text(node)
-        if self._embedder is not None:
+        text = node_text(node)
+        self._texts[node.id] = text
+        if self._embedder is None:
+            return
+        if row is not None and text == previous_text:  # unchanged text: keep its row
+            self._put_row(node.id, self._text_vectors[text], row)
+        else:
             self._pending.add(node.id)
 
-    async def _embeddings(self) -> tuple[list[NodeId], np.ndarray] | None:
+    def _put_row(self, node_id: NodeId, vector: np.ndarray, row: int | None = None) -> None:
+        if row is None:
+            row = len(self._row_ids)
+            if row >= len(self._rows):
+                grown = np.zeros((max(64, 2 * len(self._rows)), len(vector)), dtype=np.float32)
+                if len(self._rows):
+                    grown[: len(self._rows)] = self._rows
+                self._rows = grown
+            self._row_ids.append(node_id)
+        else:
+            self._row_ids[row] = node_id
+        self._rows[row] = vector
+        self._row_of[node_id] = row
+
+    async def prime(self, texts: Sequence[str] = ()) -> None:
+        """Embed ``texts`` and every pending node's text in one batch (cached by text)."""
         if self._embedder is None:
-            return None
-        if self._pending:
-            ids = sorted(self._pending)
-            vectors = await self._embedder.embed([self._texts[i] for i in ids])
-            for node_id, vector in zip(ids, vectors, strict=True):
-                self._vectors[node_id] = vector
-            self._pending.clear()
-            self._matrix = None
-        if self._matrix is None and self._vectors:
-            ids = sorted(self._vectors)
-            self._matrix = (ids, np.stack([self._vectors[i] for i in ids]))
-        return self._matrix
+            return
+        async with self._embed_lock:
+            wanted = [*texts, *(self._texts[i] for i in sorted(self._pending))]
+            missing = list(dict.fromkeys(t for t in wanted if t not in self._text_vectors))
+            if missing:
+                vectors = await self._embedder.embed(missing)
+                for text, vector in zip(missing, vectors, strict=True):
+                    self._text_vectors[text] = np.asarray(vector, dtype=np.float32)
+        for node_id in sorted(self._pending):
+            self._put_row(node_id, self._text_vectors[self._texts[node_id]])
+        self._pending.clear()
 
     def exact(self, name: str) -> list[NodeId]:
         return sorted(self._keys.get(name_key(name), ()))
 
-    async def candidates(self, entity: ExtractedEntity, limit: int) -> list[NodeId]:
-        """Exact name/alias matches, then the best of name-word overlap and similarity."""
-        exact = self.exact(entity.name)
-        out = exact[:limit]
-        if len(out) >= limit:
-            return out
-        scores: dict[NodeId, float] = {}
-        words = content_words(entity.name)
+    def _lexical(self, words: frozenset[str], exclude: Sequence[NodeId]) -> dict[NodeId, float]:
+        """Name-word Jaccard over nodes sharing a word. Words on more than
+        ``max_word_df`` nodes ("john", "county") do not open the pool unless every word
+        is that common, in which case only the rarest one does."""
+        present = sorted((len(self._postings.get(w, ())), w) for w in words)
+        opening = [w for df, w in present if 0 < df <= self._max_word_df]
+        if not opening and present and present[0][0] > 0:
+            opening = [present[0][1]]
         pool: set[NodeId] = set()
-        for word in words:
-            pool |= self._postings.get(word, set())
-        for node_id in pool.difference(out):
-            best = max(
+        for word in opening:
+            pool |= self._postings[word]
+        pool.difference_update(exclude)
+        scores: dict[NodeId, float] = {}
+        for node_id in pool:
+            scores[node_id] = max(
                 (len(words & w) / len(words | w) for w in self._node_words[node_id] if w),
                 default=0.0,
             )
-            scores[node_id] = best
-        matrix = await self._embeddings()
-        if matrix is not None and self._embedder is not None:
-            ids, vectors = matrix
-            query = (await self._embedder.embed([mention_text(entity)]))[0]
-            sims = vectors @ query
-            top = np.argsort(-sims)[: limit * 2]
-            for i in top.tolist():
-                node_id: NodeId = ids[int(i)]
-                similarity = float(sims[int(i)])
-                if similarity >= self._min_similarity and node_id not in out:
-                    scores[node_id] = max(scores.get(node_id, 0.0), similarity)
-        ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
-        out.extend(node_id for node_id, _ in ranked[: limit - len(out)])
-        return out
+        return scores
+
+    async def candidates(self, entity: ExtractedEntity, limit: int) -> list[NodeId]:
+        """Exact name/alias matches, then the best of name-word overlap and similarity."""
+        return (await self.candidates_many([entity], limit))[0]
+
+    async def candidates_many(
+        self, entities: Sequence[ExtractedEntity], limit: int
+    ) -> list[list[NodeId]]:
+        """:meth:`candidates` for several mentions, with one similarity product."""
+        results = [self.exact(e.name)[:limit] for e in entities]
+        open_ = [i for i, out in enumerate(results) if len(out) < limit]
+        scores = {i: self._lexical(content_words(entities[i].name), results[i]) for i in open_}
+        n = len(self._row_ids)
+        if self._embedder is not None and open_:
+            texts = [mention_text(entities[i]) for i in open_]
+            await self.prime(texts)
+            n = len(self._row_ids)
+        if self._embedder is not None and open_ and n:
+            queries = np.stack([self._text_vectors[mention_text(entities[i])] for i in open_])
+            sims = self._rows[:n] @ queries.T  # (nodes, mentions)
+            k = min(limit * 2, n)
+            for column, i in enumerate(open_):
+                col = sims[:, column]
+                for row in np.argpartition(-col, k - 1)[:k].tolist():
+                    node_id = self._row_ids[int(row)]
+                    similarity = float(col[int(row)])
+                    if node_id is None or node_id in results[i]:
+                        continue
+                    if similarity >= self._min_similarity:
+                        scores[i][node_id] = max(scores[i].get(node_id, 0.0), similarity)
+        for i in open_:
+            ranked = sorted(scores[i].items(), key=lambda item: (-item[1], item[0]))
+            results[i].extend(node_id for node_id, _ in ranked[: limit - len(results[i])])
+        return results
 
 
 @dataclass
@@ -238,9 +306,9 @@ class Router:
     async def route(self, mentions: Sequence[ExtractedEntity], passage: str) -> RouteBatch:
         spend = Spend()
         routes: list[Route] = []
-        for mention in mentions:
-            candidates = tuple(await self._index.candidates(mention, self._max))
-            routes.append(Route(mention, candidates, None, 1.0, "no_candidates"))
+        found = await self._index.candidates_many(mentions, self._max)
+        for mention, candidates in zip(mentions, found, strict=True):
+            routes.append(Route(mention, tuple(candidates), None, 1.0, "no_candidates"))
         pending = [r for r in routes if r.candidates]
         if self._mode == "exact":
             for route in pending:
@@ -253,9 +321,15 @@ class Router:
         await self._decide(pending, passage, spend)
         escalation = Spend()
         if self._llm is not None:
-            for route in pending:
-                if route.method == "decision" and route.probability < self._threshold:
-                    await self._escalate(route, passage, escalation)
+            doubtful = [
+                r for r in pending if r.method == "decision" and r.probability < self._threshold
+            ]
+            spends = [Spend() for _ in doubtful]
+            await asyncio.gather(
+                *(self._escalate(r, passage, s) for r, s in zip(doubtful, spends, strict=True))
+            )
+            for part in spends:
+                escalation.add(part)
         return RouteBatch(routes, spend, escalation)
 
     async def _question(self, key: str, route: Route) -> ChoiceQuestion:
