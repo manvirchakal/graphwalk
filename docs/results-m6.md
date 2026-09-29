@@ -19,7 +19,14 @@ on the tuning sample. Seed 0 was not looked at until the prompt was fixed.
 |---|---|---|---|---|---|---|---|---|
 | exact name | 1,653 | 0.880 | 0.029 | 0 | 0.688 | 0.425 (17/40) | 0 | $0 |
 | Jev | 1,586 | 0.880 | 0.058 | 1 | **0.775** | **0.600 (24/40)** | 280 Jev | $0.037 |
-| Jev + LLM escalation (p < 0.6) | 1,586 | 0.880 | 0.049 | 0 | **0.775** | **0.600 (24/40)** | 280 Jev + 19 LLM | $0.040 |
+| Jev + escalation to `gpt-6-luna` (p < 0.6) | 1,586 | 0.880 | 0.049 | 0 | **0.775** | **0.600 (24/40)** | 280 Jev + 19 LLM | $0.040 |
+| Jev + escalation to `mimo-v2.6-pro` (p < 0.6) | 1,583 | 0.880 | 0.039 | 0 | **0.775** | **0.600 (24/40)** | 280 Jev + 13 LLM | $0.050 |
+
+The last row is a separate run
+(`results/20260929T115429Z-2wiki-ingest/`) with the same cached extractions. It
+escalates to `xiaomi/mimo-v2.6-pro` on OpenRouter ($0.435/$0.87 per M tokens,
+Artificial Analysis Intelligence Index 46 vs. 21–37 for `gpt-6-luna`), which was the
+best price-per-intelligence option listed on 2026-09-29.
 
 Extraction for all 316 chunks cost $0.125: 300 calls, the rest cached from the tuning
 runs. That is about $0.0004 per paragraph and 17 minutes at 18 requests per minute.
@@ -39,9 +46,28 @@ Extraction dominates cost: Jev routing adds about 30% on top.
   construction: it only counts duplicates with the *same* normalized name. Exact
   matching's own misses (different spellings) don't show up here, but they do show
   up as 67 more nodes and lower triple recall.
-- **LLM escalation is marginal.** 19 of 280 decisions went to the LLM. That removed
-  the one detected wrong merge and a few duplicates, and changed recall not at all.
-  It's cheap enough to keep as the default, but it's not where the gains are.
+- **Escalation helps judgment, not the headline metrics.** Originally, escalation went
+  to the *extraction* model (`gpt-6-luna`), because the pipeline had one LLM slot. That
+  was a design flaw: a weaker general model was second-guessing Jev. The escalation
+  model is now configurable (`--escalation-model`). With `mimo-v2.6-pro`, the 13
+  escalated decisions look better on inspection:
+  - It merged "YouTube" and "Viscount Northland" into their identically named nodes.
+    Jev had leaned NEW on both, and Viscount Northland was one of the missed triples.
+  - It kept "Princess Louise Caroline of Hesse-Kassel" (1789–1867) apart from "Louise
+    of Hesse-Kassel", her daughter, the Queen of Denmark, whom `gpt-6-luna` had wrongly
+    merged her into.
+  - It is still debatable on titles versus houses: it folded "Duke of
+    Schleswig-Holstein-Sonderburg-Glücksburg" into the house node.
+
+  Split entities fell from 4.9% to 3.9%, but triple recall and complete chains did not
+  move. Cost: $0.0132 for 13 calls, about $0.001 per call, since it spends about 780
+  reasoning tokens per answer. That adds about 35% to routing cost. Latency is the
+  bigger cost: about 17 s per call, sequential with routing, so this run took 388 s
+  vs. 165 s with `gpt-6-luna`. Use it when quality matters more than ingestion time.
+- **Jev is not deterministic near the threshold.** The two escalation runs sent
+  different decisions to the LLM (19 vs. 13) from identical inputs, because Jev's
+  probabilities for borderline cases vary from run to run. Differences of a few
+  duplicates between single runs are within that noise.
 - **Over-merge detection is weak.** Only merges of two gold entities known to be
   distinct (both ends of one triple) are counted. Spot checks on the tuning sample
   found plausible-but-wrong merges this can't see: "Venice" → "Republic of Venice",
@@ -68,4 +94,10 @@ Extraction dominates cost: Jev routing adds about 30% on top.
   are not tight estimates.
 - There is no QA here: whether 60% complete chains turns into answers is M7.
 - Jev itself is not perfectly deterministic. A re-run of the Jev variant from the same
-  cache reproduced these counts (18 misses), but individual close decisions can flip.
+  cache reproduced these counts (18 misses), but individual close decisions can flip
+  (see the escalation counts above).
+- Cost check: the OpenRouter key's usage went from $2.673 to $2.766 around the MiMo
+  run, which is $0.093. The run reported $0.050, and a smoke-test call $0.00006. The
+  difference most likely comes from a Jev-only diagnostic re-run (about $0.04)
+  finishing just before the first reading and being billed late. I have not verified
+  that.
