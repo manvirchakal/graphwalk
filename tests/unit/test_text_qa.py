@@ -283,3 +283,32 @@ async def test_build_graph_resumes_from_a_partial_checkpoint(tmp_path: Path) -> 
     assert graph.exists()
     assert not graph.with_suffix(".partial.json").exists()
     assert await store.counts() == await (await NetworkXStore.load(graph)).counts()
+
+
+async def test_reader_reads_source_paragraphs_chosen_by_the_walk() -> None:
+    store = await movie_store()
+    decider = FakeDecisionBackend(script=decide)
+    llm = FakeLLM(lambda _m: "London")
+    documents = {
+        "d/Inception": ("Inception", "Inception is a 2010 film by Christopher Nolan."),
+        "src": ("Film facts", "Nolan was born in London."),  # the fixture's provenance
+        "d/Other": ("Other", "Unrelated."),
+    }
+    system = GraphReaderSystem(
+        store,
+        Traverser(store, decider, config=preset_config("greedy")),
+        llm,
+        ChoiceEntryResolver(store, decider),
+        documents=documents,
+        max_docs=5,
+    )
+    answer = await system.answer(question("Where was the director of Inception born?", "London"))
+    assert answer.answers == ("London",)
+    prompt = llm.calls[0][1].content
+    assert "Passages about the entities on those walks:" in prompt
+    first = prompt.index("- Inception: Inception is a 2010 film")
+    assert first < prompt.index("- Film facts: Nolan was born in London.")
+    assert "Unrelated." not in prompt
+    assert "born_in London" not in prompt  # no extracted facts in source mode
+    assert llm.calls[0][0].content.startswith("You answer questions using only the given passages")
+    assert system.describe()["context"] == "source paragraphs"

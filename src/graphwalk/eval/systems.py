@@ -8,7 +8,7 @@ the question the eval exists to answer: walking with cheap decisions vs. retriev
 import asyncio
 import math
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -17,6 +17,7 @@ from pydantic import JsonValue
 
 from graphwalk.core.model import Node, NodeId
 from graphwalk.embeddings.base import Embedder, Vectors
+from graphwalk.eval.metrics import normalize
 from graphwalk.eval.types import EvalQuestion, SystemAnswer
 from graphwalk.llm.base import LLMBackend, LLMError, Message
 from graphwalk.stores.base import GraphStore
@@ -592,6 +593,12 @@ class GraphReaderSystem:
     walked node (at most ``max_nodes``), its summary, attributes, and up to
     ``max_facts`` incident facts. It answers in free text, so dates, yes/no, and
     comparisons are answerable, which graph-only walking cannot do.
+
+    With ``documents`` (provenance source id -> ``(title, text)``), the reader reads
+    source text instead of extracted facts: the walk only chooses *which* paragraphs,
+    so facts that extraction dropped or garbled are still there. Up to ``max_docs``
+    paragraphs, in this order: each entry node's own paragraph (title = its name), the
+    paragraphs that support each walked edge, then walked nodes' own paragraphs.
     """
 
     def __init__(
@@ -606,6 +613,8 @@ class GraphReaderSystem:
         max_nodes: int = 20,
         max_facts: int = 12,
         max_path_names: int = 5,
+        documents: Mapping[str, tuple[str, str]] | None = None,
+        max_docs: int = 5,
         name: str = "graphwalk-reader",
     ) -> None:
         self._store = store
@@ -617,6 +626,12 @@ class GraphReaderSystem:
         self._max_nodes = max_nodes
         self._max_facts = max_facts
         self._max_path_names = max_path_names
+        self._documents = documents
+        self._max_docs = max_docs
+        self._own: dict[str, str] = {}
+        """Normalized title -> provenance source id of the paragraph with that title."""
+        for key, (title, _text) in (documents or {}).items():
+            self._own.setdefault(normalize(title), key)
         self._name = name
 
     @property
@@ -633,6 +648,8 @@ class GraphReaderSystem:
             "max_entries": self._max_entries,
             "max_nodes": self._max_nodes,
             "max_facts": self._max_facts,
+            "context": "facts" if self._documents is None else "source paragraphs",
+            "max_docs": self._max_docs,
             "traversal": self._traverser.config.model_dump(mode="json"),
         }
 
@@ -664,12 +681,60 @@ class GraphReaderSystem:
     def prompt(self, question: str, walks: Sequence[str], nodes: Sequence[str]) -> list[Message]:
         walk_text = "\n".join(f"- {w}" for w in walks) or "(none)"
         node_text_ = "\n".join(nodes) or "(none)"
+        if self._documents is None:
+            body = f"Facts about the entities on those walks:\n{node_text_}"
+            system, instructions = READER_SYSTEM, READER_INSTRUCTIONS
+        else:
+            body = f"Passages about the entities on those walks:\n{node_text_}"
+            system, instructions = TEXT_PROMPTS.system, TEXT_PROMPTS.instructions
         user = (
-            f"Walks through the graph toward the answer:\n{walk_text}\n\n"
-            f"Facts about the entities on those walks:\n{node_text_}\n\n"
-            f"Question: {question}\n\n{READER_INSTRUCTIONS}"
+            f"Walks through a knowledge graph toward the answer:\n{walk_text}\n\n"
+            f"{body}\n\nQuestion: {question}\n\n{instructions}"
         )
-        return [Message(role="system", content=READER_SYSTEM), Message(role="user", content=user)]
+        return [Message(role="system", content=system), Message(role="user", content=user)]
+
+    async def _walked_edge_sources(self, results: Sequence[TraversalResult]) -> list[str]:
+        """Provenance source ids of the edges each best walk followed, in walk order."""
+        sources: list[str] = []
+        for result in results:
+            best = result.best
+            if best is None:
+                continue
+            frontier = list(best.start)
+            for hop in best.path:
+                targets = set(hop.targets[: self._max_path_names])
+                for node_id in frontier:
+                    for neighbor in await self._store.neighbors(
+                        node_id, direction=hop.direction, edge_types=(hop.relation,)
+                    ):
+                        if neighbor.node.id in targets:
+                            sources.extend(p.source_id for p in neighbor.edge.provenance)
+                frontier = list(targets)
+        return sources
+
+    async def _passages(
+        self, entries: Sequence[NodeId], order: Sequence[NodeId], results: Sequence[TraversalResult]
+    ) -> list[str]:
+        assert self._documents is not None  # noqa: S101 - source mode only
+        found = await self._store.get_nodes(list(order))
+
+        def own(node_id: NodeId) -> list[str]:
+            node = found.get(node_id)
+            if node is None:
+                return []
+            key = self._own.get(normalize(node.name))
+            if key is not None:
+                return [key]
+            return [p.source_id for p in node.provenance[:1]]
+
+        ranked: list[str] = []
+        for node_id in entries:
+            ranked += own(node_id)
+        ranked += await self._walked_edge_sources(results)
+        for node_id in order:
+            ranked += own(node_id)
+        keys = [k for k in dict.fromkeys(ranked) if k in self._documents][: self._max_docs]
+        return [f"{self._documents[k][0]}: {self._documents[k][1]}" for k in keys]
 
     async def answer(self, question: EvalQuestion) -> SystemAnswer:
         started = time.perf_counter()
@@ -702,12 +767,15 @@ class GraphReaderSystem:
         names = {node_id: node.name for node_id, node in found.items()}
         walks = [w for r in results if (w := self._walk_line(r, names)) is not None]
         lines: list[str] = []
-        for node_id in order:
-            node = found.get(node_id)
-            if node is None:
-                continue
-            facts = await node_facts(self._store, node, self._max_facts)
-            lines.append(node_line(node) + "".join(f"\n  - {f}" for f in facts))
+        if self._documents is not None:
+            lines = [f"- {p}" for p in await self._passages(entries, order, results)]
+        else:
+            for node_id in order:
+                node = found.get(node_id)
+                if node is None:
+                    continue
+                facts = await node_facts(self._store, node, self._max_facts)
+                lines.append(node_line(node) + "".join(f"\n  - {f}" for f in facts))
         decision_calls = link.decision_calls + sum(r.trace.totals.decision_calls for r in results)
         tokens_in = link.input_tokens + sum(r.trace.totals.input_tokens for r in results)
         tokens_out = link.output_tokens + sum(r.trace.totals.output_tokens for r in results)

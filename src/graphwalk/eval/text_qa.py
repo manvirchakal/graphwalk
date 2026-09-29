@@ -40,7 +40,13 @@ from graphwalk.eval.systems import (
     VectorRAGSystem,
 )
 from graphwalk.eval.types import EvalQuestion, QASystem
-from graphwalk.ingest.pipeline import ExtractionCache, IngestConfig, IngestPipeline, IngestReport
+from graphwalk.ingest.pipeline import (
+    ExtractionCache,
+    IngestConfig,
+    IngestPipeline,
+    IngestReport,
+    provenance_id,
+)
 from graphwalk.ingest.sources import TextSource
 from graphwalk.llm.base import LLMBackend
 from graphwalk.stores.networkx_store import NetworkXStore
@@ -89,6 +95,18 @@ def to_questions(records: Sequence[Mapping[str, Any]], dataset: str) -> list[Eva
 def paragraph_docs(records: Sequence[Mapping[str, Any]]) -> list[tuple[str, str]]:
     """``(title, "title: text")`` per pooled paragraph, for the RAG index."""
     return [(d.doc_id, f"{d.title}: {d.text}") for d in documents(records)]
+
+
+def source_documents(
+    dataset: str, records: Sequence[Mapping[str, Any]]
+) -> dict[str, tuple[str, str]]:
+    """Provenance source id -> ``(title, text)`` for the pooled paragraphs, matching
+    the ids :func:`build_graph` records, so the reader can read what a walk reached."""
+    source_id = f"{dataset}:paragraphs"
+    return {
+        provenance_id(source_id, d.doc_id): (d.title or d.doc_id, d.text)
+        for d in documents(records)
+    }
 
 
 def graph_key(dataset: str, records: Sequence[Mapping[str, Any]], config: IngestConfig) -> str:
@@ -161,7 +179,11 @@ async def build_text_systems(
     llm: LLMBackend,
     config: TraversalConfig,
     rag_k: int = 5,
+    documents: Mapping[str, tuple[str, str]] | None = None,
+    label: str = "",
 ) -> list[QASystem]:
+    """``documents`` (see :func:`source_documents`) makes the reader read source
+    paragraphs; ``label`` is appended to graphwalk system names."""
     systems: list[QASystem] = []
     # LLM-extracted graphs have hundreds of free-form types (337 on 2Wiki): offer the
     # answer-type question only the most common ones.
@@ -182,13 +204,23 @@ async def build_text_systems(
             if name == GRAPHWALK:
                 systems.append(
                     GraphwalkSystem(
-                        store, traverser, name=GRAPHWALK, linking="choice", resolver=resolver
+                        store,
+                        traverser,
+                        name=GRAPHWALK + label,
+                        linking="choice",
+                        resolver=resolver,
                     )
                 )
             else:
                 systems.append(
                     GraphReaderSystem(
-                        store, traverser, llm, resolver, names=NameEntryResolver(store), name=READER
+                        store,
+                        traverser,
+                        llm,
+                        resolver,
+                        names=NameEntryResolver(store),
+                        documents=documents,
+                        name=READER + label,
                     )
                 )
             continue
