@@ -572,3 +572,17 @@ def test_json_file_cache_flushes_incrementally(tmp_path: Path) -> None:
     assert dict(reloaded) == {"b": 2, "c": 3}
     assert len(reloaded) == 2
     reloaded.flush()  # nothing unsaved: no-op
+
+
+async def test_ingest_checkpoints_every_n_windows() -> None:
+    calls: list[int] = []
+
+    async def checkpoint() -> None:
+        calls.append(1)
+
+    texts = dict.fromkeys("abcde", "Marie Curie was born in Warsaw.")
+    pipeline = IngestPipeline(
+        NetworkXStore(), Scripted().llm, choose("c1"), config=IngestConfig(route_concurrency=1)
+    )
+    await pipeline.ingest(docs(**texts), checkpoint=checkpoint, checkpoint_every=2)
+    assert len(calls) == 2  # after windows 2 and 4 of 5

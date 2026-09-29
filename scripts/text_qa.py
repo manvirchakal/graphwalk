@@ -9,6 +9,8 @@ re-run pays only for answering. Results go to results/<stamp>-<dataset>-text/.
 
 import argparse
 import asyncio
+import hashlib
+import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -93,6 +95,11 @@ async def main(args: argparse.Namespace) -> None:
                 print(f"  {name}: {done}/{total}", flush=True)  # noqa: T201
 
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        run_params = {
+            "llm": args.llm, "rag_k": args.rag_k, "preset": PRESET, "systems": args.systems,
+        }  # fmt: skip
+        tag = hashlib.sha256(json.dumps(run_params, sort_keys=True).encode()).hexdigest()[:8]
+        checkpoints = cache_dir().parent / "checkpoints" / f"{graph_path.stem}-{tag}"
         out, _ = await run_text_qa(
             args.dataset,
             records,
@@ -114,6 +121,7 @@ async def main(args: argparse.Namespace) -> None:
             ingest=report,
             concurrency=args.concurrency,
             on_progress=progress,
+            checkpoint_dir=checkpoints,
         )
     finally:
         cache.flush()

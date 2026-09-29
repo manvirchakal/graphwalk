@@ -20,7 +20,7 @@ import json
 import math
 import random
 from collections import Counter, defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -117,10 +117,14 @@ async def build_graph(
     graph_path: Path | None = None,
 ) -> tuple[NetworkXStore, IngestReport | None]:
     """Ingest the pooled paragraphs, or load the graph from ``graph_path`` if it exists
-    (then the report is ``None``). A fresh graph is saved to ``graph_path``."""
+    (then the report is ``None``). A fresh graph is saved to ``graph_path``; while it is
+    being built, progress is checkpointed next to it and a re-run resumes from there."""
     if graph_path is not None and await asyncio.to_thread(graph_path.exists):
         return await NetworkXStore.load(graph_path), None
+    partial = None if graph_path is None else graph_path.with_suffix(".partial.json")
     store = NetworkXStore()
+    if partial is not None and await asyncio.to_thread(partial.exists):
+        store = await NetworkXStore.load(partial)
     source = TextSource(f"{dataset}:paragraphs", documents(records))
     pipeline = IngestPipeline(
         store,
@@ -131,10 +135,20 @@ async def build_graph(
         extraction_cache=cache,
         escalation_llm=escalation_llm,
     )
-    report = await pipeline.ingest(source)
+    checkpoint = None if partial is None else partial_saver(store, partial)
+    report = await pipeline.ingest(source, checkpoint=checkpoint)
     if graph_path is not None:
         await store.save(graph_path)
+    if partial is not None:
+        await asyncio.to_thread(partial.unlink, missing_ok=True)
     return store, report
+
+
+def partial_saver(store: NetworkXStore, path: Path) -> Callable[[], Awaitable[None]]:
+    async def save() -> None:
+        await store.save(path)
+
+    return save
 
 
 async def build_text_systems(
@@ -242,12 +256,25 @@ async def run_text_qa(
     ingest: IngestReport | None,
     concurrency: int = 8,
     on_progress: Callable[[str, int, int], None] | None = None,
+    checkpoint_dir: Path | None = None,
 ) -> tuple[Path, list[SystemRun]]:
+    """Run each system on the records' questions and write results. With
+    ``checkpoint_dir``, each finished system's run is saved there and reused on a
+    re-run, so an interrupted evaluation resumes instead of starting over."""
     questions = to_questions(records, dataset)
     runs: list[SystemRun] = []
     for system in systems:
+        saved = None if checkpoint_dir is None else checkpoint_dir / f"{system.name}.json"
+        if saved is not None and await asyncio.to_thread(saved.exists):
+            text = await asyncio.to_thread(saved.read_text, encoding="utf-8")
+            runs.append(SystemRun.model_validate_json(text))
+            continue
         progress = None if on_progress is None else partial(on_progress, system.name)
-        runs.append(await run_system(system, questions, concurrency=concurrency, on_done=progress))
+        run = await run_system(system, questions, concurrency=concurrency, on_done=progress)
+        if saved is not None:
+            await asyncio.to_thread(saved.parent.mkdir, parents=True, exist_ok=True)
+            await asyncio.to_thread(saved.write_text, run.model_dump_json(), encoding="utf-8")
+        runs.append(run)
     out = write_results(out_dir, dataset=f"{dataset}-text", runs=runs, params=params)
     extra = ["", "## By question type", "", by_type(runs), ""]
     if ingest is not None:

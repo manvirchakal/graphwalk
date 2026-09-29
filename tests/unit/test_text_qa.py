@@ -27,6 +27,7 @@ from graphwalk.eval.text_qa import (
 from graphwalk.eval.types import EvalQuestion
 from graphwalk.ingest import IngestConfig
 from graphwalk.llm import FakeLLM, Message
+from graphwalk.stores.networkx_store import NetworkXStore
 from graphwalk.traversal import ChoiceEntryResolver, NameEntryResolver, Traverser
 from graphwalk.traversal.entry import ENTRY_KEY
 from kg_fixtures import current_key, movie_store, option_key
@@ -242,3 +243,43 @@ async def test_text_qa_end_to_end(tmp_path: Path) -> None:
     assert "## Ingestion" in summary
     rag = runs[2]
     assert rag.summary.f1 == pytest.approx(0.5)  # "London" is right once, wrong once
+
+    # With checkpoints, a re-run reuses finished systems instead of answering again.
+    checkpoints = tmp_path / "ckpt"
+    await run_text_qa(
+        "movies", records, systems[2:3], out_dir=tmp_path / "o1", params={}, ingest=None,
+        checkpoint_dir=checkpoints,
+    )  # fmt: skip
+    calls = len(llm.calls)
+    _, resumed = await run_text_qa(
+        "movies", records, systems[2:3], out_dir=tmp_path / "o2", params={}, ingest=None,
+        checkpoint_dir=checkpoints,
+    )  # fmt: skip
+    assert len(llm.calls) == calls
+    assert resumed[0].summary.f1 == pytest.approx(0.5)
+
+
+async def test_build_graph_resumes_from_a_partial_checkpoint(tmp_path: Path) -> None:
+    records = [
+        {"_id": str(i), "type": "x", "question": "q", "answer": "a",
+         "context": [[f"Doc {i}", [f"Text {i}."]]]}
+        for i in range(3)
+    ]  # fmt: skip
+    llm = FakeLLM(lambda _m: json.dumps(EXTRACT))
+    decider = FakeDecisionBackend(script=decide)
+    config = IngestConfig(escalate=False, route_concurrency=1)
+    graph = tmp_path / "g.graph.json"
+    # A run interrupted after the first document: its checkpoint has that doc's ledger.
+    partial_store, _ = await build_graph(
+        "d", records[:1], llm=llm, decider=decider, embedder=None, cache={}, config=config
+    )
+    await partial_store.save(graph.with_suffix(".partial.json"))
+    store, report = await build_graph(
+        "d", records, llm=llm, decider=decider, embedder=None, cache={}, config=config,
+        graph_path=graph,
+    )  # fmt: skip
+    assert report is not None
+    assert (report.unchanged, report.new) == (1, 2)
+    assert graph.exists()
+    assert not graph.with_suffix(".partial.json").exists()
+    assert await store.counts() == await (await NetworkXStore.load(graph)).counts()

@@ -14,7 +14,7 @@ order, so a run is deterministic given the model outputs.
 
 import asyncio
 import time
-from collections.abc import MutableMapping
+from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass
 from typing import cast
 
@@ -227,7 +227,16 @@ class IngestPipeline:
             return {}
         return {k: str(v) for k, v in raw.items()}
 
-    async def ingest(self, source: Source) -> IngestReport:
+    async def ingest(
+        self,
+        source: Source,
+        *,
+        checkpoint: Callable[[], Awaitable[None]] | None = None,
+        checkpoint_every: int = 25,
+    ) -> IngestReport:
+        """Ingest ``source``. ``checkpoint`` (e.g. saving the store) runs every
+        ``checkpoint_every`` routing windows; since the ledger records finished
+        documents, re-ingesting from a checkpointed store resumes where it stopped."""
         started = time.perf_counter()
         cfg = self.config
         report = IngestReport(source_id=source.source_id)
@@ -264,6 +273,9 @@ class IngestPipeline:
                     progress=progress,
                 )
                 await self._save_ledger(source.source_id, ledger)
+                windows = start // cfg.route_concurrency + 1
+                if checkpoint is not None and windows % checkpoint_every == 0:
+                    await checkpoint()
         finally:
             for task in tasks:
                 task.cancel()
