@@ -1,5 +1,10 @@
 # M5 results: traversal-only evals vs vector RAG
 
+> **Update 2:** against a stronger multi-step RAG baseline (`iter-rag`), graphwalk-v2 still
+> wins clearly on MetaQA (F1 0.965 / 0.990 / 0.887 vs 0.891 / 0.810 / 0.406) at 1.3–5x lower
+> cost, but **ties on 2Wiki** (0.911 end to end vs 0.921). A Jev entity linker lifts 2Wiki
+> end-to-end F1 from 0.773 to 0.911. See "Follow-up" at the end.
+>
 > **Update:** after a tuning round on MetaQA dev, the `-v2` presets reach test F1 0.965 / 0.990 / 0.887 (1/2/3-hop), at 14–39% more cost than v1. See "Tuning round" below. The tables that follow first are the untuned v1 results.
 
 Run on 2026-09-28 against live APIs. Raw per-dataset summaries are in `results/*/summary.md`.
@@ -185,3 +190,83 @@ what makes MetaQA work.
   OpenRouter caps new accounts at 20 LLM requests/min.
 - Prompts are v1 and untuned. Nothing was tuned on these test subsets.
 - The seeded subsets are 200 (MetaQA) and 300 (2Wiki) questions, not the full test sets.
+
+## Follow-up: a multi-step RAG baseline and a Jev entity linker
+
+Same test subsets as above (MetaQA seed 0, n = 200 per hop; 2Wiki seed 0, n = 300).
+
+**`iter-rag`.** Same documents, embedder (bge-small) and reader (`gpt-6-luna`) as one-shot
+RAG; only iteration differs. It retrieves the top 5 documents for the question. Then, for up
+to 5 LLM calls, the reader either answers or names entities to look up next (up to 8 per
+step): an exact name match if there is one, otherwise the dense top 2. At most 40 documents
+are kept in context. A lookup that adds nothing forces the final answer.
+
+| dataset | system | F1 | EM | p50 s | p95 s | $/1k q | calls/q |
+|---|---|---|---|---|---|---|---|
+| MetaQA 1-hop | graphwalk relation-v2 | **0.965** | 0.930 | **0.43** | 1.56 | **0.064** | Jev 1.97 |
+| MetaQA 1-hop | iter-rag | 0.891 | 0.830 | 1.52 | 4.61 | 0.086 | LLM 1.09 |
+| MetaQA 1-hop | one-shot RAG | 0.886 | 0.840 | 1.44 | 3.25 | 0.056 | LLM 1 |
+| MetaQA 2-hop | graphwalk relation-v2 | **0.990** | 0.990 | **0.69** | 1.32 | **0.095** | Jev 2.96 |
+| MetaQA 2-hop | iter-rag | 0.810 | 0.760 | 4.07 | 11.75 | 0.317 | LLM 2.07 |
+| MetaQA 2-hop | one-shot RAG | 0.271 | 0.210 | 2.03 | 4.10 | 0.085 | LLM 1 |
+| MetaQA 3-hop | graphwalk relation-v2 | **0.887** | 0.800 | **1.31** | 2.77 | **0.153** | Jev 3.90 |
+| MetaQA 3-hop | iter-rag | 0.406 | 0.275 | 10.50 | 22.31 | 0.800 | LLM 3.15 |
+| MetaQA 3-hop | one-shot RAG | 0.108 | 0.030 | 2.93 | 5.62 | 0.118 | LLM 1 |
+| 2Wiki | graphwalk entity greedy-v2, gold start | 0.918 | 0.887 | 0.36 | 0.59 | 0.048 | Jev 1.5 |
+| 2Wiki | graphwalk entity greedy-v2, Jev linker | 0.911 | 0.880 | 0.56 | 0.82 | 0.081 | Jev 2.5 |
+| 2Wiki | iter-rag (no linking needed) | **0.921** | 0.917 | 1.86 | 5.27 | 0.099 | LLM 1.44 |
+| 2Wiki | one-shot RAG | 0.600 | 0.600 | 1.57 | 2.83 | 0.040 | LLM 1 |
+
+(graphwalk-v2 MetaQA rows are from the tuning-round test run above.)
+
+**What changes.**
+- **2Wiki is a tie.** On 2-hop questions over a sparse graph, a reader that can look things up
+  is as accurate as graphwalk, with or without gold linking. graphwalk keeps a ~3x latency
+  edge (p50 0.56 s vs 1.86 s) and is ~20% cheaper, but that's all.
+- **MetaQA still separates them, and the gap grows with hops.** Set-valued answers over hub
+  entities are where iter-rag breaks: at 3 hops it must gather dozens of entity documents
+  and then read out every answer. F1 falls to 0.41, while graphwalk's relation hops carry
+  whole answer sets without reading them.
+- **Cost now favours graphwalk on multi-hop.** iter-rag costs 3.3x (2-hop) to 5.2x (3-hop)
+  as much as graphwalk-v2, and is 6–8x slower at p50.
+- **Why iter-rag fails at 3 hops.** In 169 of 200 questions the reader answered on its
+  own, before any limit. Those answers averaged F1 0.43, so they were premature or
+  incomplete. The 8-lookups-per-step cap was hit in 71 questions. A larger reader or
+  higher caps would score higher, at even higher cost. This is a strong-ish baseline,
+  not the strongest possible one.
+
+**Jev entity linker (`linking=choice`).**
+- **Fixes to the free name resolver.**
+  - It ignores mentions made only of function words. A node named "Who..." had been
+    matching every who-question.
+  - It ranks fuzzy candidates by IDF-weighted overlap between name words and the question.
+- **The linker.** It shows Jev up to 8 candidates, each with its name and relations, and
+  asks which one the question is about: one decision call per query.
+
+| linking (graphwalk entity greedy-v2) | linking acc. | F1 | p50 s | $/1k q |
+|---|---|---|---|---|
+| exact mentions (`resolve`) | 0.737 | 0.773 | 0.36 | 0.050 |
+| top fuzzy candidate (`resolve-best`, free) | 0.913 | 0.861 | 0.36 | 0.048 |
+| Jev picks among 8 candidates (`choice`) | 0.943 | **0.911** | 0.56 | 0.081 |
+| gold start (ceiling) | 1.000 | 0.918 | 0.36 | 0.048 |
+
+- **Contamination check.** I designed this after reading linking failures on this same
+  2Wiki subset, so I re-ran it once on a different seeded sample (seed 1; 15 of 300
+  questions overlap). Linking accuracy was 0.760 / 0.883 / 0.930 and F1
+  0.782 / 0.844 / 0.894, against a gold-start F1 of 0.914 (`results/heldout/`). The
+  gains hold.
+- **Linking accuracy understates the linker.** 15 of `choice`'s 17 "wrong" starts still
+  answered correctly. Jev picked the other entity the question names, e.g. "Frankie
+  Laine" in "…(Frankie Laine Song)", which is one hop closer to the answer.
+- **Cost.** The linker call adds ~$0.03 per 1k queries and 0.2 s. `resolve-best` is a
+  reasonable free default when that matters.
+
+**Revised verdict.**
+- graphwalk's accuracy case holds against multi-step RAG where answers are sets or paths
+  are 3+ hops over dense graphs (MetaQA).
+- It does not hold on 2-hop single-answer questions (2Wiki), where it wins only on latency
+  and marginally on cost.
+- Remaining gaps before calling this a win over "graph RAG" in general:
+  - GraphRAG/LightRAG-style baselines;
+  - a bigger reader for iter-rag;
+  - a harder text-derived graph (M6/M7).

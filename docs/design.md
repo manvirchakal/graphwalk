@@ -589,6 +589,15 @@ are deleted, and the rest are re-derived. Only affected nodes are touched.
   - cost is roughly at parity (Jev is only ~2.4x cheaper per token than the cheapest
     current LLM, and a walk makes several calls);
   - the main weakness is STOP, and end to end, entity linking.
+- **Multi-step RAG baseline (`iter-rag`).** Same documents, embedder and reader as the
+  one-shot baseline. The reader answers or names entities to look up (exact name, else
+  dense top 2), for up to 5 calls, 8 lookups per step and 40 documents in context.
+- **Entity linking.** `NameEntryResolver` drops stopword-only mentions and ranks fuzzy
+  candidates by IDF-weighted name-word overlap (`best_only` = top candidate).
+  `ChoiceEntryResolver` spends one decision call to pick among up to 8 candidates, shown
+  with their relations. Eval `--linking resolve | resolve-best | choice`; linking calls
+  count toward each answer's calls, tokens and cost. Questions with no entry node count as
+  linking misses.
 - **Tuning round.** Chosen on MetaQA dev, applied once to test; knobs are in
   `TraversalConfig`, and `-v2` presets enable them.
   - The chosen knobs are `show_types`, `stop_style="literal"`, `relation_glosses` and
