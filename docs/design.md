@@ -519,6 +519,41 @@ is stored in the graph store, keyed per source. An unchanged hash is skipped. A
 changed hash retracts that document's provenance: nodes whose provenance becomes empty
 are deleted, and the rest are re-derived. Only affected nodes are touched.
 
+### As built in M6
+
+- **Modules:** `ingest/{sources,chunking,extraction,routing,resolution,pipeline}.py`.
+  The CLI is `graphwalk ingest PATH --graph G.json`. The SQL source is not built yet:
+  CSV/JSON records cover tabular data as text.
+- **Extraction:** one LLM call per chunk (≤2,000 characters, packed from whole
+  paragraphs) returns JSON with entities (name, type, description, literal attributes)
+  and relations. A reply that fails validation is retried once with the error. Cleanup
+  merges duplicate names, snake-cases types, drops self-loops, and adds untyped
+  entities for relation endpoints that were not listed. The entity description becomes
+  the node summary, so there is no separate summary call.
+- **Routing:** `NodeIndex` proposes up to 5 candidates per mention: exact name or alias
+  first, then name-word Jaccard and bge-small cosine ≥ 0.75. One Jev request per chunk
+  asks one question per mention with candidates, over `{c1..cN, NEW}`. Each option
+  card has the node's name, type, aliases, summary, and up to 8 relations; the state is
+  the passage. If the chosen option has p < 0.6, the LLM adjudicates. If Jev fails,
+  the mention merges only on an exact name. Mentions with no candidates are NEW with
+  no call. `routing="exact"` (merge on identical normalized name, no calls) is kept
+  as the baseline.
+- **Writes:** a new node's id is a hash of (document, name, type), so re-ingesting
+  recreates the same ids. A routed mention is folded in with `merge_node_data`, so
+  disagreeing attributes become conflicts with provenance. A generic `entity` type
+  never conflicts with a real one.
+- **Ledger and retraction:** `GraphStore` gained `get_metadata`/`set_metadata`, which
+  NetworkX persists in the graph file. The ledger maps doc id → hash(title, text,
+  extractor version). `Provenance.source_id` is `<source>/<doc_id>`. Retraction
+  removes that provenance everywhere. It deletes elements left without provenance,
+  drops attributes left without sources, and promotes a lone surviving conflict value.
+  A document with a failed chunk is marked `incomplete`, so the next run retries it.
+- **Known limitation:** retraction does not re-derive a surviving node's name,
+  summary, or aliases, even if they came from the retracted document. Routing within
+  one chunk cannot merge two mentions with different names, since they are routed
+  against the graph as it was before the chunk.
+- **Eval:** `scripts/ingest_2wiki.py` (see `docs/results-m6.md`).
+
 ## 6. Evals
 
 - **MetaQA** (1/2/3-hop, `kb.txt` loaded as triples). The topic entity comes from the

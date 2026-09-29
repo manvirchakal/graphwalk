@@ -42,6 +42,20 @@ Optional extras:
 uv sync --extra neo4j --extra embeddings
 ```
 
+## Ingestion
+
+```bash
+uv sync --extra llm --extra embeddings
+graphwalk ingest docs/ --graph my.graph.json --report ingest-report.json
+graphwalk query --graph my.graph.json "Who directed ...?"
+```
+
+`ingest` reads `.txt`/`.md` files (one document each) and `.json`/`.jsonl`/`.csv`
+records (one document per record). An LLM extracts entities and relations, and Jev
+decides for each entity whether it is an existing node or a new one. Low-confidence
+decisions go to the LLM. Re-running is idempotent: unchanged documents are skipped, and
+changed ones are retracted and re-ingested (`--prune` also retracts deleted ones).
+
 ## Decision backend
 
 The v1 decision backend is TypeSafe's Jev (pinned: `jev-1.13.0` direct,
