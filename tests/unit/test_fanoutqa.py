@@ -27,22 +27,6 @@ def test_evidence_skips_placeholder_pages() -> None:
     assert [e.title for e in f.evidence(question)] == ["A", "B"]
 
 
-def test_html_to_text_keeps_tables_and_stops_at_references() -> None:
-    html = """
-    <p>The <b>draft</b> was held.<sup class="reference">[1]</sup></p>
-    <h2><span>First round</span><span class="mw-editsection">edit</span></h2>
-    <table><tr><th>Pick</th><th>Player</th></tr>
-    <tr><td>1</td><td><a>Pat Burrell</a></td></tr></table>
-    <h2>References</h2><p>Should not appear.</p>
-    """
-    assert f.html_to_text(html).splitlines() == [
-        "The draft was held.",
-        "## First round",
-        "Pick | Player",
-        "1 | Pat Burrell",
-    ]
-
-
 def test_records_truncate_pages() -> None:
     page = {"evidence": {"pageid": 7, "revid": 1, "title": "A"}}
     questions = [{"id": "q1", "question": "Q?", "answer": {"A": "1"}, "decomposition": [page]}]

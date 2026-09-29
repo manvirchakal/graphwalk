@@ -2,28 +2,72 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.8.17"
+
 jobs:
   check:
+    name: check (py${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    env:
+      UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.8.17"
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - name: Install (base + dev)
-        run: uv sync --locked
+      # Every extra, so pyright can resolve the optional backends.
+      - name: Install (all extras + dev)
+        run: uv sync --locked --all-extras
       - name: Lint
         run: uv run ruff check .
       - name: Format
         run: uv run ruff format --check .
       - name: Typecheck
         run: uv run pyright
-      - name: Test
+      - name: Test (offline)
         run: uv run pytest
+
+  minimal:
+    # The core must import and pass its tests without any optional extra.
+    name: test (no extras)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest
+
+  build:
+    name: build and smoke-test the wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv build
+      - name: Install the wheel into a clean environment
+        run: |
+          uv venv /tmp/wheel-env
+          uv pip install --python /tmp/wheel-env dist/*.whl
+          /tmp/wheel-env/bin/graphwalk --help
+          /tmp/wheel-env/bin/python -c "import graphwalk"

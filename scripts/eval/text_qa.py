@@ -1,7 +1,7 @@
 """M7: QA over graphs ingested from text, vs. RAG over the same paragraphs.
 
-    uv run python scripts/text_qa.py 2wiki --per-type 30
-    uv run python scripts/text_qa.py hotpotqa --per-type 60
+    uv run python scripts/eval/text_qa.py 2wiki --per-type 30
+    uv run python scripts/eval/text_qa.py hotpotqa --per-type 60
 
 The ingested graph is cached (~/.cache/graphwalk/graphs/), as are extractions, so a
 re-run pays only for answering. Results go to results/<stamp>-<dataset>-text/.

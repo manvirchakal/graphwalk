@@ -2,7 +2,7 @@
 
 **Setup.** 40 walkable 2Wiki dev questions (seed 0). All their context paragraphs,
 gold and distractor, are de-duplicated by title: 309 documents, 316 chunks. They are
-ingested into an empty graph by `scripts/ingest_2wiki.py`. Extraction uses
+ingested into an empty graph by `scripts/eval/ingest_2wiki.py`. Extraction uses
 `gpt-6-luna`, run once and cached, so all three variants share identical extractions
 and differ only in routing. The graph is then scored against the 40 questions' gold
 evidence triples (definitions are in `graphwalk/eval/ingest_eval.py`). Run:

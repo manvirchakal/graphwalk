@@ -7,13 +7,11 @@ from typing import Any
 from graphwalk.decisions import ChoiceQuestion, FakeDecisionBackend, JSONContent
 from graphwalk.eval.ingest_eval import (
     documents,
-    load_cache,
     norm_name,
     norm_value,
     run_dir,
     run_variants,
     sample_records,
-    save_cache,
     write_results,
 )
 from graphwalk.ingest import IngestConfig
@@ -128,11 +126,6 @@ async def test_run_variants_scores_and_writes(tmp_path: Path) -> None:
     assert "| exact | 3 | 2 |" in summary
     assert "3 triples (1 with a literal object)" in summary
     assert json.loads((out / "results.json").read_text(encoding="utf-8"))["params"] == {"n": 2}
-
-    cache_file = tmp_path / "c" / "cache.json"
-    assert load_cache(cache_file) == {}
-    save_cache(cache_file, cache)
-    assert load_cache(cache_file) == cache
 
 
 async def test_score_counts_splits_and_overmerges(tmp_path: Path) -> None:

@@ -213,19 +213,6 @@ class VariantResult(BaseModel):
     report: IngestReport
 
 
-def load_cache(path: Path) -> dict[str, JsonValue]:
-    if not path.exists():
-        return {}
-    return cast("dict[str, JsonValue]", json.loads(path.read_text(encoding="utf-8")))
-
-
-def save_cache(path: Path, cache: Mapping[str, JsonValue]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(path)
-
-
 async def run_variants(
     records: Sequence[Mapping[str, Any]],
     variants: Mapping[str, IngestConfig],

@@ -3,7 +3,8 @@
 ## Setup
 
 ```bash
-uv sync            # base deps + the dev dependency group
+uv sync --all-extras      # base deps, every optional extra, and the dev group
+uvx pre-commit install    # optional: run the checks below on every commit
 ```
 
 Add extras as needed (`uv sync --extra neo4j`, and so on). Use `uv add` / `uv add --optional <extra>`
@@ -11,7 +12,8 @@ to change dependencies, and commit the updated `uv.lock`.
 
 ## Checks
 
-Run these before every commit; CI runs the same set:
+Run these before every commit. CI runs the same set on Python 3.12 and 3.13 with all
+extras, runs the tests again with no extras, and builds and smoke-tests the wheel:
 
 ```bash
 uv run ruff check .
@@ -34,7 +36,8 @@ uv run pytest
 
 Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`,
 `test:`, `refactor:`, `chore:`, `ci:`. Never commit secrets; `.env` is gitignored and
-`.env.example` documents every variable.
+`.env.example` documents every variable. Add user-visible changes to `CHANGELOG.md` under
+"Unreleased". Report security issues privately (see `SECURITY.md`).
 
 ## Design
 

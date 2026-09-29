@@ -70,7 +70,7 @@ was found. Fixed later; these runs' raw records were lost, so the value is recom
      batched into the first call. `hint` shows the prediction in later questions; `gate`
      withholds STOP from beams of the wrong type.
 - Ablated on seeded **dev** subsets (n = 200 per hop count) with relation-greedy
-  (`scripts/tune_metaqa_dev.py`; summaries in `results/tuning/`).
+  (`scripts/eval/tune_metaqa_dev.py`; summaries in `results/tuning/`).
 - The winner was frozen as the `-v2` presets and run **once** on the same test subsets
   as v1.
 

@@ -572,7 +572,7 @@ are deleted, and the rest are re-derived. Only affected nodes are touched.
   Result: CPU-only routing over 970 cached 2Wiki paragraphs is now linear (26 s / 51 s
   / 111 s for 278 / 505 / 970 paragraphs). It was superlinear before: 33 s / 104 s for
   278 / 505. Embedding the mentions is now about 80% of that CPU time.
-- **Eval:** `scripts/ingest_2wiki.py` (see `docs/results-m6.md`).
+- **Eval:** `scripts/eval/ingest_2wiki.py` (see `docs/results-m6.md`).
 
 ## 6. Evals
 
@@ -664,7 +664,7 @@ are deleted, and the rest are re-derived. Only affected nodes are touched.
 
 ### As built in M7
 
-- `eval/text_qa.py` and `scripts/text_qa.py` run QA over a graph ingested from a
+- `eval/text_qa.py` and `scripts/eval/text_qa.py` run QA over a graph ingested from a
   question sample's pooled paragraphs, against RAG over the same paragraphs. The
   systems are graph-only graphwalk, graphwalk + LLM reader (`GraphReaderSystem`), and
   one-shot and multi-step RAG (`TEXT_PROMPTS`).

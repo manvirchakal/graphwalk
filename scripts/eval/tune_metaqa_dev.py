@@ -1,6 +1,6 @@
 """M5 tuning round: ablate prompt/decision knobs on MetaQA **dev** (never test).
 
-    uv run python scripts/tune_metaqa_dev.py [--n 200] [--preset relation]
+    uv run python scripts/eval/tune_metaqa_dev.py [--n 200] [--preset relation]
 
 Each variant runs the same seeded dev subset per hop count; summaries go to
 results/tuning/. The chosen configuration is then evaluated once on test.

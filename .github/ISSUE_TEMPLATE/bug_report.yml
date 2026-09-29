@@ -1,0 +1,34 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: Code or commands. Never paste API keys; redact them.
+      render: python
+  - type: input
+    id: version
+    attributes:
+      label: graphwalk version
+      placeholder: "0.1.0 or a commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Python version, OS, and install extras
+      placeholder: "3.12, Ubuntu 24.04, [llm,embeddings]"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or traceback
+      render: text

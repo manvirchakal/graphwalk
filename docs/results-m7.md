@@ -31,7 +31,7 @@ points.
   - `text-iter-rag`: multi-step RAG (up to 5 steps; searches by title or embedding).
 - **Metrics.** SQuAD-style EM and token F1 against the single gold answer.
 - **Runs.** `results/20260929T154958Z-2wiki-text/` and
-  `results/20260929T171954Z-hotpotqa-text/`. Script: `scripts/text_qa.py`.
+  `results/20260929T171954Z-hotpotqa-text/`. Script: `scripts/eval/text_qa.py`.
 
 ## Results
 
@@ -154,7 +154,7 @@ distractor setting keeps each pool small and on-topic.
 Two changes aimed at the failure analysis above, evaluated on the **same** 120 + 120
 questions, pooled paragraphs, and cached graphs
 (`results/20260929T180802Z-2wiki-walkread/`,
-`results/20260929T182414Z-hotpotqa-walkread/`; script `scripts/walk_read.py`).
+`results/20260929T182414Z-hotpotqa-walkread/`; script `scripts/eval/walk_read.py`).
 
 - **Walk, then read the source.** The reader no longer reads extracted facts. The walk
   chooses which paragraphs to read, and the reader reads their original text. It takes
@@ -229,7 +229,7 @@ MLB draft". If walking a text-derived graph beats retrieval anywhere, it should 
 here: a relation-mode hop takes *all* targets of a relation at once, which is what
 beat RAG on MetaQA.
 
-**Setup** (`scripts/fanout.py`; run `results/20260929T211957Z-fanoutqa/`):
+**Setup** (`scripts/eval/fanout.py`; run `results/20260929T211957Z-fanoutqa/`):
 
 - 40 dev questions (seed 0) and their 233 evidence pages, from a pinned community
   mirror of the FanOutQA corpus. Wikipedia's API now rate-limits bulk fetches: 11 of

@@ -1,9 +1,9 @@
 """Step 2: FanOutQA, where answers are sets spread over many Wikipedia pages.
 
-    uv run python scripts/fanout.py --n 40
+    uv run python scripts/eval/fanout.py --n 40
 
 Evidence pages (truncated to --max-chars) are pooled, ingested into one graph, and
-indexed page-by-page for RAG, as in scripts/text_qa.py. Systems:
+indexed page-by-page for RAG, as in scripts/eval/text_qa.py. Systems:
 
 * graphwalk-reader-facts: relation-mode walks (a hop takes *all* targets of a
   relation), reader reads the reached nodes' extracted facts;

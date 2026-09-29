@@ -1,6 +1,6 @@
 """M6: ingestion quality on 2Wiki paragraphs, per routing variant.
 
-    uv run python scripts/ingest_2wiki.py [--n 40] [--seed 0]
+    uv run python scripts/eval/ingest_2wiki.py [--n 40] [--seed 0]
 
 Extractions are cached in ~/.cache/graphwalk/extractions/, so later variants (and
 re-runs) pay only for routing. Summaries go to results/<stamp>-2wiki-ingest/.

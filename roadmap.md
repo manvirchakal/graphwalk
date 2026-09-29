@@ -66,7 +66,7 @@ Decisions already made (see "Decisions" below):
 | Providers | OpenRouter, TypeSafe, OpenAI, Anthropic, and x.ai, each with an overridable base URL. |
 | Roles | **Decisions**: Jev via TypeSafe or OpenRouter. If neither key is present, an **LLM-as-decider fallback** (any chat provider) runs behind an explicit flag and is documented as slower and uncalibrated. **LLM** (extraction, escalation): any chat provider. **Embeddings**: local fastembed by default; OpenAI or OpenRouter optional. |
 | Keys | **stdio**: environment variables with conventional names (`OPENROUTER_API_KEY`, `TYPESAFE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`, each with a `*_BASE_URL`). **Remote**: the same names as headers on the MCP initialize request, bound to that session only, held in memory, never logged or persisted. Precedence: headers, then the server's environment (only if the operator opts in), then a clear error. |
-| Remote security | Server access is authenticated separately from provider keys: a bearer token first, MCP OAuth later. **Base URLs sent in headers are ignored unless their host is on an operator allowlist** (`GRAPHWALK_ALLOWED_BASE_URLS`), which prevents server-side request forgery. Server-side keys are used only if the operator allows it. |
+| Remote security | Server access is authenticated separately from provider keys, and the operator configures how: none (local only), a static bearer token, or **OAuth 2.1 per the MCP authorization spec** (graphwalk acts as a resource server that validates tokens from the operator's authorization server). All three ship in v0.1. **Base URLs sent in headers are ignored unless their host is on an operator allowlist** (`GRAPHWALK_ALLOWED_BASE_URLS`), which prevents server-side request forgery. Server-side keys are used only if the operator allows it. |
 | Positioning | "A graph index over your documents, walked cheaply with a calibrated classifier, returning auditable locations." It's strongest on curated knowledge graphs and composes with dense retrieval on text. We do **not** claim to beat RAG on text. |
 | Affiliation | None with TypeSafe. The paper says so, and the LLM-as-decider ablation makes the method vendor-neutral. |
 
@@ -76,7 +76,7 @@ Each phase lists deliverables and an **exit criterion**. Phases 1–3 are the
 engineering path to v0.1. Phase 4 (experiments) can start as soon as Phase 1 lands,
 and runs in parallel with Phases 2–3.
 
-### Phase 0: Repository foundations
+### Phase 0: Repository foundations (done)
 
 - GitHub Actions CI: ruff, ruff format, pyright, and offline pytest on Python 3.12 and
   3.13. It needs no network (pytest-socket already enforces this) and no secrets.
@@ -156,7 +156,14 @@ NetworkX and SQLite.
 2. **stdio mode**: keys from the environment; the graph is a local SQLite file.
 3. **Remote HTTP mode (streamable HTTP)**:
    - Provider keys come from headers at initialize time, scoped to the session.
-   - A bearer token authenticates access to the server.
+   - Server access auth is configurable (`GRAPHWALK_AUTH=none|bearer|oauth`):
+     - `bearer`: a static token, for simple self-hosting;
+     - `oauth`: graphwalk is an OAuth 2.1 resource server per the MCP authorization
+       spec. It serves protected-resource metadata (RFC 9728) pointing at the
+       operator's authorization server, validates access tokens (JWT via the issuer's
+       JWKS, or introspection), and checks audience and scopes. graphwalk does not
+       run its own authorization server.
+     - `none` is allowed only when bound to localhost.
    - Base-URL headers are subject to the allowlist.
    - Request limits: maximum `k`, maximum `read` span, per-session concurrency.
 4. **Docker image**: non-root, a volume for the SQLite file, a health endpoint,
@@ -170,6 +177,8 @@ NetworkX and SQLite.
    - in-process MCP client tests for every tool, for header handling, and for the
      rule that keys never leak into logs;
    - the SSRF allowlist;
+   - each auth mode: missing, expired, wrong-audience and wrong-scope tokens are
+     rejected; metadata discovery works with a stub authorization server;
    - a container smoke test in CI.
 
 **Exit:** your own harness uses graphwalk over stdio and over remote HTTP to answer
@@ -293,13 +302,11 @@ E6 need neither and can run any time.
 | Results are noisy (Jev isn't deterministic; samples are small) | E4 seeds and confidence intervals. Claims are made only where the confidence intervals separate. |
 | E2 erases the curated-graph advantage | The paper stays valuable as a "when does it help" study. The narrowed claim is tested in E2b if budget allows. |
 | A $41 budget limits scope | Experiments are ordered by value, graphs are cached, and the paper states its scale. |
-| Header-borne keys in remote mode | Keys are session-scoped and in memory only, logs are redacted (with tests), TLS is required in the docs, and there's a separate bearer token and a base-URL allowlist. |
+| Header-borne keys in remote mode | Keys are session-scoped and in memory only, logs are redacted (with tests), TLS is required in the docs, server access has its own auth (bearer or OAuth), and there's a base-URL allowlist. |
 
 ## Open questions (to revisit)
 
 - GitHub org or user and the package name (`graphwalk` may be taken on PyPI; check
   before Phase 5).
-- Whether to add OAuth for remote MCP in v0.1 or v0.2 (the bearer token is the v0.1
-  default).
 - Whether the relation-schema normalization should ship as an experimental feature
   or be removed (it showed no gain in M7).

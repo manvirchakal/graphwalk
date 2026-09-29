@@ -1,9 +1,9 @@
 """M7 follow-up: walk-then-read-source, and a fixed relation schema.
 
-    uv run python scripts/walk_read.py 2wiki --per-type 30
-    uv run python scripts/walk_read.py hotpotqa --per-type 60
+    uv run python scripts/eval/walk_read.py 2wiki --per-type 30
+    uv run python scripts/eval/walk_read.py hotpotqa --per-type 60
 
-Reuses the M7 question samples and cached ingested graphs (run scripts/text_qa.py
+Reuses the M7 question samples and cached ingested graphs (run scripts/eval/text_qa.py
 first). Normalizes each graph onto the fixed relation schema (cached next to it), then
 runs:
 
@@ -46,7 +46,7 @@ from graphwalk.llm.litellm_backend import LiteLLMBackend
 from graphwalk.stores.networkx_store import NetworkXStore
 
 M7_INGEST = IngestConfig(routing="jev", escalate=True)
-"""The config scripts/text_qa.py ingested with (it names the cached graph)."""
+"""The config scripts/eval/text_qa.py ingested with (it names the cached graph)."""
 
 
 async def normalized(base: Path, store: NetworkXStore, decider: DecisionBackend) -> NetworkXStore:
@@ -67,7 +67,7 @@ async def main(args: argparse.Namespace) -> None:
         cache_dir().parent / "graphs" / f"{graph_key(args.dataset, records, M7_INGEST)}.graph.json"
     )
     if not graph_path.exists():
-        msg = f"{graph_path} missing: run scripts/text_qa.py {args.dataset} first"
+        msg = f"{graph_path} missing: run scripts/eval/text_qa.py {args.dataset} first"
         raise SystemExit(msg)
     key = GraphwalkSettings().openrouter_api_key
     llm = LiteLLMBackend(
