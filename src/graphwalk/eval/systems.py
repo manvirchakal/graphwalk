@@ -369,6 +369,36 @@ TEXT_PROMPTS = RAGPrompts(
     context_label="Passages",
     document="one per paragraph: title and text",
 )
+_LIST = (
+    "every item the question asks for, one per line; when it asks for something about "
+    "each item, write 'Name: value'. Use names and values as written in the passages. "
+    "If some items are missing from the passages, list the ones you can"
+)
+LIST_PROMPTS = RAGPrompts(
+    system=TEXT_PROMPTS.system,
+    instructions=(
+        f"Answer with {_LIST}. Output only the answer. If the passages contain none of it, "
+        "output: unknown"
+    ),
+    iter_system=TEXT_PROMPTS.iter_system,
+    iter_step=(
+        "Step {step} of {steps}. First write one short line starting with 'Thought:'. "
+        "Then, if the passages answer the whole question, write one line 'ANSWER: <"
+        "every item the question asks for, separated by ' | ', each as 'Name: value' when "
+        "it asks for something about each item>'. Otherwise write one line 'SEARCH: <titles "
+        "or names of the entities whose passages you need next; several separated by ' | "
+        "'>'. Search for entity names, not questions."
+    ),
+    iter_last=(
+        "Step {step} of {steps}, the last one. First write one short line starting with "
+        "'Thought:'. Then write one line 'ANSWER: <every item the question asks for that "
+        "the passages give, separated by ' | ', each as 'Name: value' when it asks for "
+        "something about each item>', or 'ANSWER: unknown'."
+    ),
+    context_label="Passages",
+    document="one per page: title and text",
+)
+"""For questions whose answer is a list or an item -> value map (FanOutQA)."""
 
 
 def parse_step(text: str) -> tuple[str, list[str]]:
@@ -615,8 +645,12 @@ class GraphReaderSystem:
         max_path_names: int = 5,
         documents: Mapping[str, tuple[str, str]] | None = None,
         max_docs: int = 5,
+        instructions: str | None = None,
+        max_answers: int | None = 1,
         name: str = "graphwalk-reader",
     ) -> None:
+        """``instructions`` replaces the default short-answer instructions;
+        ``max_answers=None`` keeps every answer line (for list answers)."""
         self._store = store
         self._traverser = traverser
         self._llm = llm
@@ -628,6 +662,8 @@ class GraphReaderSystem:
         self._max_path_names = max_path_names
         self._documents = documents
         self._max_docs = max_docs
+        self._instructions = instructions
+        self._max_answers = max_answers
         self._own: dict[str, str] = {}
         """Normalized title -> provenance source id of the paragraph with that title."""
         for key, (title, _text) in (documents or {}).items():
@@ -687,6 +723,10 @@ class GraphReaderSystem:
         else:
             body = f"Passages about the entities on those walks:\n{node_text_}"
             system, instructions = TEXT_PROMPTS.system, TEXT_PROMPTS.instructions
+        if self._instructions is not None:
+            instructions = self._instructions
+            if self._documents is None:
+                instructions = instructions.replace("passages", "facts")
         user = (
             f"Walks through a knowledge graph toward the answer:\n{walk_text}\n\n"
             f"{body}\n\nQuestion: {question}\n\n{instructions}"
@@ -806,7 +846,9 @@ class GraphReaderSystem:
                 detail=detail,
             )
         costs.append(result.cost_usd)
-        answers = tuple(parse_answers(result.text))[:1]
+        answers = tuple(parse_answers(result.text))
+        if self._max_answers is not None:
+            answers = answers[: self._max_answers]
         detail["raw"] = result.text
         return SystemAnswer(
             answers=answers,

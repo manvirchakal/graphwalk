@@ -37,6 +37,7 @@ from graphwalk.eval.systems import (
     GraphReaderSystem,
     GraphwalkSystem,
     IterativeRAGSystem,
+    RAGPrompts,
     VectorRAGSystem,
 )
 from graphwalk.eval.types import EvalQuestion, QASystem
@@ -181,6 +182,9 @@ async def build_text_systems(
     rag_k: int = 5,
     documents: Mapping[str, tuple[str, str]] | None = None,
     label: str = "",
+    prompts: RAGPrompts = TEXT_PROMPTS,
+    iter_max_docs: int = 40,
+    reader_options: Mapping[str, Any] | None = None,
 ) -> list[QASystem]:
     """``documents`` (see :func:`source_documents`) makes the reader read source
     paragraphs; ``label`` is appended to graphwalk system names."""
@@ -221,6 +225,7 @@ async def build_text_systems(
                         names=NameEntryResolver(store),
                         documents=documents,
                         name=READER + label,
+                        **(reader_options or {}),
                     )
                 )
             continue
@@ -230,7 +235,7 @@ async def build_text_systems(
             if name == TEXT_RAG:
                 systems.append(
                     VectorRAGSystem(
-                        index, embedder, llm, k=rag_k, name=TEXT_RAG, prompts=TEXT_PROMPTS
+                        index, embedder, llm, k=rag_k, name=TEXT_RAG + label, prompts=prompts
                     )
                 )
             else:
@@ -242,8 +247,9 @@ async def build_text_systems(
                         llm,
                         names=titles,
                         k=rag_k,
-                        name=TEXT_ITER_RAG,
-                        prompts=TEXT_PROMPTS,
+                        max_docs=iter_max_docs,
+                        name=TEXT_ITER_RAG + label,
+                        prompts=prompts,
                     )
                 )
             continue

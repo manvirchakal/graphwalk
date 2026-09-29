@@ -312,3 +312,23 @@ async def test_reader_reads_source_paragraphs_chosen_by_the_walk() -> None:
     assert "born_in London" not in prompt  # no extracted facts in source mode
     assert llm.calls[0][0].content.startswith("You answer questions using only the given passages")
     assert system.describe()["context"] == "source paragraphs"
+
+
+async def test_reader_can_keep_every_answer_line() -> None:
+    from graphwalk.eval.systems import LIST_PROMPTS
+
+    store = await movie_store()
+    decider = FakeDecisionBackend(script=decide)
+    llm = FakeLLM(lambda _m: "Inception: 2010\nMemento: 2000")
+    system = GraphReaderSystem(
+        store,
+        Traverser(store, decider, config=preset_config("greedy")),
+        llm,
+        ChoiceEntryResolver(store, decider),
+        instructions=LIST_PROMPTS.instructions,
+        max_answers=None,
+    )
+    answer = await system.answer(question("When were Nolan's films released?", "x"))
+    assert answer.answers == ("Inception: 2010", "Memento: 2000")
+    prompt = llm.calls[0][1].content
+    assert "as written in the facts" in prompt  # facts mode rewords "passages"

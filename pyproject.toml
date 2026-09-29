@@ -34,6 +34,7 @@ llm = [
 ]
 eval = [
     "httpx>=0.28",
+    "pyarrow>=17",  # FanOutQA's Wikipedia corpus mirror is an Arrow file
 ]
 
 [project.scripts]
