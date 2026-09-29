@@ -137,7 +137,9 @@ if __name__ == "__main__":
     parser.add_argument("--systems", nargs="+", default=list(TEXT_SYSTEMS))
     parser.add_argument("--llm", default="openrouter/openai/gpt-6-luna")
     parser.add_argument("--escalation-model", default="openrouter/xiaomi/mimo-v2.6-pro")
-    parser.add_argument("--rpm", type=float, default=240.0)
+    parser.add_argument(
+        "--rpm", type=float, default=18.0, help="OpenRouter new accounts: 20 req/min per model"
+    )
     parser.add_argument("--rag-k", type=int, default=5)
     parser.add_argument("--concurrency", type=int, default=8)
     asyncio.run(main(parser.parse_args()))
