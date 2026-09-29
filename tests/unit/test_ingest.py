@@ -1,7 +1,7 @@
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -15,6 +15,7 @@ from graphwalk.ingest import (
     FileSource,
     IngestConfig,
     IngestPipeline,
+    JsonFileCache,
     NodeIndex,
     RouteRecord,
     SourceDocument,
@@ -25,7 +26,7 @@ from graphwalk.ingest import (
     retract,
 )
 from graphwalk.ingest.extraction import EXTRACT_SYSTEM, clean, parse_extraction
-from graphwalk.ingest.routing import NEW_LABEL, parse_label
+from graphwalk.ingest.routing import NEW_LABEL, content_words, parse_label
 from graphwalk.llm import FakeLLM, Message
 from graphwalk.stores.networkx_store import NetworkXStore
 
@@ -465,3 +466,109 @@ def test_parse_label() -> None:
     assert parse_label("NEW", labels) == "NEW"
     assert parse_label("c7", labels) is None
     assert parse_label("unsure", labels) is None
+
+
+# ---------------------------------------------------------------- performance paths
+
+
+async def test_windowed_routing_matches_sequential_routing() -> None:
+    texts = {
+        "a": "Marie Curie was born in Warsaw.",
+        "b": "Marie Curie won a Nobel Prize.",
+        "c": "Marie Curie was born in Warsaw in 1868.",
+    }
+    graphs = []
+    for window in (1, 4):
+        store = NetworkXStore()
+        pipeline = IngestPipeline(
+            store, Scripted().llm, choose("c1"), config=IngestConfig(route_concurrency=window)
+        )
+        report = await pipeline.ingest(docs(**texts))
+        assert report.route_s >= 0.0
+        assert report.apply_s >= 0.0
+        assert report.extract_wait_s >= 0.0
+        graphs.append(await names(store))
+    assert graphs[0] == graphs[1]
+
+
+async def test_fuzzy_repeats_within_a_window_are_not_matched() -> None:
+    # Documented limitation: "M. Curie" only fuzzy-matches "Marie Curie", which the
+    # same window created, so windowed routing never offers it as a candidate.
+    texts = {"a": "Marie Curie was born in Warsaw.", "c": "M. Curie married Pierre Curie."}
+    sequential = NetworkXStore()
+    await IngestPipeline(
+        sequential, Scripted().llm, choose("c1"), config=IngestConfig(route_concurrency=1)
+    ).ingest(docs(**texts))
+    windowed = NetworkXStore()
+    await IngestPipeline(windowed, Scripted().llm, choose("c1")).ingest(docs(**texts))
+    assert "M. Curie" not in await names(sequential)
+    assert "M. Curie" in await names(windowed)
+
+
+async def test_windowed_new_decision_is_respected() -> None:
+    # Both chunks route in one window; the second "Marie Curie" is re-routed against
+    # the node the first created, and the decider's NEW keeps them apart.
+    store = NetworkXStore()
+    decider = choose(NEW_LABEL)
+    pipeline = IngestPipeline(store, Scripted().llm, decider)
+    report = await pipeline.ingest(
+        docs(a="Marie Curie was born in Warsaw.", b="Marie Curie won a Nobel Prize.")
+    )
+    assert (await names(store)).count("Marie Curie") == 2
+    assert report.decision_calls == 1  # the re-route
+    assert decider.calls == 1
+
+
+async def test_node_index_batches_and_reuses_vectors() -> None:
+    class Counting(FakeEmbedder):
+        def __init__(self) -> None:
+            super().__init__()
+            self.texts = 0
+            self.batches = 0
+
+        async def embed(self, texts: Sequence[str]) -> Any:
+            self.batches += 1
+            self.texts += len(texts)
+            return await super().embed(texts)
+
+    embedder = Counting()
+    index = NodeIndex(embedder, min_similarity=-1.0)
+    mentions = [ExtractedEntity(name=f"Person {i}", type="person") for i in range(100)]
+    found = await index.candidates_many(mentions, 3)
+    assert found == [[] for _ in mentions]
+    assert (embedder.batches, embedder.texts) == (1, 100)
+    for i, mention in enumerate(mentions):  # nodes created from the mentions: same text
+        index.add(Node(id=f"n{i}", type="person", name=mention.name, provenance=(prov(),)))
+    await index.prime()
+    assert embedder.texts == 100  # no re-embedding
+    again = await index.candidates_many(mentions[:2], 3)
+    assert again[0][0] == "n0"
+    assert len(again[0]) == 3
+    index.remove("n1")
+    assert "n1" not in (await index.candidates_many([mentions[1]], 5))[0]
+
+
+def test_lexical_pool_skips_very_common_words() -> None:
+    index = NodeIndex(max_word_df=2)
+    for i in range(5):
+        index.add(Node(id=f"j{i}", type="person", name=f"John Smith{i}", provenance=(prov(),)))
+    index.add(Node(id="x", type="person", name="John Rarename", provenance=(prov(),)))
+    assert set(index._lexical(content_words("John Rarename"), [])) == {"x"}
+    # Every word is common: the rarest one still opens the pool.
+    assert len(index._lexical(content_words("John"), [])) == 6
+
+
+def test_json_file_cache_flushes_incrementally(tmp_path: Path) -> None:
+    path = tmp_path / "c" / "cache.json"
+    cache = JsonFileCache(path, flush_every=2)
+    cache["a"] = 1
+    assert not path.exists()
+    cache["b"] = 2
+    assert json.loads(path.read_text(encoding="utf-8")) == {"a": 1, "b": 2}
+    cache["c"] = 3
+    del cache["a"]
+    cache.flush()
+    reloaded = JsonFileCache(path)
+    assert dict(reloaded) == {"b": 2, "c": 3}
+    assert len(reloaded) == 2
+    reloaded.flush()  # nothing unsaved: no-op

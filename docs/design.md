@@ -552,6 +552,26 @@ are deleted, and the rest are re-derived. Only affected nodes are touched.
   summary, or aliases, even if they came from the retracted document. Routing within
   one chunk cannot merge two mentions with different names, since they are routed
   against the graph as it was before the chunk.
+- **Throughput (M7 fix):** extraction runs ahead concurrently (8 calls in flight),
+  and routing consumes chunks in order as they are ready, `route_concurrency` (4) at a
+  time. Each window is routed against the graph as it was before the window, then
+  applied in order. A mention routed NEW whose exact name was created earlier in the
+  same window is routed again, so it still gets a decision. Only fuzzy-name repeats
+  within one window can become duplicates; `route_concurrency=1` restores strictly
+  sequential routing.
+
+  Other changes:
+  - The candidate index embeds a chunk's mentions in one batch, caches vectors by
+    text (a new node reuses its mention's vector), and scores a chunk's mentions with
+    one matrix product.
+  - Name words on more than 200 nodes don't open the lexical pool.
+  - Escalations within a chunk run concurrently.
+  - Extractions persist every 25 (`JsonFileCache`).
+  - The report splits time into extraction wait, routing, and apply.
+
+  Result: CPU-only routing over 970 cached 2Wiki paragraphs is now linear (26 s / 51 s
+  / 111 s for 278 / 505 / 970 paragraphs). It was superlinear before: 33 s / 104 s for
+  278 / 505. Embedding the mentions is now about 80% of that CPU time.
 - **Eval:** `scripts/ingest_2wiki.py` (see `docs/results-m6.md`).
 
 ## 6. Evals
