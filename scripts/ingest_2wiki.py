@@ -36,7 +36,9 @@ VARIANTS = {
 }
 
 
-async def main(n: int, seed: int, model: str, variants: list[str]) -> None:
+async def main(
+    n: int, seed: int, model: str, variants: list[str], escalation_model: str | None
+) -> None:
     records = sample_records(read_records(download()), n, seed)
     key = GraphwalkSettings().openrouter_api_key
     llm = LiteLLMBackend(
@@ -44,6 +46,16 @@ async def main(n: int, seed: int, model: str, variants: list[str]) -> None:
         api_key=None if key is None else key.get_secret_value(),
         max_tokens=4096,
         max_rpm=18.0,
+    )
+    escalation = (
+        None
+        if escalation_model is None
+        else LiteLLMBackend(
+            escalation_model,
+            api_key=None if key is None else key.get_secret_value(),
+            max_tokens=4096,  # reasoning models spend output tokens before the label
+            max_rpm=18.0,
+        )
     )
     cache_path = cache_dir() / "extractions" / (re.sub(r"[^\w.-]+", "_", model) + ".json")
     cache = load_cache(cache_path)
@@ -63,11 +75,18 @@ async def main(n: int, seed: int, model: str, variants: list[str]) -> None:
             embedder=FastEmbedEmbedder("BAAI/bge-small-en-v1.5"),
             cache=cache,
             on_variant=done,
+            escalation_llm=escalation,
         )
     finally:
         await decider.aclose()
         save_cache(cache_path, cache)
-    params = {"n": n, "seed": seed, "llm": model, "embedder": "BAAI/bge-small-en-v1.5"}
+    params = {
+        "n": n,
+        "seed": seed,
+        "llm": model,
+        "escalation_llm": escalation_model or model,
+        "embedder": "BAAI/bge-small-en-v1.5",
+    }
     path = write_results(out, results, params)
     print((path / "summary.md").read_text(encoding="utf-8"))  # noqa: T201
 
@@ -78,5 +97,6 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--model", default="openrouter/openai/gpt-6-luna")
     parser.add_argument("--variants", nargs="+", default=list(VARIANTS))
+    parser.add_argument("--escalation-model", default=None, help="default: --model")
     args = parser.parse_args()
-    asyncio.run(main(args.n, args.seed, args.model, args.variants))
+    asyncio.run(main(args.n, args.seed, args.model, args.variants, args.escalation_model))

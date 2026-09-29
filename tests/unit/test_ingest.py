@@ -25,7 +25,7 @@ from graphwalk.ingest import (
     retract,
 )
 from graphwalk.ingest.extraction import EXTRACT_SYSTEM, clean, parse_extraction
-from graphwalk.ingest.routing import NEW_LABEL
+from graphwalk.ingest.routing import NEW_LABEL, parse_label
 from graphwalk.llm import FakeLLM, Message
 from graphwalk.stores.networkx_store import NetworkXStore
 
@@ -326,6 +326,9 @@ async def test_low_confidence_decisions_escalate_to_the_llm() -> None:
         docs(a="Marie Curie was born in Warsaw.", b="Marie Curie won a Nobel Prize.")
     )
     assert report.escalations == 1
+    assert report.escalation_model == "fake-llm-1"  # defaults to the extraction LLM
+    assert report.escalation_calls == 1
+    assert report.escalation_cost_usd == pytest.approx(0.001)
     assert last_curie(report.routes).method == "llm"
     assert last_curie(report.routes).probability == pytest.approx(0.5)
     assert (await names(store)).count("Marie Curie") == 1
@@ -434,3 +437,31 @@ async def test_retract_promotes_the_surviving_conflict_value() -> None:
     assert node.conflicts == {}
     assert [p.source_id for p in node.sources_of("k")] == ["s/b"]
     assert await retract(store, set()) == type(result)()
+
+
+async def test_escalation_can_use_a_separate_model() -> None:
+    extractor = Scripted(escalate="NEW")  # would split the entity if asked
+    judge = FakeLLM(lambda _m: "Reasoning... the answer is c1", model_id="judge",
+                    cost_per_call=0.01)  # fmt: skip
+    uniform = FakeDecisionBackend(
+        script=lambda q, _s: dict.fromkeys(q.options, 1.0), cost_per_call=0.0
+    )
+    pipeline = IngestPipeline(NetworkXStore(), extractor.llm, uniform, escalation_llm=judge)
+    report = await pipeline.ingest(
+        docs(a="Marie Curie was born in Warsaw.", b="Marie Curie won a Nobel Prize.")
+    )
+    assert len(judge.calls) == 1
+    assert extractor.extraction_calls() == len(extractor.llm.calls) == 2
+    assert (report.escalation_model, report.escalation_calls) == ("judge", 1)
+    assert report.escalation_cost_usd == pytest.approx(0.01)
+    assert report.cost_usd == pytest.approx(0.002 + 0.01)
+    assert last_curie(report.routes).chosen == "Marie Curie"
+
+
+def test_parse_label() -> None:
+    labels = ("c1", "c2", "NEW")
+    assert parse_label(" `c2`. ", labels) == "c2"
+    assert parse_label("Not c1; it is c2", labels) == "c2"
+    assert parse_label("NEW", labels) == "NEW"
+    assert parse_label("c7", labels) is None
+    assert parse_label("unsure", labels) is None

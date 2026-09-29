@@ -236,6 +236,7 @@ async def run_variants(
     cache: ExtractionCache,
     on_variant: Callable[[VariantResult], None] | None = None,
     graph_dir: Path | None = None,
+    escalation_llm: LLMBackend | None = None,
 ) -> list[VariantResult]:
     """Ingest the records' paragraphs once per variant (fresh graph each) and score."""
     source = TextSource("2wiki:dev:context", documents(records))
@@ -243,7 +244,13 @@ async def run_variants(
     for name, config in variants.items():
         store = NetworkXStore()
         pipeline = IngestPipeline(
-            store, llm, decider, embedder=embedder, config=config, extraction_cache=cache
+            store,
+            llm,
+            decider,
+            embedder=embedder,
+            config=config,
+            extraction_cache=cache,
+            escalation_llm=escalation_llm,
         )
         report = await pipeline.ingest(source)
         result = VariantResult(
@@ -320,6 +327,13 @@ def write_results(
             f"{rep.extraction_cache_hits} cached extractions, {len(rep.errors)} errors, "
             f"{rep.elapsed_s:.0f}s"
         )
+        if rep.escalation_model:
+            esc = rep.escalation_cost_usd
+            lines.append(
+                f"  - escalation to `{rep.escalation_model}`: {rep.escalation_calls} calls, "
+                f"{rep.escalation_input_tokens} input / {rep.escalation_output_tokens} output "
+                f"tokens, {'n/a' if esc is None else f'${esc:.4f}'}"
+            )
     (out_dir / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return out_dir
 

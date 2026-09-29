@@ -184,6 +184,9 @@ class Route:
 class RouteBatch:
     routes: list[Route]
     spend: Spend
+    """Decision calls (and nothing else)."""
+    escalation: Spend = field(default_factory=Spend)
+    """LLM escalation calls, kept apart so their cost can be watched."""
 
 
 class Router:
@@ -248,11 +251,12 @@ class Router:
         if not pending:
             return RouteBatch(routes, spend)
         await self._decide(pending, passage, spend)
+        escalation = Spend()
         if self._llm is not None:
             for route in pending:
                 if route.method == "decision" and route.probability < self._threshold:
-                    await self._escalate(route, passage, spend)
-        return RouteBatch(routes, spend)
+                    await self._escalate(route, passage, escalation)
+        return RouteBatch(routes, spend, escalation)
 
     async def _question(self, key: str, route: Route) -> ChoiceQuestion:
         options: dict[str, JSONContent | None] = {}
@@ -342,14 +346,22 @@ class Router:
         spend.input_tokens += reply.input_tokens
         spend.output_tokens += reply.output_tokens
         spend.add_cost(reply.cost_usd)
-        match = re.search(r"\b(c\d+|NEW)\b", reply.text)
-        if match is None or match.group(1) not in (*labels, NEW_LABEL):
+        label = parse_label(reply.text, (*labels, NEW_LABEL))
+        if label is None:
             route.error = f"unusable escalation reply: {reply.text[:100]!r}"
             return
-        label = match.group(1)
         route.method = "llm"
         route.target = None if label == NEW_LABEL else route.candidates[labels.index(label)]
         route.probability = route.probabilities.get(label_of(route), route.probability)
+
+
+def parse_label(text: str, labels: Sequence[str]) -> str | None:
+    """The reply if it is exactly a label, else the last label it mentions."""
+    stripped = text.strip().strip("`*.'\"").strip()
+    if stripped in labels:
+        return stripped
+    found = [m for m in re.findall(r"\b(c\d+|NEW)\b", text) if m in labels]
+    return found[-1] if found else None
 
 
 def label_of(route: Route) -> str:

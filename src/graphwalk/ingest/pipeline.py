@@ -99,6 +99,13 @@ class IngestReport(BaseModel):
     nodes_deleted: int = 0
     edges_deleted: int = 0
     escalations: int = 0
+    """Routing decisions changed or confirmed by the escalation LLM."""
+    escalation_model: str | None = None
+    escalation_calls: int = 0
+    escalation_input_tokens: int = 0
+    escalation_output_tokens: int = 0
+    escalation_cost_usd: float | None = 0.0
+    """Also included in the totals above; reported apart to watch its cost."""
     llm_calls: int = 0
     decision_calls: int = 0
     input_tokens: int = 0
@@ -155,9 +162,14 @@ class IngestPipeline:
         embedder: Embedder | None = None,
         config: IngestConfig | None = None,
         extraction_cache: ExtractionCache | None = None,
+        escalation_llm: LLMBackend | None = None,
     ) -> None:
+        """``escalation_llm`` adjudicates low-confidence routing decisions; it defaults to
+        ``llm`` (the extraction model). A stronger model is usually the better choice:
+        it is called only for the few decisions below ``route_threshold``."""
         self._store = store
         self._llm = llm
+        self._escalation_llm = escalation_llm or llm
         self._decider = decider
         self._embedder = embedder
         self.config = config or IngestConfig()
@@ -176,6 +188,8 @@ class IngestPipeline:
         started = time.perf_counter()
         cfg = self.config
         report = IngestReport(source_id=source.source_id)
+        if cfg.escalate:
+            report.escalation_model = self._escalation_llm.model_id
         ledger = await self.ledger(source.source_id)
         docs = list(source.documents())
         report.documents = len(docs)
@@ -217,7 +231,7 @@ class IngestPipeline:
             self._store,
             index,
             self._decider if cfg.routing == "jev" else None,
-            llm=self._llm if cfg.escalate else None,
+            llm=self._escalation_llm if cfg.escalate else None,
             mode=cfg.routing,
             max_candidates=cfg.max_candidates,
             route_threshold=cfg.route_threshold,
@@ -281,6 +295,13 @@ class IngestPipeline:
         passage = f"{chunk.doc.title}\n\n{chunk.text}" if chunk.doc.title else chunk.text
         batch = await router.route(extraction.entities, passage)
         report.add_spend(batch.spend)
+        report.add_spend(batch.escalation)
+        report.escalation_calls += batch.escalation.llm_calls
+        report.escalation_input_tokens += batch.escalation.input_tokens
+        report.escalation_output_tokens += batch.escalation.output_tokens
+        escalation_cost = Spend(cost_usd=report.escalation_cost_usd)
+        escalation_cost.add_cost(batch.escalation.cost_usd if batch.escalation.llm_calls else 0.0)
+        report.escalation_cost_usd = escalation_cost.cost_usd
         doc_source = provenance_id(source_id, chunk.doc.doc_id)
         now = utc_now()
         ids: dict[str, NodeId] = {}

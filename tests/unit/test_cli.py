@@ -106,7 +106,7 @@ def test_ingest_builds_and_updates_a_graph(tmp_path: Path, monkeypatch: pytest.M
         "relations": [{"source": "Ada Lovelace", "type": "born_in", "target": "London"}],
     }
     llm = FakeLLM(lambda _m: json.dumps(reply))
-    monkeypatch.setattr(cli, "_ingest_backends", lambda *_a: (llm, None))
+    monkeypatch.setattr(cli, "_ingest_backends", lambda *_a: (llm, None, None))
     monkeypatch.setattr(cli, "_make_backend", FakeDecisionBackend)
     docs = tmp_path / "docs"
     docs.mkdir()

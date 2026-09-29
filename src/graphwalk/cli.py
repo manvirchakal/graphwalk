@@ -175,23 +175,27 @@ def _eval_factories(llm_model: str, embed_model: str, llm_rpm: float | None) -> 
 
 
 def _ingest_backends(
-    llm_model: str, embed_model: str | None, llm_rpm: float | None
-) -> "tuple[LLMBackend, Embedder | None]":
-    """Real extraction LLM and embedder for ``graphwalk ingest`` (replaced in tests)."""
+    llm_model: str, embed_model: str | None, llm_rpm: float | None, escalation_model: str | None
+) -> "tuple[LLMBackend, Embedder | None, LLMBackend | None]":
+    """Real extraction LLM, embedder, and escalation LLM for ``graphwalk ingest``
+    (replaced in tests). ``openrouter/...`` model ids go to OpenRouter."""
     from graphwalk.llm.litellm_backend import LiteLLMBackend  # noqa: PLC0415
 
     key = GraphwalkSettings().openrouter_api_key
-    llm = LiteLLMBackend(
-        llm_model,
-        api_key=None if key is None else key.get_secret_value(),
-        max_tokens=4096,
-        max_rpm=llm_rpm,
+    api_key = None if key is None else key.get_secret_value()
+    # 4096 tokens: extraction replies are long, and reasoning models also spend
+    # output tokens on reasoning before the label.
+    llm = LiteLLMBackend(llm_model, api_key=api_key, max_tokens=4096, max_rpm=llm_rpm)
+    escalation = (
+        None
+        if escalation_model is None
+        else LiteLLMBackend(escalation_model, api_key=api_key, max_tokens=4096, max_rpm=llm_rpm)
     )
     if embed_model is None:
-        return llm, None
+        return llm, None, escalation
     from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder  # noqa: PLC0415
 
-    return llm, FastEmbedEmbedder(embed_model)
+    return llm, FastEmbedEmbedder(embed_model), escalation
 
 
 @app.command()
@@ -214,6 +218,12 @@ def ingest(  # noqa: PLR0917 - Typer maps parameters to CLI options
     llm_model: Annotated[
         str, typer.Option(help="LiteLLM model id for extraction.")
     ] = "openrouter/openai/gpt-6-luna",
+    escalation_model: Annotated[
+        str | None,
+        typer.Option(
+            help="LiteLLM model id for escalated routing decisions (default: --llm-model)."
+        ),
+    ] = None,
     embed_model: Annotated[
         str | None, typer.Option(help="fastembed model for routing candidates.")
     ] = "BAAI/bge-small-en-v1.5",
@@ -244,13 +254,17 @@ def ingest(  # noqa: PLR0917 - Typer maps parameters to CLI options
     except (FileNotFoundError, ValidationError) as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=2) from None
-    llm, embedder = _ingest_backends(llm_model, None if no_embed else embed_model, llm_rpm)
+    llm, embedder, escalation_llm = _ingest_backends(
+        llm_model, None if no_embed else embed_model, llm_rpm, escalation_model
+    )
 
     async def run() -> None:
         store = await NetworkXStore.load(graph) if graph.exists() else NetworkXStore()
         decider = _make_backend() if routing == "jev" else None
         try:
-            pipeline = IngestPipeline(store, llm, decider, embedder=embedder, config=config)
+            pipeline = IngestPipeline(
+                store, llm, decider, embedder=embedder, config=config, escalation_llm=escalation_llm
+            )
             result = await pipeline.ingest(source)
         finally:
             if decider is not None:
@@ -258,6 +272,14 @@ def ingest(  # noqa: PLR0917 - Typer maps parameters to CLI options
         await store.save(graph)
         nodes, edges = await store.counts()
         cost = "n/a" if result.cost_usd is None else f"${result.cost_usd:.4f}"
+        esc = result.escalation_cost_usd
+        escalation_line = (
+            f"escalation ({result.escalation_model}): {result.escalation_calls} calls, "
+            f"{result.escalation_input_tokens} in / {result.escalation_output_tokens} out tokens, "
+            f"{'n/a' if esc is None else f'${esc:.4f}'}\n"
+            if result.escalation_model
+            else ""
+        )
         typer.echo(
             f"documents: {result.documents} ({result.new} new, {result.changed} changed, "
             f"{result.unchanged} unchanged, {result.removed} removed, {result.failed} failed)\n"
@@ -268,6 +290,7 @@ def ingest(  # noqa: PLR0917 - Typer maps parameters to CLI options
             f"{result.edges_merged} merged, -{result.edges_deleted} deleted\n"
             f"calls: {result.llm_calls} LLM, {result.decision_calls} decision "
             f"({result.escalations} escalations); cost: {cost}; {result.elapsed_s:.1f}s\n"
+            f"{escalation_line}"
             f"graph: {graph} ({nodes} nodes, {edges} edges)"
         )
         for error in result.errors[:10]:
