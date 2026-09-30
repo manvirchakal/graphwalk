@@ -8,7 +8,7 @@ the question the eval exists to answer: walking with cheap decisions vs. retriev
 import asyncio
 import math
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -434,7 +434,11 @@ class IterativeRAGSystem:
         max_docs: int = 40,
         name: str = "iter-rag",
         prompts: RAGPrompts | None = None,
+        first: Callable[[str], Awaitable[Sequence[str]]] | None = None,
     ) -> None:
+        """``first`` replaces the initial retrieval: given the question, it returns the
+        document ids to start from (e.g. graphwalk's hybrid ``locate``), in rank order;
+        ids not in the index are skipped."""
         if index.embedder_model != embedder.model_id:
             msg = f"index built with {index.embedder_model}, querying with {embedder.model_id}"
             raise ValueError(msg)
@@ -449,6 +453,15 @@ class IterativeRAGSystem:
         self._max_docs = max_docs
         self._name = name
         self._prompts = prompts or GRAPH_PROMPTS
+        self._first = first
+        self._positions = {doc_id: i for i, doc_id in enumerate(index.ids)}
+
+    async def _initial(self, question: str) -> list[int]:
+        if self._first is None:
+            return self._index.top_k((await self._embedder.embed([question]))[0], self._k)
+        ids = await self._first(question)
+        hits = [self._positions[d] for d in ids if d in self._positions]
+        return list(dict.fromkeys(hits))[: self._k]
 
     @classmethod
     def name_index(cls, index: DocIndex, names: dict[NodeId, list[str]]) -> dict[str, list[int]]:
@@ -468,6 +481,8 @@ class IterativeRAGSystem:
             "system": "iter-rag",
             "k": self._k,
             "k_search": self._k_search,
+            "first": "custom" if self._first is not None else "question embedding",
+            "title_search": bool(self._names),
             "max_steps": self._max_steps,
             "max_searches": self._max_searches,
             "max_docs": self._max_docs,
@@ -507,8 +522,7 @@ class IterativeRAGSystem:
         """The documents a recorded run retrieved, in order: the question's own hits,
         then each step's searches. Retrieval is deterministic, so this reproduces
         ``detail["retrieved"]`` from a run's ``detail["steps"]`` without LLM calls."""
-        hits = self._index.top_k((await self._embedder.embed([question]))[0], self._k)
-        seen = list(dict.fromkeys(hits))
+        seen = list(dict.fromkeys(await self._initial(question)))
         for step in steps:
             queries = step.get("search")
             if not isinstance(queries, list):
@@ -522,7 +536,7 @@ class IterativeRAGSystem:
     async def answer(self, question: EvalQuestion) -> SystemAnswer:
         started = time.perf_counter()
         embed_calls = 1
-        hits = self._index.top_k((await self._embedder.embed([question.question]))[0], self._k)
+        hits = await self._initial(question.question)
         retrieval_s = time.perf_counter() - started
         seen = list(dict.fromkeys(hits))
         searched: list[str] = []
