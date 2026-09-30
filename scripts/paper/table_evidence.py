@@ -50,7 +50,7 @@ def main() -> None:
         diffs = [
             recall_at(r.gold, r.at(k), k)
             - recall_at(dense[r.question_id].gold, dense[r.question_id].at(k), k)
-            for r in rows
+            for r in sorted(rows, key=lambda r: r.question_id)  # as paired_table orders them
             if r.method == "hybrid-choice"
         ]
         lo, hi = bootstrap_ci(diffs)

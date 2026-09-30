@@ -52,6 +52,11 @@ CURATED = {
         "graphwalk (Jev)": [("decider/20260930T123542Z-metaqa-1hop", _JEV),
                             ("decider/20260930T124219Z-metaqa-1hop", _JEV),
                             ("decider/20260930T124616Z-metaqa-1hop", _JEV)],
+        "graphwalk (LLM decider)": [("decider/20260930T140255Z-metaqa-1hop",
+                                     "graphwalk-relation-v2-llm")],
+        "LLM writes the path": [("20260930T123344Z-metaqa-1hop-llmpath", "llm-path")],
+        "LLM writes the path, 2 retries": [("20260930T123344Z-metaqa-1hop-llmpath",
+                                            "llm-path-retry")],
         "vector RAG": [("20260928T192614Z-metaqa-1hop", "vector-rag")],
         "multi-step RAG": [("20260929T000051Z-metaqa-1hop", "iter-rag")],
     },
@@ -59,6 +64,9 @@ CURATED = {
         "graphwalk (Jev)": [("decider/20260930T123641Z-metaqa-2hop", _JEV),
                             ("decider/20260930T124319Z-metaqa-2hop", _JEV),
                             ("decider/20260930T124715Z-metaqa-2hop", _JEV)],
+        "LLM writes the path": [("20260930T123344Z-metaqa-2hop-llmpath", "llm-path")],
+        "LLM writes the path, 2 retries": [("20260930T123344Z-metaqa-2hop-llmpath",
+                                            "llm-path-retry")],
         "vector RAG": [("20260928T194721Z-metaqa-2hop", "vector-rag")],
         "multi-step RAG": [("20260929T002404Z-metaqa-2hop", "iter-rag")],
     },
@@ -66,6 +74,9 @@ CURATED = {
         "graphwalk (Jev)": [("decider/20260930T123821Z-metaqa-3hop", _JEV),
                             ("decider/20260930T124452Z-metaqa-3hop", _JEV),
                             ("decider/20260930T124852Z-metaqa-3hop", _JEV)],
+        "LLM writes the path": [("20260930T123344Z-metaqa-3hop-llmpath", "llm-path")],
+        "LLM writes the path, 2 retries": [("20260930T123344Z-metaqa-3hop-llmpath",
+                                            "llm-path-retry")],
         "vector RAG": [("20260928T200403Z-metaqa-3hop", "vector-rag")],
         "multi-step RAG": [("20260929T005913Z-metaqa-3hop", "iter-rag")],
     },
@@ -80,5 +91,10 @@ CURATED = {
 
 # E3: decider -> (run, system) per dataset, seed 0.
 CALIBRATION = {
-    dataset: {"Jev": systems["graphwalk (Jev)"][0]} for dataset, systems in CURATED.items()
+    dataset: {
+        label.removeprefix("graphwalk (").removesuffix(")"): systems[label][0]
+        for label in ("graphwalk (Jev)", "graphwalk (LLM decider)")
+        if label in systems
+    }
+    for dataset, systems in CURATED.items()
 }

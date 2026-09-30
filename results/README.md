@@ -24,6 +24,16 @@ supersedes the earlier one, and the results doc says which is current.
 | `tuning/20260929T200331Z-fanoutqa` | `scripts/eval/fanout.py` (dev slice) | `3c3e0db` | `docs/results-m7.md` (step 2) | tuning only |
 | `20260929T211957Z-fanoutqa` | `scripts/eval/fanout.py` | `3c3e0db` | `docs/results-m7.md` (step 2) | **current** |
 
+| `20260930T12*-{2wiki,hotpotqa,fanoutqa}-evidence` | `scripts/eval/evidence.py` | phase 4 | `docs/results-phase4.md` (E1) | **current** |
+| `20260930T123344Z-metaqa-{1,2,3}hop-llmpath` | `scripts/eval/query_writer.py` | phase 4 | `docs/results-phase4.md` (E2) | **current** |
+| `tuning/20260930T122636Z-metaqa-*-llmpath-dev` | `scripts/eval/query_writer.py --split dev --n 20` | phase 4 | E2 prompt check | dev only |
+| `decider/20260930T1235..1249Z-*` | `scripts/eval/decider.py --deciders jev --seed 0/1/2` | phase 4 | `docs/results-phase4.md` (E3/E4) | **current** |
+| `decider/20260930T140255Z-metaqa-1hop` | `scripts/eval/decider.py --deciders llm` | phase 4 | `docs/results-phase4.md` (E3) | **current** (1-hop only) |
+
+Each run also has a committed `scores.jsonl` (one row per system and question), which
+the paper scripts in `scripts/paper/` read; older runs got theirs from
+`scripts/paper/export_scores.py`.
+
 Scripts ran from the repo root; the commits above are where each summary was added.
 The script paths are as of Phase 0 (they lived directly in `scripts/` before).
 Paper tables will get their own one-command scripts under `scripts/paper/` (roadmap
