@@ -277,6 +277,7 @@ def score_rows(runs: Sequence[SystemRun]) -> list[dict[str, JsonValue]]:
                     "status": answer.status,
                     "cost_usd": answer.cost_usd,
                     "latency_s": answer.latency_s,
+                    "decision_latency_s": answer.detail.get("decision_latency_s"),
                     "decision_calls": answer.decision_calls,
                     "llm_calls": answer.llm_calls,
                     "input_tokens": answer.input_tokens,

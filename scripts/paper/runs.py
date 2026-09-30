@@ -67,6 +67,9 @@ CURATED = {
         "LLM writes the path": [("20260930T123344Z-metaqa-2hop-llmpath", "llm-path")],
         "LLM writes the path, 2 retries": [("20260930T123344Z-metaqa-2hop-llmpath",
                                             "llm-path-retry")],
+        "graphwalk (LLM decider)": [
+            ("decider/20260930T150921Z-metaqa-2hop", "graphwalk-relation-v2-llm")
+        ],
         "vector RAG": [("20260928T194721Z-metaqa-2hop", "vector-rag")],
         "multi-step RAG": [("20260929T002404Z-metaqa-2hop", "iter-rag")],
     },
@@ -77,6 +80,9 @@ CURATED = {
         "LLM writes the path": [("20260930T123344Z-metaqa-3hop-llmpath", "llm-path")],
         "LLM writes the path, 2 retries": [("20260930T123344Z-metaqa-3hop-llmpath",
                                             "llm-path-retry")],
+        "graphwalk (LLM decider)": [
+            ("decider/20260930T155339Z-metaqa-3hop", "graphwalk-relation-v2-llm")
+        ],
         "vector RAG": [("20260928T200403Z-metaqa-3hop", "vector-rag")],
         "multi-step RAG": [("20260929T005913Z-metaqa-3hop", "iter-rag")],
     },
@@ -84,6 +90,9 @@ CURATED = {
         "graphwalk (Jev)": [("decider/20260930T123900Z-2wiki-gold", "graphwalk-greedy-v2-jev"),
                             ("decider/20260930T124528Z-2wiki-gold", "graphwalk-greedy-v2-jev"),
                             ("decider/20260930T124928Z-2wiki-gold", "graphwalk-greedy-v2-jev")],
+        "graphwalk (LLM decider)": [
+            ("decider/20260930T161921Z-2wiki-gold", "graphwalk-greedy-v2-llm")
+        ],
         "vector RAG": [("20260928T204354Z-2wiki-gold", "vector-rag")],
         "multi-step RAG": [("20260929T012321Z-2wiki-gold", "iter-rag")],
     },

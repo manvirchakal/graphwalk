@@ -72,6 +72,17 @@ def p50(rows: Sequence[Row]) -> str:
     return f"{values[max(0, math.ceil(len(values) / 2) - 1)]:.2f}"
 
 
+def decision_p50(rows: Sequence[Row]) -> str:
+    """Median time spent in decision calls per question (walks only): unlike wall
+    latency, it excludes waiting for a rate-limit slot."""
+    values = sorted(
+        r["decision_latency_s"] for r in rows if r.get("decision_latency_s") is not None
+    )
+    if not values:
+        return "—"
+    return f"{values[max(0, math.ceil(len(values) / 2) - 1)]:.2f}"
+
+
 def table(header: Sequence[str], rows: Iterable[Sequence[str]]) -> str:
     lines = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
     lines += ["| " + " | ".join(row) + " |" for row in rows]
