@@ -84,6 +84,19 @@ re-reads it from disk instead.
 
 Only names exported from `graphwalk` are public API; submodules may change.
 
+## MCP server
+
+```bash
+pip install 'graphwalk[mcp,llm]'
+graphwalk mcp --db my.db                      # stdio: keys from the environment
+graphwalk mcp --http --db my.db               # streamable HTTP: keys from client headers
+```
+
+Tools: `locate`, `read`, `neighbors`, `get_node`, `ingest`/`ingest_status`, `status`.
+The HTTP server supports bearer-token or OAuth 2.1 (resource server) auth, and the same
+server ships as a container (`Dockerfile`). Client configs, Claude Code commands,
+server settings, and a from-scratch agent harness are in [`examples/`](examples/).
+
 ## Providers and configuration
 
 graphwalk uses models in three roles:

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "graphwalk": {
+      "type": "http",
+      "url": "https://graphwalk.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <GRAPHWALK_AUTH_TOKEN>",
+        "X-OpenRouter-API-Key": "sk-or-..."
+      }
+    }
+  }
+}

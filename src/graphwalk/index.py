@@ -10,7 +10,7 @@ names and returns the source spans behind the walk, with the path that reached t
 """
 
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from types import TracebackType
 from typing import Literal, Self
@@ -60,8 +60,12 @@ class Index:
         documents: DocumentSource | None = None,
         extraction_cache: ExtractionCache | None = None,
         config: ResolvedConfig | None = None,
+        owns_store: bool = True,
     ) -> None:
+        """``owns_store=False``: :meth:`close` leaves the store open (several indexes,
+        e.g. one per remote session's keys, can share one store)."""
         self.store = store
+        self._owns_store = owns_store
         self._config = config
         self._decider = decider
         self._owns: list[object] = []
@@ -99,7 +103,8 @@ class Index:
         """Close the store, and the decider if the index built it."""
         if self._decider is not None and self._decider in self._owns:
             await self._decider.aclose()
-        await self.store.close()
+        if self._owns_store:
+            await self.store.close()
 
     @property
     def decider(self) -> DecisionBackend:
@@ -119,7 +124,10 @@ class Index:
     # ------------------------------------------------------------------ ingest
 
     async def ingest(
-        self, source: Source | str | os.PathLike[str] | Iterable[SourceDocument]
+        self,
+        source: Source | str | os.PathLike[str] | Iterable[SourceDocument],
+        *,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> IngestReport:
         """Ingest a :class:`Source`, a file or directory path, or documents in memory
         (source id ``"memory"``). Unchanged documents are skipped."""
@@ -141,7 +149,7 @@ class Index:
             extraction_cache=self._cache,
             escalation_llm=self._escalation_llm,
         )
-        report = await pipeline.ingest(source)
+        report = await pipeline.ingest(source, on_progress=on_progress)
         if self._graph is not None:
             self._graph.refresh()
         if self._dense is not None:

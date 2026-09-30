@@ -12,6 +12,23 @@ in [`roadmap.md`](roadmap.md).
 
 ### Added
 
+- MCP server and container (roadmap Phase 3):
+  - `graphwalk mcp` (stdio) and `graphwalk mcp --http` (streamable HTTP) on the
+    official MCP SDK, with tools `locate`, `read`, `neighbors`, `get_node`, `ingest`,
+    `ingest_status`, and `status` (the `mcp` extra).
+  - Remote mode: provider keys from each client's headers (one backend set per
+    distinct configuration, in memory only); server keys only with
+    `GRAPHWALK_SERVER_KEYS`; header base URLs only from an allowlist; DNS-rebinding
+    protection; request limits; remote `ingest` of server paths only under
+    `GRAPHWALK_INGEST_ROOT`.
+  - Auth: `none` (localhost only), `bearer`, or `oauth` as an OAuth 2.1 resource
+    server (RFC 9728 metadata; JWT via JWKS with RFC 8414/OIDC discovery, or RFC 7662
+    introspection; audience, expiry, and scope checks).
+  - `Dockerfile` (non-root, `/data` volume, health check), a CI container smoke test,
+    and a tag-triggered GHCR publish workflow.
+  - `examples/`: client configs, Claude Code commands, a from-scratch agent harness,
+    and a sample folder.
+  - Ingestion progress callbacks; `Index(owns_store=False)`.
 - Providers and configuration (roadmap Phase 2):
   - Five providers (OpenRouter, TypeSafe, OpenAI, Anthropic, x.ai) across three roles
     (decision, LLM, embedding), with overridable base URLs everywhere.

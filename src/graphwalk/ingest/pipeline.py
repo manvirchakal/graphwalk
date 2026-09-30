@@ -270,10 +270,12 @@ class IngestPipeline:
         *,
         checkpoint: Callable[[], Awaitable[None]] | None = None,
         checkpoint_every: int = 25,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> IngestReport:
         """Ingest ``source``. ``checkpoint`` (e.g. saving the store) runs every
         ``checkpoint_every`` routing windows; since the ledger records finished
-        documents, re-ingesting from a checkpointed store resumes where it stopped."""
+        documents, re-ingesting from a checkpointed store resumes where it stopped.
+        ``on_progress(chunks_done, chunks_total)`` is called as chunks are applied."""
         started = time.perf_counter()
         cfg = self.config
         report = IngestReport(
@@ -299,6 +301,8 @@ class IngestPipeline:
             for span in chunk_spans(doc.text, max_chars=cfg.max_chunk_chars)
         ]
         report.chunks = len(chunks)
+        if on_progress is not None:
+            on_progress(0, len(chunks))
         index = await NodeIndex.build(
             self._store, self._embedder, min_similarity=cfg.min_similarity
         )
@@ -319,6 +323,8 @@ class IngestPipeline:
                     progress=progress,
                 )
                 await self._save_ledger(source.source_id, ledger)
+                if on_progress is not None:
+                    on_progress(start + len(window), len(chunks))
                 windows = start // cfg.route_concurrency + 1
                 if checkpoint is not None and windows % checkpoint_every == 0:
                     await checkpoint()

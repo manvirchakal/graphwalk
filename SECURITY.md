@@ -22,11 +22,15 @@ vulnerability.
 - **Provider API keys** (OpenRouter, TypeSafe, OpenAI, Anthropic, x.ai) come only from
   the environment (library, CLI, stdio MCP) or from request headers (remote MCP).
   They are never written to disk, graph files, caches, results, or logs.
-- **Remote MCP** (planned for v0.1): keys sent in headers are scoped to one session
-  and held in memory only. Server access has its own authentication (a bearer token
-  or OAuth), separate from provider keys. Base URLs sent in headers are honoured only
-  if their host is on the operator's allowlist, which prevents server-side request
-  forgery. Server-side keys are used only if the operator enables that.
+- **Remote MCP**: keys sent in headers are used only for that client's requests and
+  held in memory only (in a bounded cache of backends, keyed by a hash). Provider
+  error messages are redacted before they reach clients or logs. Server access has
+  its own authentication (a bearer token or OAuth 2.1 access tokens), separate from
+  provider keys, and the server refuses to listen beyond localhost without it. Base
+  URLs sent in headers are honoured only if on the operator's allowlist, which
+  prevents server-side request forgery. Server-side keys are used only if the
+  operator enables that. Remote `ingest` reads server paths only under an
+  operator-chosen root. The container runs as a non-root user.
 - **Test suite**: the default `pytest` run blocks all network sockets, so tests
   cannot leak keys to real services.
 

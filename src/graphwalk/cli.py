@@ -1,4 +1,4 @@
-"""Command-line interface: ``graphwalk ingest | locate | query | migrate | eval``."""
+"""Command-line interface: ``graphwalk ingest | locate | mcp | query | migrate | eval``."""
 
 import asyncio
 import math
@@ -500,3 +500,33 @@ def migrate(
         f"{target}: {done.nodes} nodes, {done.edges} edges, {done.metadata} metadata "
         f"entries, {done.documents} documents"
     )
+
+
+@app.command()
+def mcp(
+    http: Annotated[
+        bool, typer.Option("--http", help="Serve streamable HTTP instead of stdio.")
+    ] = False,
+    db: Annotated[
+        Path | None, typer.Option(help="SQLite graph to serve (default: GRAPHWALK_DB).")
+    ] = None,
+    host: Annotated[str | None, typer.Option(help="HTTP bind address.")] = None,
+    port: Annotated[int | None, typer.Option(help="HTTP port.")] = None,
+) -> None:
+    """Run the MCP server. stdio: provider keys from the environment. --http: keys from
+    each client's headers; auth, limits, and allowlists from GRAPHWALK_* variables."""
+    try:
+        from graphwalk.server.app import run_http, run_stdio  # noqa: PLC0415
+        from graphwalk.server.settings import ServerSettings  # noqa: PLC0415
+    except ImportError:
+        typer.echo("graphwalk mcp needs the 'mcp' extra: pip install 'graphwalk[mcp]'", err=True)
+        raise typer.Exit(code=2) from None
+    overrides = {k: v for k, v in {"db": db, "host": host, "port": port}.items() if v is not None}
+    try:
+        settings = ServerSettings(**overrides)  # pyright: ignore[reportArgumentType]
+        if http:
+            settings.check_remote()
+    except ValueError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=2) from None
+    asyncio.run(run_http(settings) if http else run_stdio(settings))

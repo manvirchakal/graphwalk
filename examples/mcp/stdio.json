@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "graphwalk": {
+      "command": "graphwalk",
+      "args": ["mcp", "--db", "/path/to/my.db"],
+      "env": {
+        "OPENROUTER_API_KEY": "sk-or-..."
+      }
+    }
+  }
+}

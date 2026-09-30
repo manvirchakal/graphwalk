@@ -52,7 +52,7 @@ Decisions already made (see "Decisions" below):
 - ~~There is no `locate`/`read` API.~~ Phase 1.
 - ~~Storage is one JSON file per graph.~~ SQLite, Phase 1.
 - ~~Only OpenRouter and TypeSafe are supported.~~ Phase 2.
-- There is no MCP server (Phase 3). ~~No CI.~~ Phase 0.
+- ~~There is no MCP server and no CI.~~ Phases 0 and 3.
 - Every result is one seed on small samples.
 - There is no strong baseline for the curated-graph case (an LLM writing a graph query).
 
@@ -172,7 +172,7 @@ NetworkX and SQLite.
   embeddings); OpenAI, Anthropic, x.ai, and TypeSafe direct are written but unrun
   (no keys here).
 
-### Phase 3: MCP server and container
+### Phase 3: MCP server and container (done)
 
 1. **`graphwalk mcp`** on the official MCP Python SDK.
    - Tools: `locate`, `read`, `neighbors`, `get_node`, `ingest` and `ingest_status`
@@ -210,6 +210,24 @@ NetworkX and SQLite.
 **Exit:** your own harness uses graphwalk over stdio and over remote HTTP to answer
 questions about a folder of documents, with keys only ever passed in the
 environment or headers.
+
+**As built:**
+- Exit check run live: `examples/harness.py` answered questions about
+  `examples/data/curies` over stdio and over HTTP (bearer auth). The HTTP server had no
+  provider key in its environment; the client's key arrived as a header, and neither
+  the key nor the bearer token appears in the server log, even at INFO. Total cost
+  under $0.01.
+- Keys are read from headers on every request rather than bound once at `initialize`:
+  clients send the same headers each time, so the effect is the same, and nothing is
+  stored per session. Backends are cached per distinct configuration (at most 32, in
+  memory).
+- Remote clients see only ingest jobs whose id they hold; `status` lists jobs only in
+  stdio mode.
+- The container is about 850 MB, mostly onnxruntime (local embeddings) and LiteLLM. A
+  slimmer image without local embeddings is possible later.
+- The GHCR publish workflow runs on `v*` tags and has not run yet.
+- "Staleness" in `status` is limited to counting hash-only documents; detecting edited
+  source files needs a re-scan, which `ingest` already does (unchanged files are skipped).
 
 ### Phase 4: Experiments for the paper (budget: about $41)
 

@@ -71,3 +71,30 @@ jobs:
           uv pip install --python /tmp/wheel-env dist/*.whl
           /tmp/wheel-env/bin/graphwalk --help
           /tmp/wheel-env/bin/python -c "import graphwalk"
+
+  container:
+    name: build and smoke-test the container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: docker build -t graphwalk:ci .
+      - name: Refuses to serve without auth
+        run: |
+          if docker run --rm graphwalk:ci; then echo "started without auth"; exit 1; fi
+      - name: Serves with a bearer token
+        run: |
+          TOKEN=$(openssl rand -hex 24)
+          echo "::add-mask::$TOKEN"
+          docker run -d --name gw -p 8080:8080 \
+            -e GRAPHWALK_AUTH=bearer -e GRAPHWALK_AUTH_TOKEN="$TOKEN" graphwalk:ci
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8080/healthz && break; sleep 1; done
+          uv sync --locked --extra mcp
+          uv run python scripts/container_smoke.py http://127.0.0.1:8080 "$TOKEN"
+          test "$(docker exec gw id -u)" = "10001"
+          if docker logs gw 2>&1 | grep -q "$TOKEN"; then echo "token in logs"; exit 1; fi
+      - if: always()
+        run: docker logs gw || true
