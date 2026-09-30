@@ -55,9 +55,16 @@ CURATED = {
         "graphwalk (LLM decider)": [("decider/20260930T140255Z-metaqa-1hop",
                                      "graphwalk-relation-v2-llm")],
         "LLM writes the path": [("20260930T123344Z-metaqa-1hop-llmpath", "llm-path")],
-        "LLM writes the path, 2 retries": [("20260930T123344Z-metaqa-1hop-llmpath",
-                                            "llm-path-retry")],
-        "vector RAG": [("20260928T192614Z-metaqa-1hop", "vector-rag")],
+        "LLM writes the path, 2 retries": [
+            ("20260930T123344Z-metaqa-1hop-llmpath", "llm-path-retry"),
+            ("20260930T161926Z-metaqa-1hop-llmpath", "llm-path-retry"),
+            ("20260930T170545Z-metaqa-1hop-llmpath", "llm-path-retry"),
+        ],
+        "vector RAG": [
+            ("20260928T192614Z-metaqa-1hop", "vector-rag"),
+            ("seeds/20260930T170540Z-metaqa-1hop", "vector-rag"),
+            ("seeds/20260930T175143Z-metaqa-1hop", "vector-rag"),
+        ],
         "multi-step RAG": [("20260929T000051Z-metaqa-1hop", "iter-rag")],
     },
     "MetaQA 2-hop": {
@@ -65,8 +72,11 @@ CURATED = {
                             ("decider/20260930T124319Z-metaqa-2hop", _JEV),
                             ("decider/20260930T124715Z-metaqa-2hop", _JEV)],
         "LLM writes the path": [("20260930T123344Z-metaqa-2hop-llmpath", "llm-path")],
-        "LLM writes the path, 2 retries": [("20260930T123344Z-metaqa-2hop-llmpath",
-                                            "llm-path-retry")],
+        "LLM writes the path, 2 retries": [
+            ("20260930T123344Z-metaqa-2hop-llmpath", "llm-path-retry"),
+            ("20260930T161926Z-metaqa-2hop-llmpath", "llm-path-retry"),
+            ("20260930T170545Z-metaqa-2hop-llmpath", "llm-path-retry"),
+        ],
         "graphwalk (LLM decider)": [
             ("decider/20260930T150921Z-metaqa-2hop", "graphwalk-relation-v2-llm")
         ],
@@ -78,8 +88,11 @@ CURATED = {
                             ("decider/20260930T124452Z-metaqa-3hop", _JEV),
                             ("decider/20260930T124852Z-metaqa-3hop", _JEV)],
         "LLM writes the path": [("20260930T123344Z-metaqa-3hop-llmpath", "llm-path")],
-        "LLM writes the path, 2 retries": [("20260930T123344Z-metaqa-3hop-llmpath",
-                                            "llm-path-retry")],
+        "LLM writes the path, 2 retries": [
+            ("20260930T123344Z-metaqa-3hop-llmpath", "llm-path-retry"),
+            ("20260930T161926Z-metaqa-3hop-llmpath", "llm-path-retry"),
+            ("20260930T170545Z-metaqa-3hop-llmpath", "llm-path-retry"),
+        ],
         "graphwalk (LLM decider)": [
             ("decider/20260930T155339Z-metaqa-3hop", "graphwalk-relation-v2-llm")
         ],
