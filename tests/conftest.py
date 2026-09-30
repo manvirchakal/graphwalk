@@ -5,7 +5,14 @@ Sockets are disabled for every test (``--disable-socket`` in pyproject). Tests m
 when they are.
 """
 
+import os
+
 import pytest
+
+from graphwalk.config import FIELD_NAMES, GraphwalkSettings
+
+# Before anything imports LiteLLM: it would otherwise fetch its price map on import.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 _OPT_IN_MARKERS = {"live": "--run-live", "neo4j": "--run-neo4j"}
 
@@ -24,3 +31,15 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
                 item.add_marker(pytest.mark.enable_socket)
             else:
                 item.add_marker(pytest.mark.skip(reason=f"needs {flag}"))
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_config(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Offline tests never see the developer's provider keys, base URLs, or settings
+    (a real key would otherwise be picked up, and some hosts set ANTHROPIC_BASE_URL).
+    ``.env`` files are ignored the same way. Live tests keep the real environment."""
+    if request.node.get_closest_marker("live") is not None:
+        return
+    for name in FIELD_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setitem(GraphwalkSettings.model_config, "env_file", None)

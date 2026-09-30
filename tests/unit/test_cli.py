@@ -183,3 +183,16 @@ def test_ingest_into_sqlite_then_locate_and_migrate(
     assert runner.invoke(app, ["migrate", str(graph), str(target), "--overwrite"]).exit_code == 0
     again = runner.invoke(app, ["locate", str(target), query])
     assert "Pierre Curie was born in Paris" in again.output
+
+
+def test_ingest_reports_missing_keys_clearly(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.txt").write_text("text", encoding="utf-8")
+    args = ["ingest", str(docs), "--graph", str(tmp_path / "g.db"), "--no-embed"]
+    result = runner.invoke(app, [*args, "--llm-provider", "anthropic"])
+    assert result.exit_code == 2
+    assert "set ANTHROPIC_API_KEY" in result.output
+    bad = runner.invoke(app, [*args, "--llm-provider", "typesafe"])
+    assert bad.exit_code == 2
+    assert "llm_provider" in bad.output

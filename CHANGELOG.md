@@ -12,6 +12,22 @@ in [`roadmap.md`](roadmap.md).
 
 ### Added
 
+- Providers and configuration (roadmap Phase 2):
+  - Five providers (OpenRouter, TypeSafe, OpenAI, Anthropic, x.ai) across three roles
+    (decision, LLM, embedding), with overridable base URLs everywhere.
+  - `resolve_config`: arguments > headers > environment > defaults, with the source of
+    every value recorded; header base URLs only from an allowlist; environment keys
+    can be switched off for remote servers.
+  - `graphwalk.providers`: `make_decider`, `make_llm`, `make_embedder`. Keys and base
+    URLs are always passed explicitly, so no client library falls back to the
+    process environment.
+  - LLM-as-decider fallback (`GRAPHWALK_DECISION_FALLBACK=llm`), marked in traces and
+    reports; the traversal test suite runs against it too.
+  - OpenAI-compatible remote embeddings (OpenAI, OpenRouter).
+  - Secrets are redacted from provider error messages; a test checks errors, logs,
+    reprs, and summaries.
+  - Ingest reports record the extraction and decision models.
+  - Live smoke tests per provider and role (`--run-live`).
 - The retriever core (roadmap Phase 1):
   - `graphwalk.Index` with `ingest`, `locate`, `read`, and `neighbors`; the public
     API is now what `graphwalk` exports.
@@ -44,6 +60,11 @@ in [`roadmap.md`](roadmap.md).
   Findings are in `docs/results-m5.md` to `docs/results-m7.md`.
 
 ### Changed
+
+- `import litellm` no longer downloads LiteLLM's price map (graphwalk sets
+  `LITELLM_LOCAL_MODEL_COST_MAP`); cost is only ever what the provider reports.
+- `graphwalk ingest`: `--llm-provider`, and `--llm-model`/`--embed-model` now take
+  the provider's own model id (defaults come from the configuration).
 
 - Eval scripts moved to `scripts/eval/`.
 

@@ -101,6 +101,10 @@ class RouteRecord(BaseModel):
 
 class IngestReport(BaseModel):
     source_id: str
+    extraction_model: str | None = None
+    decision_model: str | None = None
+    """Routing decisions (``None`` with ``routing="exact"``). An ``llm-decider:``
+    prefix means the LLM fallback decided, not Jev."""
     documents: int = 0
     new: int = 0
     changed: int = 0
@@ -272,7 +276,15 @@ class IngestPipeline:
         documents, re-ingesting from a checkpointed store resumes where it stopped."""
         started = time.perf_counter()
         cfg = self.config
-        report = IngestReport(source_id=source.source_id)
+        report = IngestReport(
+            source_id=source.source_id,
+            extraction_model=self._llm.model_id,
+            decision_model=(
+                self._decider.model_id
+                if cfg.routing == "jev" and self._decider is not None
+                else None
+            ),
+        )
         if cfg.escalate:
             report.escalation_model = self._escalation_llm.model_id
         ledger = await self.ledger(source.source_id)

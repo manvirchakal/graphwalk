@@ -1,6 +1,11 @@
-"""Traversal engine behavior against the fake decision backend."""
+"""Traversal engine behavior against the fake decision backend.
+
+Every test runs twice: with the fake backend directly, and with the same fake behind
+the LLM-as-decider (``tests/llm_via.py``), so the fallback is held to the same suite.
+"""
 
 import math
+import sys
 from collections.abc import Mapping
 
 import pytest
@@ -13,6 +18,7 @@ from graphwalk.stores.networkx_store import NetworkXStore
 from graphwalk.traversal import Budget, TraversalConfig, TraversalResult, Traverser
 from graphwalk.traversal.prompts import node_text
 from kg_fixtures import movie_store, oracle
+from llm_via import ViaLLM
 
 BORN = "Where was the director of Inception born?"
 # Inception -> Nolan -> London -> STOP, each hop clear.
@@ -21,6 +27,18 @@ BORN_ROUTE = {
     "Christopher Nolan": {"London": 0.8, "STOP": 0.1, "Memento": 0.05, "Interstellar": 0.05},
     "London": {"STOP": 0.95, "United Kingdom": 0.05},
 }
+
+
+@pytest.fixture(params=["direct", "llm-decider"], autouse=True)
+def decider_kind(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+    if request.param == "llm-decider":
+        module = sys.modules[__name__]
+        direct_oracle, direct_fake = oracle, FakeDecisionBackend
+        monkeypatch.setattr(module, "oracle", lambda *a, **k: ViaLLM(direct_oracle(*a, **k)))
+        monkeypatch.setattr(
+            module, "FakeDecisionBackend", lambda *a, **k: ViaLLM(direct_fake(*a, **k))
+        )
+    return request.param
 
 
 def cfg(**kwargs: object) -> TraversalConfig:

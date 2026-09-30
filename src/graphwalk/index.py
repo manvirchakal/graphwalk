@@ -15,7 +15,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Literal, Self
 
-from graphwalk.config import GraphwalkSettings
+from graphwalk.config import ResolvedConfig, resolve_config
 from graphwalk.core.model import Direction, Neighbor
 from graphwalk.decisions.base import DecisionBackend
 from graphwalk.embeddings.base import Embedder
@@ -34,21 +34,17 @@ from graphwalk.traversal.engine import Traverser
 type LocateMode = Literal["graph", "dense", "hybrid"]
 
 
-def default_decider() -> DecisionBackend:
-    """Jev from the environment (``GRAPHWALK_DECISION_PROVIDER`` and its API key)."""
-    from graphwalk.decisions.jev import JevBackend  # noqa: PLC0415 - loads the SDK lazily
-
-    return JevBackend.from_settings(GraphwalkSettings())
-
-
 class Index:
     """A graph plus the documents it was built from.
 
-    ``decider`` drives both the walk and ingestion routing; if omitted, one is built
-    from the environment on first use (see :func:`default_decider`). ``llm`` extracts
-    entities and relations and is needed only to ingest. ``embedder`` is optional for
-    graph ``locate`` (it prefilters wide steps and backs name linking) and required for
-    ``dense`` and ``hybrid``.
+    Backends not passed are built on first use from ``config`` (by default the
+    environment; see :mod:`graphwalk.config`):
+
+    * ``decider`` drives the walk and ingestion routing (Jev, or the LLM fallback);
+    * ``llm`` extracts entities and relations (needed only to ingest);
+    * ``embedder`` is optional for graph ``locate`` (it prefilters wide steps and backs
+      name linking; not built by default, since fastembed downloads a model) and
+      required for ``dense`` and ``hybrid`` (built from config if not passed).
     """
 
     def __init__(
@@ -63,10 +59,13 @@ class Index:
         ingest: IngestConfig | None = None,
         documents: DocumentSource | None = None,
         extraction_cache: ExtractionCache | None = None,
+        config: ResolvedConfig | None = None,
     ) -> None:
         self.store = store
+        self._config = config
         self._decider = decider
-        self._owns_decider = False
+        self._owns: list[object] = []
+        """Backends this index built, closed with it."""
         self._llm = llm
         self._escalation_llm = escalation_llm
         self._embedder = embedder
@@ -98,16 +97,24 @@ class Index:
 
     async def close(self) -> None:
         """Close the store, and the decider if the index built it."""
-        if self._owns_decider and self._decider is not None:
+        if self._decider is not None and self._decider in self._owns:
             await self._decider.aclose()
         await self.store.close()
 
     @property
     def decider(self) -> DecisionBackend:
         if self._decider is None:
-            self._decider = default_decider()
-            self._owns_decider = True
+            from graphwalk.providers import make_decider  # noqa: PLC0415
+
+            self._decider = make_decider(self.config)
+            self._owns.append(self._decider)
         return self._decider
+
+    @property
+    def config(self) -> ResolvedConfig:
+        if self._config is None:
+            self._config = resolve_config()
+        return self._config
 
     # ------------------------------------------------------------------ ingest
 
@@ -117,8 +124,9 @@ class Index:
         """Ingest a :class:`Source`, a file or directory path, or documents in memory
         (source id ``"memory"``). Unchanged documents are skipped."""
         if self._llm is None:
-            msg = "ingest needs an extraction model: Index(..., llm=...)"
-            raise ValueError(msg)
+            from graphwalk.providers import make_llm  # noqa: PLC0415
+
+            self._llm = make_llm(self.config)
         if isinstance(source, str | os.PathLike):
             source = FileSource(Path(source))
         elif not isinstance(source, Source):
@@ -153,8 +161,9 @@ class Index:
     def _dense_locator(self) -> DenseLocator:
         if self._dense is None:
             if self._embedder is None:
-                msg = "dense and hybrid locate need an embedder: Index(..., embedder=...)"
-                raise ValueError(msg)
+                from graphwalk.providers import make_embedder  # noqa: PLC0415
+
+                self._embedder = make_embedder(self.config)
             if self._documents is None or not isinstance(self.store, DocumentStore):
                 msg = "dense and hybrid locate need a store that keeps documents"
                 raise ValueError(msg)

@@ -12,17 +12,25 @@ import time
 from collections.abc import Sequence
 from typing import Any
 
+from graphwalk.core.redact import redact
 from graphwalk.llm.base import LLMError, LLMResult, Message
+from graphwalk.llm.litellm_import import import_litellm
 
 DEFAULT_MODEL = "openrouter/openai/gpt-6-luna"
 
 
 class LiteLLMBackend:
+    """``model`` is a LiteLLM model id (``<provider>/<model>``). Pass ``api_key`` and
+    ``api_base`` explicitly: when they are ``None``, LiteLLM falls back to the process
+    environment (``OPENAI_API_KEY`` and so on). :func:`graphwalk.providers.make_llm`
+    always passes both."""
+
     def __init__(
         self,
         model: str = DEFAULT_MODEL,
         *,
         api_key: str | None = None,
+        api_base: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 256,
         timeout_s: float = 60.0,
@@ -31,15 +39,10 @@ class LiteLLMBackend:
         rate_limit_retries: int = 6,
         rate_limit_backoff_s: float = 10.0,
     ) -> None:
-        try:
-            import litellm  # noqa: PLC0415 - optional, heavy dependency
-        except ImportError as error:  # pragma: no cover - depends on the environment
-            msg = "LiteLLMBackend needs the 'llm' extra: uv sync --extra llm"
-            raise ImportError(msg) from error
-        litellm.suppress_debug_info = True
-        self._litellm: Any = litellm
+        self._litellm: Any = import_litellm()
         self._model = model
         self._api_key = api_key
+        self._api_base = api_base
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._timeout_s = timeout_s
@@ -82,16 +85,19 @@ class LiteLLMBackend:
                     timeout=self._timeout_s,
                     num_retries=self._num_retries,
                     api_key=self._api_key,
+                    api_base=self._api_base,
                     **extra,
                 )
                 break
             except rate_limit_error as error:
                 attempt += 1
                 if attempt > self._rate_limit_retries:
-                    raise LLMError(f"LLM rate-limited {attempt} times: {error}") from error
+                    detail = redact(str(error), [self._api_key])
+                    raise LLMError(f"LLM rate-limited {attempt} times: {detail}") from None
                 await asyncio.sleep(self._backoff * attempt)
-            except Exception as error:
-                raise LLMError(f"LLM call failed: {error}") from error
+            except Exception as error:  # noqa: BLE001 - any provider error becomes LLMError
+                # ``from None``: the provider's exception can carry the request, key included.
+                raise LLMError(f"LLM call failed: {redact(str(error), [self._api_key])}") from None
         latency = time.perf_counter() - started
         usage: Any = getattr(response, "usage", None)
         cost = getattr(usage, "cost", None)

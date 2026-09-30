@@ -48,11 +48,11 @@ Decisions already made (see "Decisions" below):
 
 **Known gaps:**
 
-- Provenance is document- and chunk-level, with no character offsets.
-- There is no `locate`/`read` API.
-- Storage is one JSON file per graph.
-- Only OpenRouter and TypeSafe are supported.
-- There is no MCP server and no CI.
+- ~~Provenance is document- and chunk-level, with no character offsets.~~ Phase 1.
+- ~~There is no `locate`/`read` API.~~ Phase 1.
+- ~~Storage is one JSON file per graph.~~ SQLite, Phase 1.
+- ~~Only OpenRouter and TypeSafe are supported.~~ Phase 2.
+- There is no MCP server (Phase 3). ~~No CI.~~ Phase 0.
 - Every result is one seed on small samples.
 - There is no strong baseline for the curated-graph case (an LLM writing a graph query).
 
@@ -136,7 +136,7 @@ NetworkX and SQLite.
 - The exit test uses scripted extraction and decisions. Whether `locate` finds gold
   evidence on real data, and whether graph beats dense, is E1.
 
-### Phase 2: Providers and configuration
+### Phase 2: Providers and configuration (done)
 
 1. A provider registry covering the five providers × three roles, built on LiteLLM
    for chat and on provider SDKs or LiteLLM for embeddings. Base-URL overrides work
@@ -156,6 +156,21 @@ NetworkX and SQLite.
   fakes.
 - One live smoke test per provider runs manually, skipped by default.
 - The fallback passes the traversal test suite.
+
+**As built:**
+- Default models: OpenRouter `openai/gpt-6-luna`, OpenAI `gpt-6-luna`, Anthropic
+  `claude-haiku-4-5-20251001` (cheap, since ingestion makes many calls), x.ai none
+  (set `GRAPHWALK_LLM_MODEL`; we did not want to guess a model id).
+- The fallback asks for 0–100 scores for every option of every question in one call,
+  and normalizes them. "Passes the traversal suite" means the full engine suite runs
+  through its prompt, parsing, and normalization with scripted answers. It says
+  nothing about how well a real model decides; E3 measures that.
+- Header names are the environment names, matched ignoring case, with `-` for `_` and
+  an optional `X-` prefix (nginx drops underscore headers by default).
+- `import litellm` fetched a price map from GitHub; it no longer does.
+- Live smoke tests were run for the OpenRouter roles (chat, Jev, fallback,
+  embeddings); OpenAI, Anthropic, x.ai, and TypeSafe direct are written but unrun
+  (no keys here).
 
 ### Phase 3: MCP server and container
 

@@ -57,10 +57,11 @@ async def _open_graph(path: Path) -> GraphStore:
 
 
 def _make_backend() -> DecisionBackend:
-    """The decision backend for CLI commands (replaced in tests)."""
-    from graphwalk.decisions.jev import JevBackend  # noqa: PLC0415 - loads the SDK lazily
+    """The decision backend for CLI commands (replaced in tests): Jev, or the LLM
+    fallback if ``GRAPHWALK_DECISION_FALLBACK=llm`` and no Jev key is set."""
+    from graphwalk.providers import make_decider  # noqa: PLC0415
 
-    return JevBackend.from_settings(GraphwalkSettings())
+    return make_decider()
 
 
 async def _run_query(
@@ -187,28 +188,37 @@ def _eval_factories(llm_model: str, embed_model: str, llm_rpm: float | None) -> 
     )
 
 
-def _ingest_backends(
-    llm_model: str, embed_model: str | None, llm_rpm: float | None, escalation_model: str | None
+def _ingest_backends(  # noqa: PLR0917 - replaced positionally in tests
+    llm_provider: str | None,
+    llm_model: str | None,
+    embed_model: str | None,
+    llm_rpm: float | None,
+    escalation_model: str | None,
+    use_embedder: bool,
 ) -> "tuple[LLMBackend, Embedder | None, LLMBackend | None]":
-    """Real extraction LLM, embedder, and escalation LLM for ``graphwalk ingest``
-    (replaced in tests). ``openrouter/...`` model ids go to OpenRouter."""
-    from graphwalk.llm.litellm_backend import LiteLLMBackend  # noqa: PLC0415
+    """Extraction LLM, embedder, and escalation LLM for ``graphwalk ingest`` (replaced
+    in tests). Options given on the command line override the environment."""
+    from graphwalk.config import resolve_config  # noqa: PLC0415
+    from graphwalk.providers import make_embedder, make_llm  # noqa: PLC0415
 
-    key = GraphwalkSettings().openrouter_api_key
-    api_key = None if key is None else key.get_secret_value()
+    arguments = {
+        name: value
+        for name, value in {
+            "llm_provider": llm_provider,
+            "llm_model": llm_model,
+            "escalation_model": escalation_model,
+            "embedding_model": embed_model,
+        }.items()
+        if value is not None
+    }
+    config = resolve_config(arguments)
     # 4096 tokens: extraction replies are long, and reasoning models also spend
     # output tokens on reasoning before the label.
-    llm = LiteLLMBackend(llm_model, api_key=api_key, max_tokens=4096, max_rpm=llm_rpm)
+    llm = make_llm(config, max_rpm=llm_rpm)
     escalation = (
-        None
-        if escalation_model is None
-        else LiteLLMBackend(escalation_model, api_key=api_key, max_tokens=4096, max_rpm=llm_rpm)
+        None if escalation_model is None else make_llm(config, role="escalation", max_rpm=llm_rpm)
     )
-    if embed_model is None:
-        return llm, None, escalation
-    from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder  # noqa: PLC0415
-
-    return llm, FastEmbedEmbedder(embed_model), escalation
+    return llm, make_embedder(config) if use_embedder else None, escalation
 
 
 @app.command()
@@ -231,18 +241,24 @@ def ingest(  # noqa: PLR0917 - Typer maps parameters to CLI options
     ] = False,
     max_chunk_chars: Annotated[int, typer.Option(help="Chunk size.")] = 2000,
     concurrency: Annotated[int, typer.Option(help="Concurrent extraction calls.")] = 4,
-    llm_model: Annotated[
-        str, typer.Option(help="LiteLLM model id for extraction.")
-    ] = "openrouter/openai/gpt-6-luna",
-    escalation_model: Annotated[
+    llm_provider: Annotated[
         str | None,
         typer.Option(
-            help="LiteLLM model id for escalated routing decisions (default: --llm-model)."
+            help="openrouter | openai | anthropic | xai (default: GRAPHWALK_LLM_PROVIDER)."
         ),
     ] = None,
+    llm_model: Annotated[
+        str | None,
+        typer.Option(help="Extraction model id, as the provider names it (default: per provider)."),
+    ] = None,
+    escalation_model: Annotated[
+        str | None,
+        typer.Option(help="Model for escalated routing decisions (default: --llm-model)."),
+    ] = None,
     embed_model: Annotated[
-        str | None, typer.Option(help="fastembed model for routing candidates.")
-    ] = "BAAI/bge-small-en-v1.5",
+        str | None,
+        typer.Option(help="Embedding model for routing candidates (default: per provider)."),
+    ] = None,
     no_embed: Annotated[
         bool, typer.Option("--no-embed", help="Name matching only for candidates.")
     ] = False,
@@ -274,9 +290,13 @@ def ingest(  # noqa: PLR0917 - Typer maps parameters to CLI options
     except (FileNotFoundError, ValidationError) as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=2) from None
-    llm, embedder, escalation_llm = _ingest_backends(
-        llm_model, None if no_embed else embed_model, llm_rpm, escalation_model
-    )
+    try:
+        llm, embedder, escalation_llm = _ingest_backends(
+            llm_provider, llm_model, embed_model, llm_rpm, escalation_model, not no_embed
+        )
+    except GraphwalkError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=2) from None
 
     async def run() -> None:
         store = await _open_graph(graph)

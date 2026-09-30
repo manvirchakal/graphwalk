@@ -18,6 +18,7 @@ from graphwalk import (
     StaleLocationError,
     TextSource,
 )
+from graphwalk.config import ConfigError, resolve_config
 from graphwalk.decisions.base import ChoiceQuestion, JSONContent
 from graphwalk.decisions.fake import FakeDecisionBackend
 from graphwalk.embeddings.fake import FakeEmbedder
@@ -212,8 +213,9 @@ async def test_dense_and_hybrid(tmp_path: Path) -> None:
             assert any(gold in text for text in texts)
         with pytest.raises(ValueError, match="mode must be"):
             await index.locate(QUERY, mode="bogus")  # type: ignore[arg-type]
-    async with make_index(tmp_path / "h.db") as index:
-        with pytest.raises(ValueError, match="need an embedder"):
+    remote = resolve_config({"embedding_provider": "openai"})
+    async with make_index(tmp_path / "h.db", config=remote) as index:
+        with pytest.raises(ConfigError, match="set OPENAI_API_KEY"):
             await index.locate(QUERY, mode="dense")
 
 
@@ -239,5 +241,8 @@ async def test_neighbors_by_name_or_id_and_ingest_inputs(tmp_path: Path) -> None
         assert isinstance(index.store, SQLiteStore)
         assert await index.store.get_document("memory/curie") is not None
     async with Index(NetworkXStore(), decider=walker()) as index:
-        with pytest.raises(ValueError, match="needs an extraction model"):
+        with pytest.raises(ConfigError, match="set OPENROUTER_API_KEY"):
             await index.ingest(corpus())
+    async with Index(NetworkXStore()) as index:
+        with pytest.raises(ConfigError, match="GRAPHWALK_DECISION_FALLBACK=llm"):
+            await index.locate(QUERY)

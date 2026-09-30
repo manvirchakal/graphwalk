@@ -84,12 +84,35 @@ re-reads it from disk instead.
 
 Only names exported from `graphwalk` are public API; submodules may change.
 
-## Decision backend
+## Providers and configuration
 
-The v1 decision backend is TypeSafe's Jev (pinned: `jev-1.13.0` direct,
-`typesafe/jev-1.13` on OpenRouter). Select the provider with
-`GRAPHWALK_DECISION_PROVIDER=openrouter|typesafe`. Backends sit behind a
-`DecisionBackend` protocol, so other classifiers can be added without touching traversal.
+graphwalk uses models in three roles:
+
+| Role | Providers | Default |
+|---|---|---|
+| **Decision** (each hop, entity routing) | Jev via OpenRouter or TypeSafe | OpenRouter, `typesafe/jev-1.13` |
+| **LLM** (extraction, escalation) | OpenRouter, OpenAI, Anthropic, x.ai | OpenRouter, `openai/gpt-6-luna` |
+| **Embedding** (prefilter, dense `locate`) | fastembed (local), OpenAI, OpenRouter | fastembed, `BAAI/bge-small-en-v1.5` |
+
+Keys and base URLs use the conventional variables (`OPENAI_API_KEY`,
+`ANTHROPIC_BASE_URL`, ...); everything else is `GRAPHWALK_*`. See
+[`.env.example`](.env.example) for the full list. Precedence, highest first: explicit
+arguments, request headers (remote MCP sessions), the environment, defaults. Keys are
+kept as secrets and never appear in logs, traces, or error messages.
+
+With no Jev key, `GRAPHWALK_DECISION_FALLBACK=llm` makes the chat model decide
+instead: it scores the options and the scores become the distribution. It works
+everywhere Jev does (it passes the same traversal test suite), but it is slower and
+its probabilities are **not calibrated**. Traces and reports mark it (`llm-decider:`
+model ids). It is off by default so nobody gets it by accident.
+
+```python
+from graphwalk.config import resolve_config
+from graphwalk import Index
+
+config = resolve_config({"llm_provider": "anthropic", "decision_fallback": "llm"})
+index = Index.open("my.db", config=config)
+```
 
 ## Development
 
