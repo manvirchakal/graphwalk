@@ -1,6 +1,6 @@
 # Phase 4 results: experiments for the paper
 
-Status on 2026-09-30: E1–E6 and E2b are complete. Every number below comes from a
+Status on 2026-09-30: E1–E7 and E2b are complete. Every number below comes from a
 committed run and can be regenerated with the `scripts/paper/` script named in its
 heading. Intervals are 95% percentile bootstraps over questions (2,000 resamples). The
 paired Δ columns resample per-question differences.
@@ -15,7 +15,7 @@ paired Δ columns resample per-question differences.
 | large, noisy schema (text-derived graphs) | **wins** against an LLM writing the query: 3–5× the F1 at 1/20–1/35 the cost | E2b |
 | one-shot evidence retrieval, entity chains (2Wiki) | **wins**: hybrid +18 points recall over dense | E1 |
 | retrieval elsewhere (HotpotQA, FanOutQA) | ties dense, or costs about 5 points | E1 |
-| helping multi-step RAG | almost no room: its failures are rarely missing evidence (≤6 of 280 fixable) | E1 analysis |
+| helping multi-step RAG | no reliable accuracy gain; 16–21% fewer LLM rounds, but the Jev calls cost more than the LLM savings | E7, E1 analysis |
 | decider: Jev vs an LLM | the LLM is as accurate or better (+0.06 at 3 hops); Jev is 3–4× cheaper and 7–10× faster, and its confidence tells right from wrong on the harder walks (AUROC 0.94–0.97 vs 0.54–0.64) | E3 |
 
 ## E1: Is the graph a good retriever? (`table_evidence.py`)
@@ -69,7 +69,7 @@ missed gold evidence. Hybrid `locate` held the missing evidence for 2, 2 and 2 o
 Its failures are reasoning and answer granularity, not retrieval. The pooled corpora are
 small and every entity has a titled paragraph it can look up. Settings where retrieval
 should fail (no title lookup, tight step budgets, large corpora, longer chains) are
-proposed as E7 and have not been run.
+tested in E7.
 
 ## E2: Does an LLM writing the graph query beat walking? (`table_curated.py`)
 
@@ -171,6 +171,44 @@ not improve (if anything, they slip, within noise), and the best graphwalk varia
 stays behind multi-step RAG: −0.158 [−0.275, −0.039]. What loses the text benchmarks
 is what the graph cannot represent (comparisons, order, qualifiers), not extraction
 errors. The M7 diagnosis "extraction is the bottleneck" does not survive.
+
+## E7: Does the graph help multi-step RAG? (`scripts/eval/rag_addon.py`)
+
+Multi-step RAG on the M7 2Wiki sample (120 questions). With the add-on, its first
+retrieval (top 5 paragraphs) comes from graphwalk's hybrid `locate` (Jev linking; E1's
+checkpointed results), not from the question's embedding. Everything else is the same.
+The stressors are title lookup on or off, and 5 or 2 LLM rounds
+(`results/20260930T205134Z-2wiki-ragaddon/`).
+
+| title lookup | rounds | F1 without → with add-on | Δ [95% CI] | LLM calls/q | LLM $/1k q |
+|---|---|---|---|---|---|
+| on | 5 | 0.743 → 0.757 | +0.013 [−0.015, +0.043] | 1.77 → 1.40 | 0.278 → 0.222 |
+| on | 2 | 0.732 → **0.782** | **+0.050 [+0.003, +0.100]** | 1.57 → 1.31 | 0.219 → 0.166 |
+| off | 5 | 0.780 → 0.763 | −0.017 [−0.062, +0.026] | 1.78 → 1.47 | 0.280 → 0.252 |
+| off | 2 | 0.742 → 0.747 | +0.005 [−0.041, +0.052] | 1.59 → 1.31 | 0.230 → 0.197 |
+
+The add-on itself costs $0.245 per 1k questions in Jev calls, and 0.84 s at the median.
+
+- **Accuracy: no reliable gain.** One of four comparisons clears zero, barely (+0.05
+  at 2 rounds with title lookup). Its twin without title lookup shows +0.005. With four
+  comparisons at 95%, one borderline hit is about what chance would give. The honest
+  claim is "no accuracy loss, possibly a small gain under tight round budgets"; that
+  needs more questions to confirm.
+- **Rounds: a consistent drop of 16–21%.** Every setting answers in fewer LLM rounds,
+  because the graph's first retrieval already holds the second-hop paragraph more
+  often. But in dollars, the LLM savings ($0.03–0.06 per 1k) are smaller than the
+  add-on's Jev cost ($0.245 per 1k). The add-on trades cheap LLM calls for pricier
+  classifier calls. It is not a cost saving at `gpt-6-luna` prices; it would be with a
+  pricier reader model.
+- **The "no title lookup" stressor doesn't work on 2Wiki.** Paragraphs are embedded with
+  their titles, so plain embedding search already finds entity pages (0.780 without
+  title lookup vs 0.743 with). Testing corpora without one page per entity needs such a
+  corpus, not a switch.
+
+**Verdict.** On these benchmarks, graphwalk is not a meaningful add-on to multi-step RAG.
+It cuts LLM rounds but not accuracy or dollars. The settings where it might matter (a
+large corpus, entities not titled per page, longer chains, an expensive reader model)
+remain untested.
 
 ## E6: Cost and latency, ingestion amortized (`table_cost.py`)
 
