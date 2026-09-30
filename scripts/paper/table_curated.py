@@ -7,8 +7,8 @@ For each system: F1 on the seed-0 subset with a 95% bootstrap CI; F1 on every se
 from graphwalk with Jev on seed 0; cost and latency on seed 0. Wall latency (p50 s)
 includes waiting for a rate-limit slot, which inflates the LLM-decider rows (every call
 waits under 20 requests/min); the decision column is time in decision calls only.
-Systems: graphwalk with Jev (E4 seeds), graphwalk with an LLM decider (E3), an LLM writing the relation path
-(E2), vector RAG and multi-step RAG (M5).
+Systems: graphwalk with Jev (E4 seeds), graphwalk with an LLM decider (E3), an LLM
+writing the relation path (E2), vector RAG and multi-step RAG (M5).
 """
 
 import statistics
