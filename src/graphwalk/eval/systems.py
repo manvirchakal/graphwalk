@@ -503,6 +503,22 @@ class IterativeRAGSystem:
         vector = (await self._embedder.embed([query]))[0]
         return self._index.top_k(vector, self._k_search)
 
+    async def replay(self, question: str, steps: Sequence[Mapping[str, JsonValue]]) -> list[str]:
+        """The documents a recorded run retrieved, in order: the question's own hits,
+        then each step's searches. Retrieval is deterministic, so this reproduces
+        ``detail["retrieved"]`` from a run's ``detail["steps"]`` without LLM calls."""
+        hits = self._index.top_k((await self._embedder.embed([question]))[0], self._k)
+        seen = list(dict.fromkeys(hits))
+        for step in steps:
+            queries = step.get("search")
+            if not isinstance(queries, list):
+                continue
+            for query in queries:
+                for i in await self._search(str(query)):
+                    if i not in seen:
+                        seen.append(i)
+        return [self._index.ids[i] for i in seen]
+
     async def answer(self, question: EvalQuestion) -> SystemAnswer:
         started = time.perf_counter()
         embed_calls = 1
@@ -576,7 +592,12 @@ class IterativeRAGSystem:
             input_tokens=tokens_in,
             output_tokens=tokens_out,
             cost_usd=cost,
-            detail={"steps": steps, "raw": raw, "docs": len(seen)},
+            detail={
+                "steps": steps,
+                "raw": raw,
+                "docs": len(seen),
+                "retrieved": [self._index.ids[i] for i in seen],
+            },
         )
 
 

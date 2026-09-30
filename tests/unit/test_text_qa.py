@@ -163,12 +163,14 @@ def test_hotpotqa_read_records(tmp_path: Path) -> None:
     row = {
         "id": "h1", "question": "Q?", "answer": "yes", "type": "comparison", "level": "hard",
         "context": {"title": ["A", "B"], "sentences": [["a1", "a2"], ["b1"]]},
+        "supporting_facts": {"title": ["B", "A"], "sent_id": [0, 1]},
     }  # fmt: skip
     path = tmp_path / "v.json"
     path.write_text(json.dumps([row]), encoding="utf-8")
     (record,) = hotpotqa.read_records(path)
     assert record["_id"] == "h1"
     assert record["context"] == [["A", ["a1", "a2"]], ["B", ["b1"]]]
+    assert record["supporting_facts"] == [["B", 0], ["A", 1]]
 
 
 EXTRACT = {

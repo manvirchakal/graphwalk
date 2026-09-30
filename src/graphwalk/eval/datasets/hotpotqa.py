@@ -70,6 +70,14 @@ def download() -> Path:
     return path
 
 
+def _supporting(facts: Any) -> list[list[Any]]:
+    """``[[title, sentence index], ...]`` (the 2Wiki shape)."""
+    if not isinstance(facts, dict):
+        return []
+    facts = cast("dict[str, list[Any]]", facts)
+    return [[t, i] for t, i in zip(facts["title"], facts["sent_id"], strict=True)]
+
+
 def read_records(path: Path) -> list[dict[str, Any]]:
     """Records with ``context`` as ``[[title, [sentences...]], ...]`` (the 2Wiki shape)."""
     records: list[dict[str, Any]] = []
@@ -82,6 +90,7 @@ def read_records(path: Path) -> list[dict[str, Any]]:
                 "answer": row["answer"],
                 "type": row["type"],
                 "level": row.get("level"),
+                "supporting_facts": _supporting(row.get("supporting_facts")),
                 "context": [
                     [title, sentences]
                     for title, sentences in zip(context["title"], context["sentences"], strict=True)

@@ -11,6 +11,7 @@ articles, collapse whitespace).
 """
 
 import math
+import random
 import re
 import string
 from collections import Counter
@@ -76,3 +77,21 @@ def percentile(values: Sequence[float], q: float) -> float:
     ordered = sorted(values)
     rank = max(1, math.ceil(q / 100 * len(ordered)))
     return ordered[min(rank, len(ordered)) - 1]
+
+
+def bootstrap_ci(
+    values: Sequence[float], *, samples: int = 2000, level: float = 0.95, seed: int = 0
+) -> tuple[float, float]:
+    """Percentile bootstrap confidence interval for the mean of ``values``.
+
+    For a paired comparison of two systems, pass the per-question differences.
+    """
+    if not values:
+        return math.nan, math.nan
+    rng = random.Random(seed)  # noqa: S311 - reproducible resampling
+    n = len(values)
+    means = sorted(math.fsum(rng.choices(values, k=n)) / n for _ in range(samples))
+    tail = (1 - level) / 2
+    lo = means[int(tail * samples)]
+    hi = means[min(samples - 1, int((1 - tail) * samples))]
+    return lo, hi

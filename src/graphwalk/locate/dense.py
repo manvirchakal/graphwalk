@@ -64,7 +64,9 @@ class DenseLocator:
                 continue
             for chunk in chunk_spans(found.text, max_chars=self._chunk_chars):
                 chunks.append(_Chunk(record.key, chunk.start, chunk.end))
-                texts.append(chunk.text)
+                # Titled like extraction passages: a paragraph often names its subject
+                # only in the title ("He was born in ...").
+                texts.append(f"{record.title}\n\n{chunk.text}" if record.title else chunk.text)
         parts = [
             await self._embedder.embed(texts[i : i + self._batch_size])
             for i in range(0, len(texts), self._batch_size)

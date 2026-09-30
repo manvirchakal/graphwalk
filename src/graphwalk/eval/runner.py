@@ -248,8 +248,52 @@ def write_results(
         "runs": [run.model_dump(mode="json") for run in runs],
     }
     (out_dir / "results.json").write_text(json.dumps(document, indent=1), encoding="utf-8")
+    write_scores(out_dir / SCORES_FILE, runs)
     _write_summary(out_dir, dataset, runs, params, env)
     return out_dir
+
+
+SCORES_FILE = "scores.jsonl"
+MAX_SCORED_ANSWERS = 50
+
+
+def score_rows(runs: Sequence[SystemRun]) -> list[dict[str, JsonValue]]:
+    """One compact row per (system, question): scores, cost, latency, the walk's
+    confidence, and the answers. Small enough to commit, so tables and confidence
+    intervals can be recomputed without the full ``results.json``."""
+    rows: list[dict[str, JsonValue]] = []
+    for run in runs:
+        for record in run.records:
+            answer = record.answer
+            score_ = answer.detail.get("score")
+            rows.append(
+                {
+                    "system": run.system,
+                    "question_id": record.question.id,
+                    "type": record.question.meta.get("type", record.question.meta.get("hops")),
+                    "f1": record.score.f1,
+                    "em": record.score.em,
+                    "hits1": record.score.hits1,
+                    "status": answer.status,
+                    "cost_usd": answer.cost_usd,
+                    "latency_s": answer.latency_s,
+                    "decision_calls": answer.decision_calls,
+                    "llm_calls": answer.llm_calls,
+                    "input_tokens": answer.input_tokens,
+                    "confidence": (
+                        math.exp(float(score_)) if isinstance(score_, int | float) else None
+                    ),
+                    "answers": list(answer.answer_set[:MAX_SCORED_ANSWERS]),
+                }
+            )
+    return rows
+
+
+def write_scores(path: Path, runs: Sequence[SystemRun]) -> None:
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in score_rows(runs)),
+        encoding="utf-8",
+    )
 
 
 def _write_summary(
