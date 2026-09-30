@@ -40,6 +40,7 @@ async def main(args: argparse.Namespace) -> None:
             PathQuerySystem(store, llm, relations, glosses=metaqa.RELATION_GLOSSES,
                             retries=retries, name=f"llm-path{suffix}{args.label}")
             for retries, suffix in ((0, ""), (2, "-retry"))
+            if f"llm-path{suffix}" in args.systems
         ]  # fmt: skip
         runs = []
         for system in systems:
@@ -73,6 +74,10 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=200)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--llm", default="openrouter/openai/gpt-6-luna")
+    parser.add_argument(
+        "--systems", nargs="+", default=["llm-path", "llm-path-retry"],
+        choices=["llm-path", "llm-path-retry"],
+    )  # fmt: skip
     parser.add_argument("--label", default="", help="appended to system names")
     parser.add_argument("--max-tokens", type=int, default=512)
     parser.add_argument("--rpm", type=float, default=18.0)

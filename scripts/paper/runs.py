@@ -37,3 +37,47 @@ COST_ROWS = {
         ("graphwalk + reader (facts)", FANOUT, "graphwalk-reader-facts", True),
     ],
 }  # fmt: skip
+
+# E1: evidence retrieval runs and the k each is reported at.
+EVIDENCE = {
+    "2Wiki": ("20260930T124411Z-2wiki-evidence", 5),
+    "HotpotQA": ("20260930T124743Z-hotpotqa-evidence", 5),
+}
+
+# Curated graphs: label -> [(run, system) per seed]; the first label is the reference.
+_JEV = "graphwalk-relation-v2-jev"
+CURATED = {
+    "MetaQA 1-hop": {
+        "graphwalk (Jev)": [("decider/20260930T123542Z-metaqa-1hop", _JEV),
+                            ("decider/20260930T124219Z-metaqa-1hop", _JEV),
+                            ("decider/20260930T124616Z-metaqa-1hop", _JEV)],
+        "vector RAG": [("20260928T192614Z-metaqa-1hop", "vector-rag")],
+        "multi-step RAG": [("20260929T000051Z-metaqa-1hop", "iter-rag")],
+    },
+    "MetaQA 2-hop": {
+        "graphwalk (Jev)": [("decider/20260930T123641Z-metaqa-2hop", _JEV),
+                            ("decider/20260930T124319Z-metaqa-2hop", _JEV),
+                            ("decider/20260930T124715Z-metaqa-2hop", _JEV)],
+        "vector RAG": [("20260928T194721Z-metaqa-2hop", "vector-rag")],
+        "multi-step RAG": [("20260929T002404Z-metaqa-2hop", "iter-rag")],
+    },
+    "MetaQA 3-hop": {
+        "graphwalk (Jev)": [("decider/20260930T123821Z-metaqa-3hop", _JEV),
+                            ("decider/20260930T124452Z-metaqa-3hop", _JEV),
+                            ("decider/20260930T124852Z-metaqa-3hop", _JEV)],
+        "vector RAG": [("20260928T200403Z-metaqa-3hop", "vector-rag")],
+        "multi-step RAG": [("20260929T005913Z-metaqa-3hop", "iter-rag")],
+    },
+    "2Wiki gold-evidence graph": {
+        "graphwalk (Jev)": [("decider/20260930T123900Z-2wiki-gold", "graphwalk-greedy-v2-jev"),
+                            ("decider/20260930T124528Z-2wiki-gold", "graphwalk-greedy-v2-jev"),
+                            ("decider/20260930T124928Z-2wiki-gold", "graphwalk-greedy-v2-jev")],
+        "vector RAG": [("20260928T204354Z-2wiki-gold", "vector-rag")],
+        "multi-step RAG": [("20260929T012321Z-2wiki-gold", "iter-rag")],
+    },
+}  # fmt: skip
+
+# E3: decider -> (run, system) per dataset, seed 0.
+CALIBRATION = {
+    dataset: {"Jev": systems["graphwalk (Jev)"][0]} for dataset, systems in CURATED.items()
+}
