@@ -17,6 +17,7 @@ import json
 import math
 import re
 import time
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Literal
 
@@ -26,6 +27,7 @@ from graphwalk.core.model import NodeId
 from graphwalk.eval.types import EvalQuestion, SystemAnswer
 from graphwalk.llm.base import LLMBackend, LLMError, Message
 from graphwalk.stores.base import GraphStore
+from graphwalk.traversal.entry import EntryLink, EntryResolver
 
 MAX_ANSWERS_SHOWN = 5
 
@@ -45,14 +47,35 @@ class PathQuery(BaseModel):
 
 
 def schema_text(
-    relations: Mapping[str, tuple[str, str]], glosses: Mapping[str, str] | None = None
+    relations: Mapping[str, tuple[str, str]],
+    glosses: Mapping[str, str] | None = None,
+    counts: Mapping[str, int] | None = None,
 ) -> str:
-    """One line per relation: ``subject_type --relation--> object_type: gloss``."""
+    """One line per relation: ``subject_type --relation--> object_type: gloss``, with
+    the edge count when ``counts`` is given (most frequent first)."""
+    names = sorted(relations)
+    if counts is not None:
+        names.sort(key=lambda n: -counts.get(n, 0))
     lines: list[str] = []
-    for name, (subject, obj) in sorted(relations.items()):
+    for name in names:
+        subject, obj = relations[name]
+        line = f"- {subject} --{name}--> {obj}"
+        if counts is not None:
+            line += f" ({counts.get(name, 0)} edges)"
         gloss = (glosses or {}).get(name)
-        lines.append(f"- {subject} --{name}--> {obj}" + (f": {gloss}" if gloss else ""))
+        lines.append(line + (f": {gloss}" if gloss else ""))
     return "\n".join(lines)
+
+
+async def schema_from_store(store: GraphStore) -> tuple[dict[str, tuple[str, str]], dict[str, int]]:
+    """Each relation's most common ``(subject type, object type)``, and its edge count:
+    the schema of a graph that has none declared (e.g. one extracted from text)."""
+    types = {node.id: node.type async for node in store.iter_nodes()}
+    pairs: dict[str, Counter[tuple[str, str]]] = defaultdict(Counter)
+    async for edge in store.iter_edges():
+        pairs[edge.type][(types.get(edge.source, "entity"), types.get(edge.target, "entity"))] += 1
+    relations = {name: c.most_common(1)[0][0] for name, c in pairs.items()}
+    return relations, {name: c.total() for name, c in pairs.items()}
 
 
 def instructions(schema: str) -> str:
@@ -119,14 +142,19 @@ class PathQuerySystem:
         relations: Mapping[str, tuple[str, str]],
         *,
         glosses: Mapping[str, str] | None = None,
+        counts: Mapping[str, int] | None = None,
+        resolver: EntryResolver | None = None,
         retries: int = 0,
         name: str = "llm-path",
     ) -> None:
-        """``relations`` maps each relation to ``(subject type, object type)``."""
+        """``relations`` maps each relation to ``(subject type, object type)``.
+        ``resolver`` links questions that come without a start entity (the same linker
+        graphwalk uses, so both start from the same place)."""
         self._store = store
         self._llm = llm
         self._relations = dict(relations)
-        self._schema = schema_text(relations, glosses)
+        self._schema = schema_text(relations, glosses, counts)
+        self._resolver = resolver
         self._retries = retries
         self._name = name
 
@@ -144,10 +172,18 @@ class PathQuerySystem:
         }
 
     async def answer(self, question: EvalQuestion) -> SystemAnswer:
-        if not question.start:
-            msg = "llm-path needs the question's start entity"
-            raise ValueError(msg)
-        start = list(question.start)
+        link = EntryLink(nodes=tuple(question.start or ()))
+        if not link.nodes and self._resolver is not None:
+            link = await self._resolver.link(question.question)
+        if not link.nodes:
+            if question.start is None and self._resolver is None:
+                msg = "llm-path needs the question's start entity or a resolver"
+                raise ValueError(msg)
+            return SystemAnswer(
+                answers=(), answer_set=(), status="no_entry", start=(),
+                decision_calls=link.decision_calls, cost_usd=link.cost_usd,
+            )  # fmt: skip
+        start = list(link.nodes)
         nodes = await self._store.get_nodes(start)
         described = ", ".join(
             f"{nodes[s].name} ({nodes[s].type})" if s in nodes else s for s in start
@@ -160,8 +196,8 @@ class PathQuerySystem:
                 f"Question: {question.question}",
             ),
         ]
-        calls, tokens_in, tokens_out, llm_s = 0, 0, 0, 0.0
-        costs: list[float | None] = []
+        calls, tokens_in, tokens_out, llm_s = 0, 0, 0, link.latency_s
+        costs: list[float | None] = [link.cost_usd] if link.decision_calls else []
         attempts: list[JsonValue] = []
         answer_ids: list[NodeId] = []
         for _ in range(self._retries + 1):
@@ -208,8 +244,9 @@ class PathQuerySystem:
             # The LLM calls plus executing the path; excludes client-side rate-limit waits.
             latency_s=llm_s,
             llm_calls=calls,
-            input_tokens=tokens_in,
-            output_tokens=tokens_out,
+            decision_calls=link.decision_calls,
+            input_tokens=tokens_in + link.input_tokens,
+            output_tokens=tokens_out + link.output_tokens,
             cost_usd=None if any(c is None for c in costs) else math.fsum(c or 0 for c in costs),
             start=tuple(start),
             detail={"attempts": attempts, "shown": list[JsonValue](names[:MAX_ANSWERS_SHOWN])},

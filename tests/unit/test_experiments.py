@@ -29,7 +29,13 @@ from graphwalk.eval.evidence import (
     type_table,
 )
 from graphwalk.eval.metrics import Score, bootstrap_ci
-from graphwalk.eval.query_writer import PathQuery, PathQuerySystem, execute, parse_path
+from graphwalk.eval.query_writer import (
+    PathQuery,
+    PathQuerySystem,
+    execute,
+    parse_path,
+    schema_from_store,
+)
 from graphwalk.eval.runner import SCORES_FILE, Record, run_system, write_results
 from graphwalk.eval.suite import preset_config
 from graphwalk.eval.systems import TEXT_PROMPTS
@@ -40,6 +46,7 @@ from graphwalk.locate.dense import DenseLocator
 from graphwalk.locate.documents import StoredDocuments
 from graphwalk.locate.model import Location
 from graphwalk.stores.networkx_store import NetworkXStore
+from graphwalk.traversal import NameEntryResolver
 from kg_fixtures import movie_store
 
 if TYPE_CHECKING:
@@ -302,3 +309,24 @@ async def test_multi_step_replay_matches_the_run(tmp_path: Path) -> None:
     assert row_["f1"] == 1.0
     assert row_["type"] == "compositional"
     assert row_["confidence"] is None
+
+
+async def test_path_query_links_and_reads_the_store_schema() -> None:
+    store = await movie_store()
+    relations, counts = await schema_from_store(store)
+    assert relations["directed_by"] == ("film", "person")
+    assert counts["directed_by"] == 4
+    llm = FakeLLM(lambda _m: '{"path": [{"relation": "directed_by", "direction": "in"}]}')
+    system = PathQuerySystem(
+        store, llm, relations, counts=counts, resolver=NameEntryResolver(store)
+    )
+    question = EvalQuestion(
+        id="q", dataset="movies", question="Which films did Christopher Nolan direct?",
+        answers=("Memento",), kind="text",
+    )  # fmt: skip
+    answer = await system.answer(question)
+    assert answer.start == ("nolan",)
+    assert "Memento" in answer.answer_set
+    assert "(4 edges)" in llm.calls[0][1].content
+    unlinked = question.model_copy(update={"question": "Nothing here matches."})
+    assert (await system.answer(unlinked)).status == "no_entry"
