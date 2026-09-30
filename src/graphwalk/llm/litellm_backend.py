@@ -8,6 +8,7 @@ never time spent waiting for the limiter or for a retry.
 """
 
 import asyncio
+import logging
 import time
 from collections.abc import Sequence
 from typing import Any
@@ -17,6 +18,8 @@ from graphwalk.llm.base import LLMError, LLMResult, Message
 from graphwalk.llm.litellm_import import import_litellm
 
 DEFAULT_MODEL = "openrouter/openai/gpt-6-luna"
+
+logger = logging.getLogger(__name__)
 
 
 class LiteLLMBackend:
@@ -94,6 +97,12 @@ class LiteLLMBackend:
                 if attempt > self._rate_limit_retries:
                     detail = redact(str(error), [self._api_key])
                     raise LLMError(f"LLM rate-limited {attempt} times: {detail}") from None
+                logger.warning(
+                    "%s rate-limited (attempt %d); retrying in %.0fs",
+                    self._model,
+                    attempt,
+                    self._backoff * attempt,
+                )
                 await asyncio.sleep(self._backoff * attempt)
             except Exception as error:  # noqa: BLE001 - any provider error becomes LLMError
                 # ``from None``: the provider's exception can carry the request, key included.
