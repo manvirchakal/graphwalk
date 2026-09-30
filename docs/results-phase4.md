@@ -1,11 +1,22 @@
-# Phase 4 results: experiments for the paper (in progress)
+# Phase 4 results: experiments for the paper
 
-Status on 2026-09-30: E1 and E2 are complete. E3, E4 and E5 are partly run. They
-stopped when the OpenRouter account ran out of credits (see the last section). Every
-number below comes from a committed run and can be regenerated with the
-`scripts/paper/` script named in its heading. Intervals are 95% percentile bootstraps
-over questions (2,000 resamples). The paired Δ columns resample per-question
-differences.
+Status on 2026-09-30: E1–E6 and E2b are complete. Every number below comes from a
+committed run and can be regenerated with the `scripts/paper/` script named in its
+heading. Intervals are 95% percentile bootstraps over questions (2,000 resamples). The
+paired Δ columns resample per-question differences.
+
+## Where graphwalk helps (summary)
+
+| setting | verdict | evidence |
+|---|---|---|
+| QA over text, against multi-step RAG | **loses**, by 10–19 points | E4 (CIs exclude 0), M7 |
+| …with a 20× pricier extractor | still loses; no gain from extraction | E5 |
+| small, clean curated schema (MetaQA) | **loses** to an LLM writing the query (−0.07 F1 at 3 hops); beats RAG | E2, E4 |
+| large, noisy schema (text-derived graphs) | **wins** against an LLM writing the query: 3–5× the F1 at 1/20–1/35 the cost | E2b |
+| one-shot evidence retrieval, entity chains (2Wiki) | **wins**: hybrid +18 points recall over dense | E1 |
+| retrieval elsewhere (HotpotQA, FanOutQA) | ties dense, or costs about 5 points | E1 |
+| helping multi-step RAG | almost no room: its failures are rarely missing evidence (≤6 of 280 fixable) | E1 analysis |
+| decider: Jev vs an LLM | the LLM is as accurate or better (+0.06 at 3 hops); Jev is 3–4× cheaper and 7–10× faster, and its confidence tells right from wrong on the harder walks (AUROC 0.94–0.97 vs 0.54–0.64) | E3 |
 
 ## E1: Is the graph a good retriever? (`table_evidence.py`)
 
@@ -52,88 +63,114 @@ Paired hybrid (Jev linking) − dense:
   M7 QA gap between graphwalk and multi-step RAG is about reading and comparing, not
   about finding the evidence.
 
+**Can the graph help multi-step RAG?** Hardly, on these benchmarks. Of multi-step
+RAG's wrong answers (28 on 2Wiki, 17 on HotpotQA, 9 on FanOutQA), only 2, 5 and 3
+missed gold evidence. Hybrid `locate` held the missing evidence for 2, 2 and 2 of those.
+Its failures are reasoning and answer granularity, not retrieval. The pooled corpora are
+small and every entity has a titled paragraph it can look up. Settings where retrieval
+should fail (no title lookup, tight step budgets, large corpora, longer chains) are
+proposed as E7 and have not been run.
+
 ## E2: Does an LLM writing the graph query beat walking? (`table_curated.py`)
 
 An LLM (the same `gpt-6-luna`) sees MetaQA's schema: 9 relations, their endpoint
 types, and one-line glosses. It also sees the start entity and the question. It writes
-a relation path, which code executes the way a relation-mode walk does (all targets
-per hop, visited nodes excluded). The questions are the same 200 per hop count (seed
-0) as graphwalk's.
+a relation path, which code executes the way a relation-mode walk does (all targets per
+hop, visited nodes excluded). The questions are the same 200 per hop count as
+graphwalk's.
 
-| MetaQA | graphwalk (Jev) F1 | LLM writes the path F1 | Δ [95% CI] | $/1k q (Jev → path) | p50 s (Jev → path) |
+| MetaQA | graphwalk (Jev), F1 over 3 seeds | LLM writes the path (2 retries), F1 over 3 seeds | Δ on seed 0 [95% CI] | $/1k q (Jev → path) |
+|---|---|---|---|---|
+| 1-hop | 0.955 ± 0.017 | 0.980 ± 0.001 | +0.015 [+0.000, +0.035] | 0.064 → 0.049 |
+| 2-hop | 0.963 ± 0.018 | 0.998 ± 0.003 | +0.020 [+0.005, +0.040] | 0.096 → 0.061 |
+| 3-hop | 0.887 ± 0.029 | **0.955 ± 0.005** | **+0.055 [+0.027, +0.089]** | 0.154 → 0.091 |
+
+Without retries the path scores 0.961 at 3 hops. On a small, clean schema, planning the
+whole path from the schema beats choosing one hop at a time, costs less, and varies
+less across seeds. graphwalk keeps only latency (1.4–2× faster). Replies left empty
+by the 512-token output cap (the reasoning model used it all) were 6–7 of about 210
+attempts per 3-hop run and none at 1–2 hops. They count against the LLM, so if
+anything they understate it.
+
+### E2b: the same on large, noisy schemas (`scripts/eval/query_writer_text.py`)
+
+The M7 graphs extracted from text, with each relation's most common endpoint types
+and edge count as the schema. The start entity is linked by the same Jev linker.
+Output cap 4,096 tokens: a first 2Wiki run at 512 left a third of the replies empty
+and was discarded.
+
+| text-derived graph | relation types | graphwalk (graph only), F1 | LLM writes the path, F1 | Δ walk − path [95% CI] | $/1k q (walk vs path) |
 |---|---|---|---|---|---|
-| 1-hop | 0.965 | 0.980 | +0.015 [+0.000, +0.035] | 0.064 → 0.048 | 0.56 → 1.23 |
-| 2-hop | 0.980 | **1.000** | +0.020 [+0.005, +0.040] | 0.096 → 0.061 | 0.88 → 1.84 |
-| 3-hop | 0.897 | **0.961** | **+0.065 [+0.033, +0.100]** | 0.154 → 0.080 | 1.63 → 2.31 |
+| 2Wiki | 1,447 | **0.254** | 0.079 | **+0.176 [+0.107, +0.254]** | 0.18 vs 3.63 |
+| HotpotQA | 2,507 | **0.182** | 0.040 | **+0.142 [+0.086, +0.199]** | 0.17 vs 6.09 |
 
-Letting the LLM retry an invalid or empty path changed nothing (0.952 at 3-hop).
-
-**What it says.** On a small, clean, curated schema, the strongest practical
-competitor wins. Planning the whole path up front from the schema is more accurate
-than choosing one hop at a time, and costs about half as much per query. graphwalk
-keeps only latency (1.4–2× faster). The M5 claim "graphwalk beats RAG on curated
-graphs" still holds against RAG: the vector and multi-step RAG rows in the table
-stand. It does not hold against text-to-query. As the roadmap planned, the claim
-narrows to where writing the query should break: large, noisy, or fuzzy schemas.
-
-E2b tests that on the M7 graphs extracted from text (1,447 and 2,545 free-form relation
-types; `scripts/eval/query_writer_text.py`). It has not run yet.
+The LLM writes plausible paths (`spouse_of` → `son_of`), but on an extracted graph the
+relation usually exists under another name or in the other direction. 81% of its 2Wiki
+attempts returned nothing. Walking chooses among the edges that exist. So the curated-
+graph claim narrows to schemas too large or noisy to plan over: there, walking wins on
+accuracy and costs 1/20th as much. Both are weak in absolute terms on these graphs;
+multi-step RAG over the text reaches 0.75–0.82.
 
 ## E3: Jev vs an LLM as the decider (`table_curated.py`, `figure_calibration.py`)
 
-The traversal is the same and only the decision backend changes. The LLM decider asks
-`gpt-6-luna` to score every option 0–100 and normalizes the scores. Only MetaQA 1-hop
-finished before credits ran out:
+Same traversal, only the decision backend swapped. The LLM decider asks `gpt-6-luna`
+to score every option 0–100 and normalizes the scores. Seed 0.
 
-| MetaQA 1-hop | F1 | $/1k q | ECE | Brier | AUROC | EM, most confident half |
+| dataset | F1, Jev → LLM | Δ [95% CI] | $/1k q, Jev → LLM | decision s (p50), Jev → LLM | AUROC, Jev vs LLM | EM of the most confident half, Jev vs LLM |
 |---|---|---|---|---|---|---|
-| Jev | 0.965 | 0.064 | 0.038 | 0.064 | 0.635 | 0.950 |
-| LLM decider | 0.980 | 0.192 | 0.045 | 0.053 | 0.658 | 0.970 |
+| MetaQA 1-hop | 0.965 → 0.980 | +0.015 [+0.000, +0.035] | 0.064 → 0.192 | 0.55 → 4.8 | 0.64 vs 0.66 | 0.95 vs 0.97 |
+| MetaQA 2-hop | 0.980 → 0.985 | +0.005 [−0.020, +0.030] | 0.096 → 0.327 | 0.84 → 7.6 | **0.94 vs 0.54** | 1.00 vs 0.99 |
+| MetaQA 3-hop | 0.897 → **0.956** | **+0.060 [+0.027, +0.097]** | 0.154 → 0.548 | 1.3 → 10.8 | **0.97 vs 0.64** | **0.99 vs 0.86** |
+| 2Wiki gold graph | 0.915 → **0.941** | **+0.026 [+0.010, +0.045]** | 0.048 → 0.164 | 0.46 → 3.1 | 0.67 vs 0.69 | 0.93 vs 0.96 |
 
-At 1 hop the LLM decides as well as Jev and is about as well calibrated, at 3× the
-cost. Its measured latency (p50 26 s) was taken while other jobs shared the same
-model's 20-requests/min limit, and may include provider-side retries. It is not
-comparable until re-measured alone. 2-hop, 3-hop and the 2Wiki gold graph are still
-to run; 3-hop is the informative one.
-
-Jev's own calibration on all four curated sets (seed 0): the most confident half of
-answers is 93–100% right, with AUROC 0.94–0.97 at 2 and 3 hops. So Jev's confidence
-is usable for abstaining or escalating, although its level is overconfident at 3 hops
-(ECE 0.14).
+- **The calibrated classifier is not what makes walks accurate.** A small LLM decides
+  as well or better.
+- **What Jev buys is cost, speed, and informative confidence.** It is 3–4× cheaper and
+  7–10× faster per decision. On the harder walks, its confidence separates right from
+  wrong answers, which the LLM's does not.
+- **The paper's claim is "cheap, fast, and knows when it's wrong"**, not "more
+  accurate". Wall latency for the LLM decider (p50 19–53 s) mostly waits for
+  rate-limit slots (20 requests/min); the decision column is time spent in calls.
 
 ## E4: Seeds and confidence intervals
 
-- **Done.**
-  - graphwalk with Jev on three seeded MetaQA and 2Wiki-gold subsets. F1 mean ± sd:
-    - MetaQA 1-hop: 0.955 ± 0.017;
-    - MetaQA 2-hop: 0.963 ± 0.018;
-    - MetaQA 3-hop: 0.887 ± 0.029;
-    - 2Wiki gold: 0.912 ± 0.007.
+- **graphwalk (Jev), three seeded subsets** (F1 mean ± sd):
+  - MetaQA 1-hop 0.955 ± 0.017, 2-hop 0.963 ± 0.018, 3-hop 0.887 ± 0.029.
+  - 2Wiki gold 0.912 ± 0.007.
   - Seed 0 reproduces M5 within 1 point.
-  - Bootstrap CIs and paired differences for every headline table, from the committed
-    per-question `scores.jsonl`.
-- **Text-derived graphs** (`table_text_qa.py`, `table_fanout.py`). The M7 gaps are
-  real. Paired F1 against multi-step RAG:
-  - graphwalk + reader over source paragraphs: −0.100 [−0.172, −0.027] on 2Wiki and
-    −0.149 [−0.225, −0.081] on HotpotQA;
-  - on FanOutQA, loose accuracy −0.188 [−0.300, −0.085].
-- **Not run yet.**
-  - Extra seeds for the LLM-written path, and for RAG on MetaQA 1-hop.
-  - A held-out 2Wiki text seed. It would also re-check E1's hybrid default on fresh
-    questions.
+- **LLM-written path, three seeds:** 0.980 ± 0.001, 0.998 ± 0.003, 0.955 ± 0.005.
+- **Vector RAG on MetaQA 1-hop, three seeds:** 0.881 ± 0.020. At 2–3 hops the seed-0
+  gaps to graphwalk (−0.71, −0.79) make more seeds pointless.
+- **Text-derived graphs** (`table_text_qa.py`, `table_fanout.py`), paired against
+  multi-step RAG:
+  - graphwalk + reader over source paragraphs: −0.100 [−0.172, −0.027] (2Wiki) and
+    −0.149 [−0.225, −0.081] (HotpotQA);
+  - FanOutQA loose accuracy −0.188 [−0.300, −0.085].
+
+  No extra text seeds were run: each needs a new ingestion, and every gap already
+  excludes 0.
 
 ## E5: Would a stronger extractor flip the text results?
 
-A 60-question 2Wiki slice (516 paragraphs).
+A 60-question 2Wiki slice (the first 15 of each type from the M7 sample; 516
+paragraphs), ingested twice with the same pipeline. Only the extraction model differs
+(`results/20260930T181133Z-2wiki-extractor/`).
 
-| extractor | ingestion cost | nodes | edges | entities found | gold triples recalled | reasoning chains complete |
-|---|---|---|---|---|---|---|
-| `gpt-6-luna` (M7's) | $0.08 (extractions cached) | 2,706 | 3,038 | 0.780 | 0.702 | 0.450 |
-| `gpt-6.1-sol` | stopped at about a quarter of the slice | | | | | |
+| | `gpt-6-luna` | `gpt-6.1-sol` (20× the price) | Δ [95% CI] |
+|---|---|---|---|
+| gold triples recalled / chains complete | 0.702 / 0.450 | 0.715 / 0.500 | |
+| hybrid (Jev linking) recall@5 | 0.958 | 0.950 | |
+| graphwalk, graph only, F1 | 0.335 | 0.281 | −0.054 [−0.128, +0.014] |
+| graphwalk + reader (extracted facts), F1 | 0.563 | 0.521 | −0.042 [−0.131, +0.050] |
+| graphwalk + reader (source), F1 | 0.630 | 0.607 | −0.023 [−0.077, +0.031] |
+| multi-step RAG, F1 (no graph) | 0.764 | 0.764 | |
+| ingestion cost | ~$0.08 (cached extractions) | $2.75 | |
 
-A 4-question probe cost $0.15 with `gpt-6.1-sol` and recalled more gold triples (0.70
-vs 0.60), with the same chain completeness (0.50). That is too small to mean anything.
-The full slice is about $2 more.
+No. The stronger extractor recovers slightly more gold facts, but retrieval and QA do
+not improve (if anything, they slip, within noise), and the best graphwalk variant
+stays behind multi-step RAG: −0.158 [−0.275, −0.039]. What loses the text benchmarks
+is what the graph cannot represent (comparisons, order, qualifiers), not extraction
+errors. The M7 diagnosis "extraction is the bottleneck" does not survive.
 
 ## E6: Cost and latency, ingestion amortized (`table_cost.py`)
 
@@ -147,19 +184,11 @@ The full slice is about $2 more.
   questions. That is below multi-step RAG, but above the LLM-written path at 2 and 3
   hops.
 
-## Budget: what happened
+## Budget
 
-The roadmap's "about $41" was the API key's spending limit ($50 cap, $9.97 used). The
-account itself had $10 of credits. With $0.03 left, OpenRouter began refusing requests
-(`402: requires more credits`) at about 13:45 UTC. `gpt-6-luna` calls still fit for a
-while, which is why the stall first showed up only in E5's larger `gpt-6.1-sol`
-requests. All jobs were then stopped. No committed result contains a failed request:
-every run above is `ok` on all questions. Finishing the plan needs about $3–4 of
-credits:
-
-| remaining | est. cost |
-|---|---|
-| E3: LLM decider on MetaQA 2/3-hop and 2Wiki gold | ~$0.4 |
-| E5: finish the `gpt-6.1-sol` slice, then E1 + QA on both graphs | ~$2.0 |
-| E2b: LLM-written paths on the two text graphs | ~$0.7 |
-| E4: extra seeds (LLM path, RAG 1-hop) | ~$0.2 |
+The roadmap's "about $41" was the first API key's spending cap. That account held $10
+of credits, which ran out mid-phase: requests were refused with `402` from about 13:45
+UTC. All jobs were stopped, and no committed run contains a refused request. The rest
+ran on a second key. `scripts/eval/credits.py` now checks the account balance, not a
+key's limit, before each job. Phase 4 spent about $5.90 on API calls in total ($1.08 on the first key, $4.83 on the second); E5's
+`gpt-6.1-sol` extraction ($2.75) was the largest item.

@@ -229,7 +229,7 @@ environment or headers.
 - "Staleness" in `status` is limited to counting hash-only documents; detecting edited
   source files needs a re-scan, which `ingest` already does (unchanged files are skipped).
 
-### Phase 4: Experiments for the paper (in progress; blocked on API credits)
+### Phase 4: Experiments for the paper (done)
 
 Each experiment reuses the cached graphs and extractions wherever possible. The
 costs are estimates from the M5–M7 per-query costs. Order is by value to the paper.
@@ -263,20 +263,23 @@ costs are estimates from the M5–M7 per-query costs. Order is by value to the p
 **Exit:** every table and figure in the paper outline below has a script, a results
 folder, and a confidence interval where applicable.
 
-**Status** (details in `docs/results-phase4.md`):
-- E1 done: hybrid is the `locate` default to recommend. The graph adds 18 points of
-  evidence recall on 2Wiki, ties on HotpotQA, and costs about 5 on FanOutQA.
-- E2 done, and the risk case happened: an LLM writing the relation path beats
-  graphwalk on MetaQA (+0.065 F1 at 3 hops) at about half the cost. E2b (the same on
-  large, noisy text-derived schemas) is written but not run.
-- E3: Jev reruns and calibration done; the LLM decider is done for 1-hop only.
-- E4: Jev seeds and bootstrap CIs for every table done; LLM-path and RAG seeds not
-  run.
-- E5: the `gpt-6.1-sol` slice is about a quarter extracted.
-- E6 done.
-- Budget correction: "$41" was the key's spending cap. The account held $10 of
-  credits, which ran out at $9.97. Finishing needs about $3–4 more (breakdown in the
-  results doc).
+**Status: done** (details and verdicts in `docs/results-phase4.md`):
+- E1: hybrid is the `locate` default to recommend. The graph adds 18 points of evidence
+  recall on 2Wiki, ties on HotpotQA, and costs about 5 on FanOutQA.
+- E2: the risk case happened. An LLM writing the relation path beats graphwalk on
+  MetaQA (+0.055 F1 at 3 hops, 3 seeds) at about half the cost.
+- E2b: on large, noisy text-derived schemas, walking wins instead (+0.14 to +0.18 F1
+  at 1/20 the cost). The curated-graph claim narrows to that.
+- E3: an LLM decider is as accurate or better. Jev is 3–4× cheaper, 7–10× faster, and
+  its confidence tells right from wrong on the harder walks.
+- E4: seeds and bootstrap CIs for every table.
+- E5: a 20× pricier extractor does not improve QA or retrieval.
+- E6: cost and amortization.
+- Budget: the first account held $10, not $41. Phase 4 spent about $5.90 across two
+  keys.
+- Proposed next (E7): does the graph help multi-step RAG when retrieval is hard (no
+  title lookup, tight step budgets, bigger corpora)? On the current benchmarks it has
+  almost nothing to fix.
 
 ### Phase 5: Documentation and public release (v0.1)
 
