@@ -42,6 +42,7 @@ COST_ROWS = {
 EVIDENCE = {
     "2Wiki": ("20260930T124411Z-2wiki-evidence", 5),
     "HotpotQA": ("20260930T124743Z-hotpotqa-evidence", 5),
+    "FanOutQA": ("20260930T125415Z-fanoutqa-evidence", 10),
 }
 
 # Curated graphs: label -> [(run, system) per seed]; the first label is the reference.
