@@ -53,3 +53,39 @@ questions, and an escalated question pays for both walks. No new API calls.
 **In the library:** `Index(..., escalate_below=0.9)` (fallback: the LLM-as-decider on
 the escalation model, or `fallback_decider=`), `Index.walk(query)` for the graph's own
 answers with their confidence, and `EscalatingTraverser` for direct use.
+
+## A5: Scale (`scripts/eval/scale.py`, `results/20261001T153517Z-scale/`)
+
+A synthetic SQLite graph: 200k nodes and 1.4M edges, with 10 hubs of 20k neighbors
+each (like a country or a profession in Freebase). Walks use a scripted decider with
+no I/O, so the timings are graphwalk's own overhead per walk, excluding model latency.
+The WebQSP pilot ran on the same 4-core machine at the same time, so the numbers are
+somewhat pessimistic.
+
+| operation | p50 | p95 | notes |
+|---|---|---|---|
+| import | 7,900 triples/s | | 1.4M triples in 176 s; 1.1 GB file; peak RSS 0.9 GB |
+| `neighbors`, typical node (degree 13) | 0.4 ms | 0.6 ms | |
+| `neighbors`, hub (degree 20k) | 1.16 s | 1.42 s | parses 20k edges and 20k nodes from JSON |
+| `degree`, hub | 0.49 s | 0.72 s | measured before `degree` moved to SQL `COUNT` (commit after this run) |
+| name linking | <0.1 ms | <0.1 ms | index build 6.6 s; right node linked 50/50 |
+| walk, entity hops, avoiding hubs | 9 ms | — | p95 1.3–1.6 s, from walks that reach a hub |
+| walk, entity hops, from a hub | 1.3–1.6 s | 1.9 s | |
+| walk, relation hops, from a hub | 3.1–3.2 s | 3.3 s | p95 of walks from typical nodes: 6.0–6.3 s |
+
+- **Away from hubs the engine is fast:** about 10 ms of overhead per 3-decision walk,
+  well under a single Jev call (~0.3–0.5 s).
+- **Hubs are the bottleneck, and relation mode suffers most:** every step parses all
+  of a hub's neighbors, so one hub costs 1–3 s per walk, more than the decisions do.
+  Making pydantic skip its Python-level checks on rows the store wrote itself did not
+  help (the time is in core JSON parsing), so that change was reverted.
+- **The fix is structural** (Phase 8, hardening): a relation-mode step should get
+  per-relation counts and a few preview targets from SQL (`GROUP BY type`) and load
+  only the chosen relation's targets. Entity mode at a hub needs the prefilter
+  computed from names and types in SQL, not full models.
+- Until then, the "fast" claim holds for graphs without very high-degree nodes, or
+  with hubs capped at import.
+- **Found and fixed on the way:** the embedding cache could drop rows when one call
+  overflowed it, so the prefilter crashed on a 20k-option step (now fixed, with a
+  regression test). No earlier result was affected: any occurrence would have raised
+  an error, and none was recorded.
