@@ -231,3 +231,31 @@ Cascade, computed offline (Jev; below the threshold, the local-schema path write
   accuracy but saves only ~19% of the cost.
 - **E2b's win is therefore a statement about noisy, text-extracted graphs** (where
   every method scores 0.18–0.25), not about large schemas.
+
+## A7: can we tell before walking? (`scripts/eval/router_analysis.py`, `results/router/20261001T174239Z/`)
+
+No API spend: the Jev walk logs above (MetaQA 1–3 hop decider runs, the WebQSP and CWQ
+pilots, A6) joined with their questions. Label: walk F1 ≥ 0.5. Pre-walk features: question
+length, wh-word, superlative/temporal/conjunction/counting cues, number of topic
+entities, degree and relation counts around the start. 5-fold cross-validated logistic
+regression; AUROC with 95% bootstrap CIs.
+
+| data | n | walk right | pre-walk | confidence | pre + confidence |
+|---|---|---|---|---|---|
+| MetaQA 1–3 hop | 1,760 | 0.94 | 0.68 [0.62, 0.73] | 0.96 [0.94, 0.98] | 0.97 [0.96, 0.98] |
+| WebQSP | 50 | 0.54 | 0.55 [0.38, 0.72] | 0.89 [0.78, 0.97] | 0.86 [0.75, 0.95] |
+| CWQ | 50 | 0.32 | 0.41 [0.23, 0.60] | 0.70 [0.52, 0.87] | 0.50 [0.32, 0.68] |
+| WebQSP, merged graph | 100 | 0.53 | 0.62 [0.50, 0.73] | 0.83 [0.74, 0.91] | 0.76 [0.67, 0.85] |
+| Freebase, pooled | 200 | 0.48 | 0.63 [0.55, 0.70] | 0.83 [0.77, 0.88] | 0.78 [0.72, 0.84] |
+
+- **Within a graph, the question barely predicts whether the walk will work** (0.55–0.68;
+  CWQ is at chance), and adding these features to confidence does not help (it overfits
+  on the small Freebase sets). The superlative/constraint cue we expected to matter
+  never ranks among the useful features at this sample size.
+- **What does predict it is which graph you are on** (pooled over all data, pre-walk
+  AUROC rises to 0.81, almost all of it MetaQA vs Freebase), and a deployment already
+  knows that: the guide's regime map is the "router".
+- **So the routing rule is: walk first, read the confidence.** A walk costs about
+  $0.0002 and a second; its confidence separates right from wrong far better than
+  anything visible beforehand. Caveat: 200 Freebase questions, one hand-made feature
+  set; an LLM judging the question might do better, but it would cost more than the walk.
