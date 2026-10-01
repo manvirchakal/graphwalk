@@ -259,3 +259,53 @@ regression; AUROC with 95% bootstrap CIs.
   $0.0002 and a second; its confidence separates right from wrong far better than
   anything visible beforehand. Caveat: 200 Freebase questions, one hand-made feature
   set; an LLM judging the question might do better, but it would cost more than the walk.
+
+## A8: graphwalk as an agent's tool (`scripts/eval/agent_arms.py`, `results/agent/20261001T195538Z-webqsp-agent/`)
+
+One plain tool-calling loop (`graphwalk.eval.agent`), the same model, prompt, and
+10-turn budget for every arm; only the tools differ. 100 WebQSP test questions over one
+graph merging their subgraphs (103k nodes, 303k edges; the search index embeds the same
+facts as text, record nodes grouped into one passage each). Topic entities given.
+Agent model: a cheap one (gpt-6-luna). Total spend ≈ $0.30 (pilot of 20 included).
+
+| arm | F1 [95% CI] | hits@1 | turns | agent input tok/q | agent $/q | tool $/q | grounded |
+|---|---|---|---|---|---|---|---|
+| walk alone (no agent) | 0.51 [0.42, 0.60] | 0.52 | 0 | – | – | 0.00022 | – |
+| closed book (no tools) | 0.42 [0.34, 0.50] | 0.55 | 1 | 197 | 0.00009 | – | 0.00 |
+| agent + graph tools | **0.74** [0.67, 0.81] | 0.83 | 5.5 | 9,421 | 0.00088 | – | 0.91 |
+| agent + graph tools + walk | 0.72 [0.64, 0.80] | 0.76 | 4.8 | 5,979 | 0.00062 | 0.00039 | 0.94 |
+| agent + search (RAG) | 0.68 [0.60, 0.75] | 0.81 | 4.1 | 4,377 | 0.00044 | – | 0.92 |
+
+Paired F1: walk − graph −0.02 [−0.09, +0.05]; graph − search +0.06 [+0.00, +0.12];
+walk − search +0.05 [−0.02, +0.11]; agent+walk − walk alone +0.21 [+0.12, +0.30].
+("Grounded": share of answers that appeared in some tool output; the closed-book arm
+shows the model knows ~40% of WebQSP by heart.)
+
+Split by the first walk's confidence (walk arm vs graph-only arm, same questions):
+
+| first walk | q | F1 walk / graph | turns walk / graph | input tok walk / graph |
+|---|---|---|---|---|
+| ≥ 0.9 | 38 | 0.90 / 0.90 | 2.6 / 4.2 | 1,580 / 5,364 |
+| < 0.9 | 62 | 0.61 / 0.64 | 6.1 / 6.3 | 8,675 / 11,908 |
+
+- **The walk tool does not make the agent more accurate** (the pilot's +0.11 on 20
+  questions did not survive 100). An agent with plain `relations`/`neighbors` finds the
+  same answers.
+- **It makes the agent cheaper when the walk is confident:** on 38% of questions the
+  agent took the walk's answer, with no loss in accuracy, in 2.6 turns instead of 4.2
+  and 70% fewer input tokens. On the rest it is pure overhead (one more call, same
+  exploration afterwards).
+- **Whether that pays depends on the agent's price.** With this cheap agent the walk's
+  own decision cost (~$0.0004) eats the savings (≈ $0.0012/q either way, list prices).
+  Repriced at $3/$15 per M tokens (a frontier-class agent), the walk arm costs ≈ $0.025/q
+  vs $0.038/q for graph tools alone (−34%), at equal accuracy.
+- **Search (RAG) is cheapest in tokens and a little less accurate** (−0.06 F1 vs graph
+  tools, CI touching 0): over a graph whose facts are short triples, text search is a
+  reasonable baseline, not a straw man.
+- **The agent loop is what lifts accuracy** (+0.21 over the walk alone): it applies the
+  constraints and checks that walks skip.
+
+Limits: one dataset, one cheap agent model, topic entities given; a stronger agent
+might explore more efficiently (narrowing the walk's token savings) or trust walks
+differently. Turns and tokens are logged per question, so other prices can be applied
+to `results.json` without rerunning.
