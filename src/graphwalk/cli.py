@@ -1,4 +1,4 @@
-"""Command-line interface: ``graphwalk ingest | locate | mcp | query | migrate | eval``."""
+"""Command-line interface: ``graphwalk ingest | import | locate | mcp | query | migrate | eval``."""
 
 import asyncio
 import math
@@ -15,7 +15,14 @@ from graphwalk.decisions import DecisionBackend
 from graphwalk.stores.base import GraphStore
 from graphwalk.stores.networkx_store import NetworkXStore
 from graphwalk.stores.sqlite_store import SQLiteStore
-from graphwalk.traversal import NameEntryResolver, TraversalConfig, TraversalResult, Traverser
+from graphwalk.traversal import (
+    EscalatingTraverser,
+    NameEntryResolver,
+    TraversalConfig,
+    TraversalResult,
+    Traverser,
+    Walker,
+)
 
 if TYPE_CHECKING:
     from graphwalk.embeddings import Embedder
@@ -64,11 +71,25 @@ def _make_backend() -> DecisionBackend:
     return make_decider()
 
 
+def _make_fallback() -> DecisionBackend:
+    """The decider escalated walks use (replaced in tests): the LLM-as-decider on the
+    escalation model."""
+    from graphwalk.decisions.llm_decider import LLMDecider  # noqa: PLC0415
+    from graphwalk.providers import make_llm  # noqa: PLC0415
+
+    return LLMDecider(make_llm(role="escalation"))
+
+
 async def _run_query(
-    graph: Path, question: str, start: list[str], config: TraversalConfig
+    graph: Path,
+    question: str,
+    start: list[str],
+    config: TraversalConfig,
+    escalate_below: float | None = None,
 ) -> TraversalResult:
-    store = await NetworkXStore.load(graph)
+    store = await _open_graph(graph)
     backend = _make_backend()
+    fallback = None if escalate_below is None else _make_fallback()
     try:
         verify = getattr(backend, "verify_model", None)
         if verify is not None:
@@ -78,13 +99,29 @@ async def _run_query(
             if not start:
                 typer.echo("No node name found in the query; pass --start.", err=True)
                 raise typer.Exit(code=1)
-        return await Traverser(store, backend, config=config).traverse(question, start)
+        walker: Walker = Traverser(store, backend, config=config)
+        if fallback is not None and escalate_below is not None:
+            walker = EscalatingTraverser(
+                Traverser(store, backend, config=config),
+                Traverser(store, fallback, config=config),
+                threshold=escalate_below,
+            )
+        return await walker.traverse(question, start)
     finally:
         await backend.aclose()
+        if fallback is not None:
+            await fallback.aclose()
+        await store.close()
 
 
 def _print_result(result: TraversalResult, top: int) -> None:
     typer.echo(f"status: {result.status}")
+    if result.escalation is not None:
+        first = result.escalation.primary.confidence
+        typer.echo(
+            f"escalated ({result.escalation.reason}): first walk's confidence "
+            f"{'n/a' if first is None else f'{first:.2f}'} < {result.escalation.threshold}"
+        )
     if result.abort_reason:
         typer.echo(f"aborted: {result.abort_reason}")
     if result.error:
@@ -109,7 +146,7 @@ def _print_result(result: TraversalResult, top: int) -> None:
 
 @app.command()
 def query(  # noqa: PLR0917 - Typer maps parameters to CLI options
-    graph: Annotated[Path, typer.Argument(help="Graph JSON written by NetworkXStore.save.")],
+    graph: Annotated[Path, typer.Argument(help="Graph: SQLite (.db) or NetworkX JSON.")],
     question: Annotated[str, typer.Argument(help="The natural-language query.")],
     start: Annotated[
         list[str] | None,
@@ -133,8 +170,15 @@ def query(  # noqa: PLR0917 - Typer maps parameters to CLI options
     trace: Annotated[
         Path | None, typer.Option(help="Write the full result and trace as JSON here.")
     ] = None,
+    escalate_below: Annotated[
+        float | None,
+        typer.Option(help="Re-walk with the LLM decider below this confidence (e.g. 0.9)."),
+    ] = None,
 ) -> None:
     """Answer a query by traversing the graph with Jev decisions."""
+    if escalate_below is not None and not 0.0 < escalate_below <= 1.0:
+        typer.echo("--escalate-below must be in (0, 1]", err=True)
+        raise typer.Exit(code=2)
     try:
         config = TraversalConfig.model_validate(
             {
@@ -156,7 +200,7 @@ def query(  # noqa: PLR0917 - Typer maps parameters to CLI options
         typer.echo(f"invalid options: {error}", err=True)
         raise typer.Exit(code=2) from error
     try:
-        result = asyncio.run(_run_query(graph, question, start or [], config))
+        result = asyncio.run(_run_query(graph, question, start or [], config, escalate_below))
     except (GraphwalkError, ValueError, OSError) as error:
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(code=1) from error
@@ -474,6 +518,57 @@ def locate(  # noqa: PLR0917 - Typer maps parameters to CLI options
             if decider is not None:
                 await decider.aclose()
             await index.close()
+
+    try:
+        asyncio.run(run())
+    except (GraphwalkError, ValueError, OSError) as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=1) from None
+
+
+@app.command("import")
+def import_(
+    path: Annotated[
+        Path, typer.Argument(help="Triples: .csv, .tsv, .jsonl, .nt, or .txt (a|b|c).")
+    ],
+    graph: Annotated[
+        Path, typer.Option(help="Graph to add to (created if missing): SQLite (.db) or JSON.")
+    ],
+    fmt: Annotated[
+        str | None,
+        typer.Option("--format", help="csv | tsv | jsonl | nt | pipe (default: from suffix)."),
+    ] = None,
+    source_id: Annotated[
+        str | None, typer.Option(help="Provenance name (default: the file name).")
+    ] = None,
+    default_type: Annotated[str, typer.Option(help="Type of nodes given none.")] = "entity",
+) -> None:
+    """Import an existing knowledge graph from triples (no LLM, no API key)."""
+    from graphwalk.ingest.triples import TripleFormat, import_file  # noqa: PLC0415
+
+    if fmt is not None and fmt not in get_args(TripleFormat.__value__):
+        typer.echo(f"--format must be one of {get_args(TripleFormat.__value__)}", err=True)
+        raise typer.Exit(code=2)
+
+    async def run() -> None:
+        store = await _open_graph(graph)
+        try:
+            report = await import_file(
+                store,
+                path,
+                fmt=fmt,  # pyright: ignore[reportArgumentType] - validated above
+                source_id=source_id,
+                default_type=default_type,
+            )
+            if isinstance(store, NetworkXStore):
+                await store.save(graph)
+            nodes, edges = await store.counts()
+        finally:
+            await store.close()
+        typer.echo(
+            f"imported {report.nodes} new nodes, {report.edges} edges "
+            f"({report.skipped} lines skipped)\ngraph: {graph} ({nodes} nodes, {edges} edges)"
+        )
 
     try:
         asyncio.run(run())

@@ -22,6 +22,7 @@ from graphwalk.decisions.base import DecisionBackend
 from graphwalk.embeddings.base import Embedder
 from graphwalk.ingest.pipeline import ExtractionCache, IngestConfig, IngestPipeline, IngestReport
 from graphwalk.ingest.sources import FileSource, Source, SourceDocument, TextSource
+from graphwalk.ingest.triples import DEFAULT_TYPE, ImportReport, TripleFormat, import_file
 from graphwalk.llm.base import LLMBackend
 from graphwalk.locate.dense import DenseLocator, fuse
 from graphwalk.locate.documents import DocumentSource, OnStale, StoredDocuments, read
@@ -208,6 +209,23 @@ class Index:
             self._graph.refresh()
         if self._dense is not None:
             self._dense.refresh()
+        return report
+
+    async def import_triples(
+        self,
+        path: str | os.PathLike[str],
+        *,
+        fmt: TripleFormat | None = None,
+        source_id: str | None = None,
+        default_type: str = DEFAULT_TYPE,
+    ) -> ImportReport:
+        """Add an existing knowledge graph from a triples file (CSV, TSV, JSONL, or
+        N-Triples; see :mod:`graphwalk.ingest.triples`). No LLM is involved."""
+        report = await import_file(
+            self.store, Path(path), fmt=fmt, source_id=source_id, default_type=default_type
+        )
+        if self._graph is not None:
+            self._graph.refresh()
         return report
 
     # ------------------------------------------------------------------ locate / read

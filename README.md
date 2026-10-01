@@ -92,8 +92,17 @@ slower, stronger decider (the LLM-as-decider by default). On MetaQA, escalating 
 0.9 matched the LLM decider's accuracy at about half its cost
 ([`docs/results-phase7.md`](docs/results-phase7.md)).
 
+Import a graph you already have from triples (CSV, TSV, JSONL, or N-Triples; no LLM
+or API key needed), then walk it:
+
+```bash
+graphwalk import kg.nt --graph kg.db
+graphwalk query kg.db "Where was the director of Inception born?" --escalate-below 0.9
+```
+
 ```python
 async with Index.open("kg.db", escalate_below=0.9) as index:
+    await index.import_triples("kg.nt")
     result = await index.walk("Where was the director of Inception born?")
     print(result.best.names, result.confidence, result.escalated, result.cost_usd)
 ```

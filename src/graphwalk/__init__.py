@@ -11,6 +11,7 @@ from graphwalk.core.model import Edge, Neighbor, Node, Provenance
 from graphwalk.index import Index, WalkResult
 from graphwalk.ingest.pipeline import IngestConfig, IngestReport
 from graphwalk.ingest.sources import FileSource, SourceDocument, TextSource
+from graphwalk.ingest.triples import ImportReport
 from graphwalk.locate.documents import FileDocuments, StoredDocuments
 from graphwalk.locate.model import Location, Passage
 from graphwalk.traversal.config import TraversalConfig
@@ -23,6 +24,7 @@ __all__ = [
     "FileDocuments",
     "FileSource",
     "GraphwalkError",
+    "ImportReport",
     "Index",
     "IngestConfig",
     "IngestReport",

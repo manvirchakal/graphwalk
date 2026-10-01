@@ -12,6 +12,11 @@ in [`roadmap.md`](roadmap.md).
 
 ### Added
 
+- Import existing knowledge graphs (roadmap Phase 8): `graphwalk import` and
+  `Index.import_triples` read CSV, TSV, JSONL, `|`-separated text, and N-Triples
+  (labels and `rdf:type` become names and types; literals become nodes).
+  `SQLiteStore.upsert_many` writes a batch in one transaction. `graphwalk query`
+  accepts SQLite graphs and `--escalate-below`.
 - Escalation (roadmap Phase 7, A1): `Index(escalate_below=..., fallback_decider=...)`
   re-walks queries whose best answer's confidence is below the threshold with a
   fallback decider (default: the LLM-as-decider). `Index.walk(query)` returns the

@@ -209,6 +209,14 @@ class SQLiteStore:
         with self._tx():
             self._put_edge(edge)
 
+    async def upsert_many(self, nodes: Sequence[Node], edges: Sequence[Edge]) -> None:
+        """Upsert ``nodes``, then ``edges``, in one transaction (bulk import)."""
+        with self._tx():
+            for node in nodes:
+                self._put_node(node)
+            for edge in edges:
+                self._put_edge(edge)
+
     async def get_node(self, node_id: NodeId) -> Node | None:
         try:
             return self._node(node_id)

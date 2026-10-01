@@ -196,3 +196,28 @@ def test_ingest_reports_missing_keys_clearly(tmp_path: Path) -> None:
     bad = runner.invoke(app, [*args, "--llm-provider", "typesafe"])
     assert bad.exit_code == 2
     assert "llm_provider" in bad.output
+
+
+def test_query_escalates_low_confidence(graph_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    unsure = oracle({"Inception": {"Christopher Nolan": 0.4, "Leonardo DiCaprio": 0.6}})
+    sure = oracle(
+        {
+            "Inception": {"Christopher Nolan": 1.0},
+            "Christopher Nolan": {"STOP": 1.0},
+        }
+    )
+    monkeypatch.setattr(cli, "_make_backend", lambda: unsure)
+    monkeypatch.setattr(cli, "_make_fallback", lambda: sure)
+    result = runner.invoke(
+        app,
+        [
+            "query", str(graph_file), "Who directed Inception?",
+            "--strategy", "greedy", "--escalate-below", "0.9",
+        ],
+    )  # fmt: skip
+    assert result.exit_code == 0, result.output
+    assert "escalated (low_confidence)" in result.output
+    assert "1. Christopher Nolan" in result.output
+    assert sure.calls > 0
+    bad = runner.invoke(app, ["query", str(graph_file), "q", "--escalate-below", "0"])
+    assert bad.exit_code == 2
