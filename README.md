@@ -23,9 +23,10 @@ to answer from the graph.
 
 | Situation | Best choice |
 |---|---|
-| Existing KG with a large or messy schema | **graphwalk `walk`**: 3–5× the F1 of LLM-written queries at 1/20 the cost |
-| Cheap first pass that knows when it's wrong | **`walk` + `escalate_below=0.9`**: LLM-decider accuracy at about half its cost on MetaQA (where an LLM-written path is cheaper still) |
-| Small, clean schema (fits in one prompt) | An LLM writing the query (more accurate; on WebQSP, 0.76 vs 0.54 F1) |
+| Existing KG, best accuracy (any schema size) | **An LLM writing the query** from the relations near the entity: 0.66 vs 0.49 F1 on a 5,419-relation Freebase graph (A6) |
+| Existing KG, cost/latency first, or a per-answer confidence | **graphwalk `walk`**: 6× cheaper, ~4× faster, AUROC up to 0.97 |
+| KG extracted from text (noisy schema) | graphwalk beats LLM-written queries (3–5× F1), but all score 0.18–0.25; prefer RAG |
+| Cheap first pass that knows when it's wrong | `walk` + `escalate_below`: modest savings (escalating to an LLM-written path: its accuracy for ~19% less on Freebase, A6) |
 | Questions with constraints or superlatives (CWQ) | Neither: every system we tried scores about 0.3 |
 | QA over documents | Multi-step RAG (wins by 10–19 F1); graphwalk `locate` only for entity-chain retrieval |
 

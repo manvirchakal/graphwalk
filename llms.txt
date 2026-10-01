@@ -2,7 +2,7 @@
 
 > Fast, probabilistic question answering over an existing knowledge graph. Each hop is a constrained classification decision made by a fast model (Jev), so a walk's answer comes with a confidence; low-confidence walks can be escalated to an LLM decider. Python library, CLI, and MCP server.
 
-When to use it, measured: graphwalk wins on large or messy graph schemas (3–5x the F1 of LLM-written queries, at 1/20 the cost), and its confidence separates right from wrong answers (AUROC up to 0.97), so walks can escalate to an LLM decider only when unsure (its accuracy at about half its cost on MetaQA, though an LLM-written query was cheaper still there). It is the wrong tool for QA over documents (multi-step RAG wins by 10–19 F1), for small clean schemas (an LLM writing the query is more accurate), and for questions with constraints or superlatives. The installed package carries the same guide: run `graphwalk guide`.
+When to use it, measured: on curated graphs of any schema size (up to 5,419 Freebase relations tested), an LLM writing the query from the relations near the question's entity is more accurate (0.66 vs 0.49 F1); graphwalk is 6x cheaper and ~4x faster, and its confidence separates right from wrong answers (AUROC up to 0.97). Use it when cost, latency, or a per-answer confidence matter more than accuracy. On noisy graphs extracted from text it beats LLM-written queries, but every method is weak there. It is the wrong tool for QA over documents (multi-step RAG wins by 10–19 F1) and for questions with constraints or superlatives. The installed package carries the same guide: run `graphwalk guide`.
 
 ## Docs
 

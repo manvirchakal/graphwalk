@@ -268,6 +268,8 @@ folder, and a confidence interval where applicable.
   recall on 2Wiki, ties on HotpotQA, and costs about 5 on FanOutQA.
 - E2: the risk case happened. An LLM writing the relation path beats graphwalk on
   MetaQA (+0.055 F1 at 3 hops, 3 seeds) at about half the cost.
+- A6 (Phase 8): on one curated Freebase graph with 5,419 relations, the LLM path writer
+  still wins (+0.16 F1 [+0.07, +0.25]); schema size alone is not walking's niche.
 - E2b: on large, noisy text-derived schemas, walking wins instead (+0.14 to +0.18 F1
   at 1/20 the cost). The curated-graph claim narrows to that.
 - E3: an LLM decider is as accurate or better. Jev is 3–4× cheaper, 7–10× faster, and

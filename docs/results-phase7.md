@@ -197,3 +197,37 @@ questions and gains nothing measurable.
 - **To compete on CWQ** would need beam search over multiple topic entities plus
   constraint handling (filters and superlatives on the reached set). That is a
   research project, not a run.
+
+## A6: one large graph, 5,419 relations (`scripts/eval/kgqa_global.py`, `results/kgqa/20261001T172038Z-webqsp-global/`)
+
+The test of graphwalk's remaining pitch: a curated graph whose schema is too large to
+curate per question. All 1,628 WebQSP test subgraphs merged into one SQLite graph:
+781k nodes, 2.28M edges, 5,419 Freebase relations (each A2 question saw a median of
+288). Same topic entities as A2; 100 questions, seed 0; gpt-6-luna for every LLM.
+
+| system | n | hits@1 | F1 | $/1k q | p50 s | in tok/q |
+|---|---|---|---|---|---|---|
+| graphwalk, Jev, `kgqa()` | 100 | 0.50 | 0.49 | 0.24 | 0.8 | 5.6k |
+| LLM path, schema within 2 hops of the topic entity | 100 | 0.65 | 0.66 | 1.48 | 3.0 | 12k |
+| LLM path, the whole 5,419-relation schema | 50 | 0.64 | 0.66 | 12.95 | 3.6 | 132k |
+
+Paired bootstrap (5,000 resamples), F1:
+- local-schema path − Jev: **+0.16 [+0.07, +0.25]** (100 q). Jev is better on 9
+  questions, worse on 30.
+- whole-schema path − local-schema path: −0.02 [−0.09, +0.05] (the first 50 q).
+- whole-schema path − Jev: +0.14 [+0.01, +0.27] (50 q).
+
+Cascade, computed offline (Jev; below the threshold, the local-schema path writer):
+0.59 F1 at $0.91/1k (t = 0.8, 42% escalated), 0.64 at $1.08 (t = 0.9), 0.66 at $1.20
+(t = 0.95, 68% escalated): the path writer's accuracy for 19% less.
+
+- **The large-schema claim fails on a curated graph.** A schema too large to read is
+  not a problem for an LLM writing the query: fetching the relations around the topic
+  entity (one adjacency query) gives it a few hundred, and it beats walking by 16 F1
+  points. Even the whole 5,419-relation schema fits a 1M-token context and does as
+  well, only at 9× the cost.
+- **What remains for walking is cost and speed:** 6× cheaper and ~4× faster at p50
+  than the local-schema path writer, at −0.16 F1. A confidence cascade recovers the
+  accuracy but saves only ~19% of the cost.
+- **E2b's win is therefore a statement about noisy, text-extracted graphs** (where
+  every method scores 0.18–0.25), not about large schemas.
