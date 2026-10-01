@@ -11,12 +11,13 @@ names and returns the source spans behind the walk, with the path that reached t
 
 import os
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Literal, Self
 
 from graphwalk.config import ResolvedConfig, resolve_config
-from graphwalk.core.model import Direction, Neighbor
+from graphwalk.core.model import Direction, Neighbor, NodeId
 from graphwalk.decisions.base import DecisionBackend
 from graphwalk.embeddings.base import Embedder
 from graphwalk.ingest.pipeline import ExtractionCache, IngestConfig, IngestPipeline, IngestReport
@@ -30,8 +31,39 @@ from graphwalk.stores.base import DocumentStore, GraphStore
 from graphwalk.stores.sqlite_store import SQLiteStore
 from graphwalk.traversal.config import TraversalConfig
 from graphwalk.traversal.engine import Traverser
+from graphwalk.traversal.escalation import EscalatingTraverser, Walker
+from graphwalk.traversal.trace import Answer, TraversalResult
 
 type LocateMode = Literal["graph", "dense", "hybrid"]
+
+
+@dataclass(frozen=True)
+class WalkResult:
+    """The graph's own answer to a query: one walk per entry node."""
+
+    query: str
+    entries: tuple[NodeId, ...]
+    walks: tuple[TraversalResult, ...]
+
+    @property
+    def best(self) -> Answer | None:
+        """The most confident answer over all walks."""
+        answers = [w.best for w in self.walks if w.best is not None]
+        return max(answers, key=lambda a: a.confidence, default=None)
+
+    @property
+    def confidence(self) -> float | None:
+        best = self.best
+        return None if best is None else best.confidence
+
+    @property
+    def escalated(self) -> bool:
+        return any(w.escalation is not None for w in self.walks)
+
+    @property
+    def cost_usd(self) -> float | None:
+        costs = [w.cost_usd for w in self.walks]
+        return None if any(c is None for c in costs) else sum(c or 0.0 for c in costs)
 
 
 class Index:
@@ -42,6 +74,9 @@ class Index:
 
     * ``decider`` drives the walk and ingestion routing (Jev, or the LLM fallback);
     * ``llm`` extracts entities and relations (needed only to ingest);
+    * ``fallback_decider`` (with ``escalate_below``) re-walks queries whose best answer's
+      confidence is below the threshold; by default the LLM-as-decider on the
+      escalation model (see :mod:`graphwalk.traversal.escalation`);
     * ``embedder`` is optional for graph ``locate`` (it prefilters wide steps and backs
       name linking; not built by default, since fastembed downloads a model) and
       required for ``dense`` and ``hybrid`` (built from config if not passed).
@@ -52,6 +87,8 @@ class Index:
         store: GraphStore,
         *,
         decider: DecisionBackend | None = None,
+        fallback_decider: DecisionBackend | None = None,
+        escalate_below: float | None = None,
         llm: LLMBackend | None = None,
         escalation_llm: LLMBackend | None = None,
         embedder: Embedder | None = None,
@@ -68,6 +105,11 @@ class Index:
         self._owns_store = owns_store
         self._config = config
         self._decider = decider
+        self._fallback_decider = fallback_decider
+        if escalate_below is not None and not 0.0 < escalate_below <= 1.0:
+            msg = f"escalate_below must be in (0, 1], got {escalate_below}"
+            raise ValueError(msg)
+        self._escalate_below = escalate_below
         self._owns: list[object] = []
         """Backends this index built, closed with it."""
         self._llm = llm
@@ -101,8 +143,9 @@ class Index:
 
     async def close(self) -> None:
         """Close the store, and the decider if the index built it."""
-        if self._decider is not None and self._decider in self._owns:
-            await self._decider.aclose()
+        for decider in (self._decider, self._fallback_decider):
+            if decider is not None and decider in self._owns:
+                await decider.aclose()
         if self._owns_store:
             await self.store.close()
 
@@ -114,6 +157,17 @@ class Index:
             self._decider = make_decider(self.config)
             self._owns.append(self._decider)
         return self._decider
+
+    @property
+    def fallback_decider(self) -> DecisionBackend:
+        """The decider escalated walks use: as passed, or the LLM-as-decider."""
+        if self._fallback_decider is None:
+            from graphwalk.decisions.llm_decider import LLMDecider  # noqa: PLC0415
+            from graphwalk.providers import make_llm  # noqa: PLC0415
+
+            self._fallback_decider = LLMDecider(make_llm(self.config, role="escalation"))
+            self._owns.append(self._fallback_decider)
+        return self._fallback_decider
 
     @property
     def config(self) -> ResolvedConfig:
@@ -160,9 +214,17 @@ class Index:
 
     def _graph_locator(self) -> GraphLocator:
         if self._graph is None:
-            traverser = Traverser(
+            traverser: Walker = Traverser(
                 self.store, self.decider, embedder=self._embedder, config=self._traversal
             )
+            if self._escalate_below is not None:
+                fallback = Traverser(
+                    self.store,
+                    self.fallback_decider,
+                    embedder=self._embedder,
+                    config=self._traversal,
+                )
+                traverser = EscalatingTraverser(traverser, fallback, threshold=self._escalate_below)
             self._graph = GraphLocator(self.store, traverser, documents=self._documents)
         return self._graph
 
@@ -202,6 +264,13 @@ class Index:
         graph = await self._graph_locator().locate(query, k)
         graph.locations = fuse([graph.locations, dense], k)
         return graph
+
+    async def walk(self, query: str) -> WalkResult:
+        """Answer ``query`` from the graph itself: link the entities it names, walk from
+        each, and return the answers with their confidence. For curated graphs, where
+        the graph holds the facts; for text, :meth:`locate` and read the source."""
+        entries, _, walks = await self._graph_locator().walk(query)
+        return WalkResult(query=query, entries=tuple(entries), walks=tuple(walks))
 
     async def read(
         self, location: Location, *, context: int = 0, on_stale: OnStale = "flag"

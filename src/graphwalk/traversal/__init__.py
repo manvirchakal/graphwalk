@@ -8,7 +8,16 @@ from graphwalk.traversal.entry import (
     EntryResolver,
     NameEntryResolver,
 )
-from graphwalk.traversal.trace import Answer, Call, Hop, Step, Trace, TraversalResult
+from graphwalk.traversal.escalation import EscalatingTraverser, Walker
+from graphwalk.traversal.trace import (
+    Answer,
+    Call,
+    Escalation,
+    Hop,
+    Step,
+    Trace,
+    TraversalResult,
+)
 
 __all__ = [
     "Answer",
@@ -17,6 +26,8 @@ __all__ = [
     "ChoiceEntryResolver",
     "EntryLink",
     "EntryResolver",
+    "EscalatingTraverser",
+    "Escalation",
     "Hop",
     "NameEntryResolver",
     "Step",
@@ -24,4 +35,5 @@ __all__ = [
     "TraversalConfig",
     "TraversalResult",
     "Traverser",
+    "Walker",
 ]

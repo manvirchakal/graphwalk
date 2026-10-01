@@ -84,6 +84,20 @@ re-reads it from disk instead.
 
 Only names exported from `graphwalk` are public API; submodules may change.
 
+## Existing knowledge graphs: `walk` and escalation
+
+On a curated graph the graph holds the facts, so the walk's answer is the answer.
+`walk` returns it with its confidence; `escalate_below` re-walks unsure queries with a
+slower, stronger decider (the LLM-as-decider by default). On MetaQA, escalating below
+0.9 matched the LLM decider's accuracy at about half its cost
+([`docs/results-phase7.md`](docs/results-phase7.md)).
+
+```python
+async with Index.open("kg.db", escalate_below=0.9) as index:
+    result = await index.walk("Where was the director of Inception born?")
+    print(result.best.names, result.confidence, result.escalated, result.cost_usd)
+```
+
 ## MCP server
 
 ```bash

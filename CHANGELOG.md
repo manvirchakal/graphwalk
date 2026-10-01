@@ -12,6 +12,12 @@ in [`roadmap.md`](roadmap.md).
 
 ### Added
 
+- Escalation (roadmap Phase 7, A1): `Index(escalate_below=..., fallback_decider=...)`
+  re-walks queries whose best answer's confidence is below the threshold with a
+  fallback decider (default: the LLM-as-decider). `Index.walk(query)` returns the
+  graph's own answers with their confidence (`WalkResult`). `EscalatingTraverser`,
+  `Answer.confidence`, `TraversalResult.confidence`/`.cost_usd`/`.escalation`.
+  Paper table: `scripts/paper/table_escalation.py`.
 - MCP server and container (roadmap Phase 3):
   - `graphwalk mcp` (stdio) and `graphwalk mcp --http` (streamable HTTP) on the
     official MCP SDK, with tools `locate`, `read`, `neighbors`, `get_node`, `ingest`,

@@ -8,7 +8,7 @@ from importlib.metadata import version
 
 from graphwalk.core.errors import DocumentNotFoundError, GraphwalkError, StaleLocationError
 from graphwalk.core.model import Edge, Neighbor, Node, Provenance
-from graphwalk.index import Index
+from graphwalk.index import Index, WalkResult
 from graphwalk.ingest.pipeline import IngestConfig, IngestReport
 from graphwalk.ingest.sources import FileSource, SourceDocument, TextSource
 from graphwalk.locate.documents import FileDocuments, StoredDocuments
@@ -36,5 +36,6 @@ __all__ = [
     "StoredDocuments",
     "TextSource",
     "TraversalConfig",
+    "WalkResult",
     "__version__",
 ]

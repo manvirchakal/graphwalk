@@ -1,5 +1,6 @@
 """Traversal traces and results. Everything here is JSON-serializable."""
 
+import math
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -106,6 +107,12 @@ class Answer(BaseModel):
     votes: int = 1
     """Sample strategy: how many walks ended on the same answer."""
 
+    @property
+    def confidence(self) -> float:
+        """``exp(score)``: the path's probability, length-normalized. What escalation
+        thresholds and the calibration tables use."""
+        return math.exp(self.score)
+
 
 class Totals(BaseModel):
     model_config = _FROZEN
@@ -145,7 +152,36 @@ class TraversalResult(BaseModel):
     abort_reason: str | None = None
     error: str | None = None
     trace: Trace
+    escalation: "Escalation | None" = None
+    """Set when a low-confidence walk was redone with a fallback decider: this result is
+    the fallback's, and ``escalation.primary`` the walk it replaced."""
 
     @property
     def best(self) -> Answer | None:
         return self.answers[0] if self.answers else None
+
+    @property
+    def confidence(self) -> float | None:
+        """The best answer's confidence, ``None`` if there is no answer."""
+        return None if self.best is None else self.best.confidence
+
+    @property
+    def cost_usd(self) -> float | None:
+        """Decision cost of this walk plus any walk it replaced (``None`` if a backend
+        reported none)."""
+        own = self.trace.totals.cost_usd
+        if self.escalation is None:
+            return own
+        primary = self.escalation.primary.cost_usd
+        return None if own is None or primary is None else own + primary
+
+
+class Escalation(BaseModel):
+    model_config = _FROZEN
+
+    threshold: float
+    reason: Literal["low_confidence", "no_answer", "not_ok"]
+    primary: TraversalResult
+
+
+TraversalResult.model_rebuild()

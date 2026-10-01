@@ -24,8 +24,8 @@ from graphwalk.core.model import Node, NodeId, Provenance
 from graphwalk.locate.documents import DocumentSource
 from graphwalk.locate.model import Location
 from graphwalk.stores.base import GraphStore
-from graphwalk.traversal.engine import Traverser
 from graphwalk.traversal.entry import EntryLink, EntryResolver, NameEntryResolver
+from graphwalk.traversal.escalation import Walker
 from graphwalk.traversal.prompts import edge_text
 from graphwalk.traversal.trace import Answer, TraversalResult
 
@@ -61,7 +61,7 @@ class GraphLocator:
     def __init__(
         self,
         store: GraphStore,
-        traverser: Traverser,
+        traverser: Walker,
         *,
         resolver: EntryResolver | None = None,
         names: NameEntryResolver | None = None,
@@ -101,16 +101,21 @@ class GraphLocator:
         existing = await self._store.get_nodes(entries)
         return [e for e in entries if e in existing][: self._max_entries], link
 
+    async def walk(self, query: str) -> tuple[list[NodeId], EntryLink, list[TraversalResult]]:
+        """The entry nodes, how they were linked, and one walk per entry node."""
+        entries, link = await self.entries(query)
+        walks = list(
+            await asyncio.gather(*(self._traverser.traverse(query, (e,)) for e in entries))
+        )
+        return entries, link, walks
+
     async def locate(self, query: str, k: int = 5) -> LocateResult:
         if k < 1:
             msg = f"k must be positive, got {k}"
             raise ValueError(msg)
-        entries, link = await self.entries(query)
+        entries, link, walks = await self.walk(query)
         if not entries:
             return LocateResult(locations=[], link=link)
-        walks = list(
-            await asyncio.gather(*(self._traverser.traverse(query, (e,)) for e in entries))
-        )
         nodes = await self._store.get_nodes(
             list({n for w in walks for a in w.answers[: self._max_answers] for n in a.node_ids})
             + entries
