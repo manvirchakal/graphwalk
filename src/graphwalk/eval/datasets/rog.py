@@ -16,7 +16,7 @@ import importlib
 import json
 import re
 import urllib.request
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -25,6 +25,7 @@ from graphwalk.core.model import Edge, Node, Provenance, utc_now
 from graphwalk.eval.datasets.cache import cache_dir, fetch
 from graphwalk.eval.types import EvalQuestion
 from graphwalk.stores.networkx_store import NetworkXStore
+from graphwalk.stores.sqlite_store import SQLiteStore
 
 type KGQADataset = Literal["webqsp", "cwq"]
 type Triple = tuple[str, str, str]
@@ -145,6 +146,50 @@ async def build_store(triples: Sequence[Triple], source_id: str) -> NetworkXStor
         await store.upsert_edge(
             Edge(source=head, target=tail, type=relation, provenance=provenance)
         )
+    return store
+
+
+async def build_global_store(
+    graphs: Iterable[Sequence[Triple]], path: Path, *, source_id: str, batch_size: int = 5000
+) -> SQLiteStore:
+    """Every question's subgraph merged into one SQLite graph at ``path`` (built once;
+    reopened if a finished build is there). The merged schema is the union of the
+    subgraphs' relations: thousands, too many to curate per question."""
+    store = SQLiteStore(path)
+    if await store.get_metadata("rog_global") == source_id:
+        return store
+    await store.clear()
+    triples = list(dict.fromkeys(t for g in graphs for t in g))
+    provenance = (
+        Provenance(
+            source_id=source_id,
+            ingested_at=utc_now(),
+            confidence=1.0,
+            content_hash=content_hash(source_id),
+        ),
+    )
+    names = sorted({x for h, _, t in triples for x in (h, t)})
+    for start in range(0, len(names), batch_size):
+        nodes: list[Node] = []
+        for name in names[start : start + batch_size]:
+            type_ = node_type(name)
+            nodes.append(
+                Node(
+                    id=name,
+                    type=type_,
+                    name=name,
+                    summary=CVT_SUMMARY if type_ == CVT_TYPE else None,
+                    provenance=provenance,
+                )
+            )
+        await store.upsert_many(nodes, ())
+    for start in range(0, len(triples), batch_size):
+        edges = [
+            Edge(source=h, target=t, type=r, provenance=provenance)
+            for h, r, t in triples[start : start + batch_size]
+        ]
+        await store.upsert_many((), edges)
+    await store.set_metadata("rog_global", source_id)
     return store
 
 

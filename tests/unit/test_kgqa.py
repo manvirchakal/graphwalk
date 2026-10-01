@@ -1,8 +1,11 @@
 """Per-question KG-QA graphs (WebQSP/CWQ releases) and the per-question system wrapper.
 Offline: tiny hand-written subgraphs, no download."""
 
+from pathlib import Path
+
 from graphwalk.eval.datasets import rog
 from graphwalk.eval.per_question import PerQuestionSystem
+from graphwalk.eval.query_writer import local_relations
 from graphwalk.eval.systems import GraphwalkSystem
 from graphwalk.eval.types import EvalQuestion, QASystem
 from graphwalk.stores.base import GraphStore
@@ -78,3 +81,30 @@ async def test_per_question_system_uses_each_questions_graph() -> None:
     assert isinstance(a2.detail["graph_build_s"], float)
     assert len(built) == 2
     assert await built[1].get_node("Jamaica") is None
+
+
+async def test_global_store_merges_subgraphs_and_is_reused(tmp_path: Path) -> None:
+    path = tmp_path / "global.db"
+    store = await rog.build_global_store(GRAPHS.values(), path, source_id="t")
+    assert await store.counts() == (5, 3)
+    cvt = await store.get_node("m.0nf4wmg")
+    assert cvt is not None
+    assert cvt.summary == rog.CVT_SUMMARY
+    await store.close()
+    again = await rog.build_global_store([], path, source_id="t")  # built: not rebuilt
+    assert await again.counts() == (5, 3)
+    await again.close()
+
+
+async def test_local_relations_counts_edges_within_hops(tmp_path: Path) -> None:
+    store = await rog.build_global_store(
+        [[*GRAPHS["q1"], ("Jamaican English", "language.human_language.region", "Caribbean")]],
+        tmp_path / "g.db",
+        source_id="t",
+    )
+    one = await local_relations(store, ["Jamaica"], hops=1)
+    assert one == {"location.country.languages_spoken": 1, "location.statistical_region.gdp": 1}
+    two = await local_relations(store, ["Jamaica"], hops=2)
+    assert two["language.human_language.region"] == 1
+    assert two["location.country.languages_spoken"] == 2  # seen from both ends
+    await store.close()

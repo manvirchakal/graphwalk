@@ -26,7 +26,7 @@ from pydantic import BaseModel, JsonValue, ValidationError
 from graphwalk.core.model import NodeId
 from graphwalk.eval.types import EvalQuestion, SystemAnswer
 from graphwalk.llm.base import LLMBackend, LLMError, Message
-from graphwalk.stores.base import GraphStore
+from graphwalk.stores.base import AdjacencyStore, GraphStore
 from graphwalk.traversal.entry import EntryLink, EntryResolver
 
 MAX_ANSWERS_SHOWN = 5
@@ -76,6 +76,27 @@ async def schema_from_store(store: GraphStore) -> tuple[dict[str, tuple[str, str
         pairs[edge.type][(types.get(edge.source, "entity"), types.get(edge.target, "entity"))] += 1
     relations = {name: c.most_common(1)[0][0] for name, c in pairs.items()}
     return relations, {name: c.total() for name, c in pairs.items()}
+
+
+async def local_relations(
+    store: AdjacencyStore, start: Sequence[NodeId], *, hops: int = 2, max_nodes: int = 5000
+) -> Counter[str]:
+    """Edge counts per relation within ``hops`` of ``start`` (both directions): the
+    schema a practitioner can fetch around the question's entity when the whole schema
+    is too large to show. Each hop expands at most ``max_nodes`` nodes (hubs are cut)."""
+    counts: Counter[str] = Counter()
+    frontier = list(dict.fromkeys(start))
+    seen = set(frontier)
+    for _ in range(hops):
+        following: list[NodeId] = []
+        for node_id in frontier[:max_nodes]:
+            for edge in await store.adjacency(node_id, direction="both"):
+                counts[edge.relation] += 1
+                if edge.other not in seen:
+                    seen.add(edge.other)
+                    following.append(edge.other)
+        frontier = following
+    return counts
 
 
 def instructions(schema: str) -> str:
