@@ -1,6 +1,7 @@
-"""graphwalk: a knowledge graph as an index over text.
+"""graphwalk: fast, probabilistic question answering over knowledge graphs.
 
-The public API is what this module exports. Everything else (``graphwalk.traversal``,
+When to use it and how: ``graphwalk.guide()`` (or ``graphwalk guide`` on the command
+line). The public API is what this module exports. Everything else (``graphwalk.traversal``,
 ``graphwalk.ingest``, ...) is internal and may change between minor versions.
 """
 
@@ -8,6 +9,7 @@ from importlib.metadata import version
 
 from graphwalk.core.errors import DocumentNotFoundError, GraphwalkError, StaleLocationError
 from graphwalk.core.model import Edge, Neighbor, Node, Provenance
+from graphwalk.guide import guide
 from graphwalk.index import Index, WalkResult
 from graphwalk.ingest.pipeline import IngestConfig, IngestReport
 from graphwalk.ingest.sources import FileSource, SourceDocument, TextSource
@@ -40,4 +42,5 @@ __all__ = [
     "TraversalConfig",
     "WalkResult",
     "__version__",
+    "guide",
 ]

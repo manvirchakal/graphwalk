@@ -1,0 +1,24 @@
+# graphwalk
+
+> Fast, probabilistic question answering over an existing knowledge graph. Each hop is a constrained classification decision made by a fast model (Jev), so a walk's answer comes with a confidence; low-confidence walks can be escalated to an LLM decider. Python library, CLI, and MCP server.
+
+When to use it, measured: graphwalk wins on large or messy graph schemas (3–5x the F1 of LLM-written queries, at 1/20 the cost), and its confidence separates right from wrong answers (AUROC up to 0.97), which makes cheap-first, escalate-when-unsure pipelines work on curated graphs (LLM-decider accuracy at about half its cost on MetaQA). It is the wrong tool for QA over documents (multi-step RAG wins by 10–19 F1), for small clean schemas (an LLM writing the query is more accurate), and for questions with constraints or superlatives. The installed package carries the same guide: run `graphwalk guide`.
+
+## Docs
+
+- [Agent guide](src/graphwalk/agent_docs/guide.md): when to use graphwalk, recipes, API surface, performance, common mistakes
+- [Agent skill](src/graphwalk/agent_docs/SKILL.md): a SKILL.md for agents that support skills (`graphwalk guide --skill`)
+- [README](README.md): overview, install, providers and configuration
+- [MCP examples](examples/README.md): client configs and an agent harness
+
+## Evidence
+
+- [Phase 7 results](docs/results-phase7.md): escalation (A1), scale (A5), Freebase KG-QA pilots (A2)
+- [Phase 4 results](docs/results-phase4.md): where graphwalk helps and where it doesn't (E1–E7)
+- [M7 results](docs/results-m7.md): QA over graphs built from text
+
+## Optional
+
+- [Design record](docs/design.md): architecture and protocols
+- [Roadmap](roadmap.md)
+- [Changelog](CHANGELOG.md)

@@ -106,6 +106,25 @@ class TraversalConfig(BaseModel):
             raise ValueError(msg)
         return self
 
+    @classmethod
+    def kgqa(cls, **overrides: object) -> Self:
+        """The settings measured on curated knowledge graphs (MetaQA, the 2Wiki gold
+        graph, Freebase subgraphs): greedy relation hops with typed options, a literal
+        STOP, and an answer-type hint (pass the graph's node types to ``Index`` or
+        ``Traverser`` for the hint). The eval suite's ``relation-v2`` preset, without
+        dataset glosses; pass ``relation_glosses=`` if your schema has them."""
+        settings: dict[str, object] = {
+            "strategy": "greedy",
+            "hop_mode": "relation",
+            "show_types": True,
+            "stop_style": "literal",
+            "answer_type": "hint",
+            "allow_stop_at_start": False,
+            "max_frontier": 2000,
+            "budget": {"max_depth": 4, "max_decision_calls": 12},
+        }
+        return cls.model_validate({**settings, **overrides})
+
     @property
     def width(self) -> int:
         """Effective number of parallel hypotheses."""

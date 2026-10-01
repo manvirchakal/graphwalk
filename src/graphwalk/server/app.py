@@ -45,7 +45,9 @@ documents a question is answered. Typical use: call `locate` with the question, 
 and answer from that text. Locations come with the graph path that found them. When
 the graph itself holds the facts (an imported knowledge graph), `walk` answers from it
 directly, with a confidence: trust high-confidence answers, and check low ones with
-`neighbors` or `locate`. Use `neighbors`/`get_node` to explore entities, `status` to see
+`neighbors` or `locate`. `walk` follows relations from the entities the question
+names; it does not apply constraints (earliest, largest, both A and B), so filter its
+answers yourself. Use `neighbors`/`get_node` to explore entities, `status` to see
 what is indexed, and `ingest` + `ingest_status` to add documents."""
 
 

@@ -597,6 +597,18 @@ def migrate(
     )
 
 
+@app.command("guide")
+def guide_(
+    skill: Annotated[
+        bool, typer.Option("--skill", help="Print a SKILL.md for agents that load skills.")
+    ] = False,
+) -> None:
+    """Print the guide for coding agents: when to use graphwalk, and how."""
+    from graphwalk.guide import guide  # noqa: PLC0415
+
+    typer.echo(guide("skill" if skill else "guide"), nl=False)
+
+
 @app.command()
 def mcp(
     http: Annotated[

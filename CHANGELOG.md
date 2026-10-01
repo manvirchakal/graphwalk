@@ -12,6 +12,13 @@ in [`roadmap.md`](roadmap.md).
 
 ### Added
 
+- A guide for coding agents, shipped in the package: `graphwalk guide` (and
+  `graphwalk.guide()`) prints when to use graphwalk (the measured regime map), recipes,
+  the public API, and common mistakes; `graphwalk guide --skill` prints a `SKILL.md`.
+  `llms.txt` at the repository root indexes the docs and evidence.
+- `TraversalConfig.kgqa()`: the configuration measured on curated graphs (the eval
+  suite's `relation-v2` preset), and `Index(node_types=...)` so its answer-type hint
+  works through `Index`.
 - MCP `walk` tool: the graph's own answers with paths and confidence, escalated per
   `GRAPHWALK_ESCALATE_BELOW` (a new setting; also the `Index` default when it builds
   its own backends or is given a config).

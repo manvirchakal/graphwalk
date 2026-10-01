@@ -10,7 +10,7 @@ names and returns the source spans behind the walk, with the path that reached t
 """
 
 import os
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -79,6 +79,8 @@ class Index:
       the index builds its own backends or is given a config) re-walks queries whose
       best answer's confidence is below the threshold; by default the LLM-as-decider
       on the escalation model (see :mod:`graphwalk.traversal.escalation`);
+    * ``node_types`` lists the graph's node types, for the walk's answer-type hint
+      (``TraversalConfig(answer_type=...)``, e.g. :meth:`TraversalConfig.kgqa`);
     * ``embedder`` is optional for graph ``locate`` (it prefilters wide steps and backs
       name linking; not built by default, since fastembed downloads a model) and
       required for ``dense`` and ``hybrid`` (built from config if not passed).
@@ -95,6 +97,7 @@ class Index:
         escalation_llm: LLMBackend | None = None,
         embedder: Embedder | None = None,
         traversal: TraversalConfig | None = None,
+        node_types: Sequence[str] | None = None,
         ingest: IngestConfig | None = None,
         documents: DocumentSource | None = None,
         extraction_cache: ExtractionCache | None = None,
@@ -118,6 +121,7 @@ class Index:
         self._escalation_llm = escalation_llm
         self._embedder = embedder
         self._traversal = traversal or TraversalConfig()
+        self._node_types = node_types
         self._ingest = ingest or IngestConfig()
         if documents is None and isinstance(store, DocumentStore):
             documents = StoredDocuments(store)
@@ -238,7 +242,11 @@ class Index:
                 # Backends come from configuration, so the threshold does too.
                 threshold = self.config.settings.escalate_below
             traverser: Walker = Traverser(
-                self.store, self.decider, embedder=self._embedder, config=self._traversal
+                self.store,
+                self.decider,
+                embedder=self._embedder,
+                config=self._traversal,
+                node_types=self._node_types,
             )
             if threshold is not None:
                 fallback = Traverser(
@@ -246,6 +254,7 @@ class Index:
                     self.fallback_decider,
                     embedder=self._embedder,
                     config=self._traversal,
+                    node_types=self._node_types,
                 )
                 traverser = EscalatingTraverser(traverser, fallback, threshold=threshold)
             self._graph = GraphLocator(self.store, traverser, documents=self._documents)

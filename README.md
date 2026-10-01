@@ -14,12 +14,20 @@ it is not:** a replacement for RAG over text. On graphs extracted from documents
 multi-step RAG answers better; there graphwalk is best used to *locate* passages, not
 to answer from the graph.
 
-> **Status: pre-alpha.** Results so far: on curated graphs (MetaQA, 2Wiki gold
-> graph), walking with escalation matches an LLM decider's accuracy at about half its
-> cost ([`docs/results-phase7.md`](docs/results-phase7.md)); on text-derived graphs it
-> loses to multi-step RAG ([`docs/results-phase4.md`](docs/results-phase4.md)).
-> Freebase KG-QA (WebQSP, CWQ) is next. Design: [`docs/design.md`](docs/design.md).
-> Plan: [`roadmap.md`](roadmap.md).
+> **Status: pre-alpha.** Every claim below is measured, on small samples (50–300
+> questions per setting): [`docs/results-phase7.md`](docs/results-phase7.md) (curated
+> graphs, escalation, Freebase), [`docs/results-phase4.md`](docs/results-phase4.md)
+> (text). Design: [`docs/design.md`](docs/design.md). Plan: [`roadmap.md`](roadmap.md).
+
+**When to use it** (the regime map; the full version is in `graphwalk guide`):
+
+| Situation | Best choice |
+|---|---|
+| Existing KG with a large or messy schema | **graphwalk `walk`**: 3–5× the F1 of LLM-written queries at 1/20 the cost |
+| Cheap first pass that knows when it's wrong | **`walk` + `escalate_below=0.9`**: LLM-decider accuracy at about half its cost on MetaQA |
+| Small, clean schema (fits in one prompt) | An LLM writing the query (more accurate; on WebQSP, 0.76 vs 0.54 F1) |
+| Questions with constraints or superlatives (CWQ) | Neither: every system we tried scores about 0.3 |
+| QA over documents | Multi-step RAG (wins by 10–19 F1); graphwalk `locate` only for entity-chain retrieval |
 
 ```bash
 graphwalk import kg.nt --graph kg.db          # an existing graph, no LLM needed
@@ -116,7 +124,9 @@ graphwalk query kg.db "Where was the director of Inception born?" --escalate-bel
 ```
 
 ```python
-async with Index.open("kg.db", escalate_below=0.9) as index:
+from graphwalk import Index, TraversalConfig
+
+async with Index.open("kg.db", traversal=TraversalConfig.kgqa(), escalate_below=0.9) as index:
     await index.import_triples("kg.nt")
     result = await index.walk("Where was the director of Inception born?")
     print(result.best.names, result.confidence, result.escalated, result.cost_usd)
@@ -130,10 +140,26 @@ graphwalk mcp --db my.db                      # stdio: keys from the environment
 graphwalk mcp --http --db my.db               # streamable HTTP: keys from client headers
 ```
 
-Tools: `locate`, `read`, `neighbors`, `get_node`, `ingest`/`ingest_status`, `status`.
+Tools: `walk`, `locate`, `read`, `neighbors`, `get_node`, `ingest`/`ingest_status`,
+`status`.
 The HTTP server supports bearer-token or OAuth 2.1 (resource server) auth, and the same
 server ships as a container (`Dockerfile`). Client configs, Claude Code commands,
 server settings, and a from-scratch agent harness are in [`examples/`](examples/).
+
+## For coding agents
+
+The package ships its own guide for agents: when to use graphwalk (the regime map, with
+the evidence), recipes, the public API, and common mistakes.
+
+```bash
+graphwalk guide                  # Markdown, from the installed package
+graphwalk guide --skill > .claude/skills/graphwalk/SKILL.md   # a skill, for agents that load them
+python -c "import graphwalk; print(graphwalk.guide())"
+```
+
+[`llms.txt`](llms.txt) indexes the same files for agents reading the repository or the
+docs site ([llmstxt.org](https://llmstxt.org) format). The MCP server's instructions
+carry the short version.
 
 ## Providers and configuration
 

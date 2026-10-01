@@ -1,0 +1,179 @@
+# graphwalk: guide for coding agents
+
+graphwalk answers questions over a knowledge graph by walking it. Each hop is a
+classification decision: the current node's relations (plus STOP) are the options, and
+a fast decision model (Jev) returns a probability for each. A walk's answer comes with a
+confidence, so unsure walks can be re-run ("escalated") with a slower LLM decider.
+
+This guide says when graphwalk is the right tool, when it is not, and how to use it.
+Every claim below comes from a measured experiment. The `docs/results-*.md` files in the
+repository hold the tables, CIs, and caveats. Samples are small (50–300 questions per
+setting, mostly one seed), so treat the numbers as directions, not guarantees.
+
+## Decide first: is graphwalk the right tool?
+
+| Your situation | Use | Evidence |
+|---|---|---|
+| A knowledge graph you already have (triples, RDF), with a **large or messy schema**: hundreds of relation names, inconsistent naming, or edges in either direction | **graphwalk `walk`**. An LLM writing the query from the schema writes plausible relations that don't exist. Walking chooses among edges that do. | E2b: 3–5× the F1 of LLM-written paths at 1/20–1/35 the cost (absolute F1 still low, 0.18–0.25, on text-extracted graphs) |
+| A graph with a **small, clean schema** you can show an LLM in one prompt (≲ 50 self-describing relations) | **Have an LLM write the query** (a relation path, Cypher, SPARQL). It is more accurate, and often cheaper. Use graphwalk only if you need its latency or a per-answer confidence. | E2: MetaQA 3-hop 0.955 vs 0.887 F1; A2: WebQSP 0.76 vs 0.54 F1 |
+| You want a **cheap first pass that knows when it's wrong**, and to pay for a strong model only on hard queries | **`walk` with `escalate_below=0.9`** | A1: on MetaQA, matches the LLM decider's accuracy at 47–61% of its cost. On Freebase (WebQSP) it saves almost nothing. |
+| **Compositional questions with constraints** ("the earliest...", "which X that also Y", superlatives, comparisons) | **Not graphwalk.** It follows one relation path from the topic entity and does no filtering, ranking, or intersection. Use a dedicated KG-QA method or LLM-written queries with filters. | A2: CWQ hits@1 ≈ 0.28 for every system tried, vs ≈ 0.63–0.69 published |
+| **Questions over documents** (no curated graph) | **Multi-step RAG**, not graphwalk. Building a graph from text loses dates, order, and qualifiers. | M7, E4: RAG wins by 10–19 F1 points |
+| Retrieval over documents where questions **chain through named entities** ("the director of the film X...") | graphwalk `locate(mode="hybrid")` as the retriever, then read the text | E1: +18 points recall over dense on 2Wiki; ties on HotpotQA; −5 on FanOutQA |
+| Broad or list-style questions over documents | Plain dense retrieval | E1 |
+| As an add-on to an existing multi-step RAG loop | Don't, unless your reader model is expensive. It cuts LLM rounds by 16–21% but not error, and its own calls cost more than the rounds saved at cheap-reader prices. | E7 |
+
+Rules of thumb:
+
+- **The graph must hold the answer.** graphwalk's answers are nodes. If facts live in
+  free text, attributes, or qualifiers the graph lacks, no walk finds them.
+- **Jev buys cost, speed, and confidence, not accuracy.** An LLM deciding each hop is
+  as accurate or better (+0.06 F1 at 3 hops). Jev is 3–4× cheaper, 7–10× faster per
+  decision, and its confidence separates right from wrong answers (AUROC 0.92–0.97 on
+  MetaQA 2–3 hop and WebQSP; weaker, 0.64–0.71, on MetaQA 1-hop, 2Wiki, and CWQ). The
+  LLM decider's confidence barely does (0.50–0.69).
+- **High-degree nodes are slow** (current release): a node with ~20k neighbors costs
+  1–3 s per walk step on SQLite. Walks that avoid such hubs add ~10 ms of overhead on
+  top of the model calls. See "Performance" below.
+
+## Install and keys
+
+```bash
+pip install 'graphwalk[embeddings]'   # or, from a clone: uv sync --extra embeddings
+```
+
+Extras: `embeddings` (local fastembed embedder: prefilter and dense `locate`), `llm`
+(LiteLLM: text ingestion, the LLM decider, escalation), `mcp` (the MCP server), `eval`.
+
+Keys come from the environment:
+
+- Decisions (Jev): `OPENROUTER_API_KEY` (model `typesafe/jev-1.13`) or `TYPESAFE_API_KEY`
+  with `GRAPHWALK_DECISION_PROVIDER=typesafe`.
+- LLM (escalation, ingestion): `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` /
+  `ANTHROPIC_API_KEY` / `XAI_API_KEY` with `GRAPHWALK_LLM_PROVIDER`.
+- No Jev access: `GRAPHWALK_DECISION_FALLBACK=llm` makes the chat model decide. It works,
+  but it is slower and its confidence is not calibrated, so escalation thresholds mean
+  little with it.
+
+Importing triples needs no key at all.
+
+## Recipe 1: question answering over an existing knowledge graph
+
+```bash
+graphwalk import kg.nt --graph kg.db      # .nt, .csv, .tsv, .jsonl, or a|b|c .txt
+graphwalk query kg.db "Where was the director of Inception born?" \
+    --hop-mode relation --strategy greedy --max-depth 4 --escalate-below 0.9
+```
+
+(The CLI flags approximate `TraversalConfig.kgqa()`; the library gives the full
+setting.)
+
+```python
+import asyncio
+from graphwalk import Index, TraversalConfig
+
+
+async def main() -> None:
+    async with Index.open(
+        "kg.db",
+        traversal=TraversalConfig.kgqa(),
+        node_types=["person", "film", "place"],  # your graph's types, for the type hint
+        escalate_below=0.9,
+    ) as index:
+        await index.import_triples("kg.nt")  # once; idempotent
+        result = await index.walk("Where was the director of Inception born?")
+        if result.best is None:
+            print("no answer")  # entities not linked, or nothing reached
+        else:
+            print(result.best.names, result.confidence, result.escalated, result.cost_usd)
+
+
+asyncio.run(main())
+```
+
+- `TraversalConfig.kgqa()` is the configuration measured in the experiments (greedy
+  relation hops, typed options, answer-type hint, depth ≤ 4). The default
+  `TraversalConfig()` (beam search over individual neighbors) was not the best measured
+  setting for KG-QA; prefer `kgqa()`.
+- `result.best.names` is a **set** of entities (a relation hop moves to all its
+  targets). `result.best.path` is the list of hops taken; show it to users as the
+  justification.
+- `result.confidence` is `exp(score)`, the length-normalized path probability. Treat it
+  as a ranking signal. 0.9 was the best default threshold on MetaQA; on a graph with a
+  different shape, check it on 50–100 labeled questions before relying on it.
+- `escalate_below` re-walks unsure queries with the LLM decider (needs the `llm` extra
+  and an LLM key), or with `fallback_decider=` if you pass one. `result.cost_usd`
+  includes both walks.
+- Start entities are found by matching names in the question. If you already know them
+  (from your own entity linker or the user's selection), call the CLI with
+  `--start <node id>` (repeatable).
+
+Triples formats: CSV/TSV with a header (`subject,relation,object`, aliases
+`head/source/s`, `predicate/type/p`, `tail/target/o`, plus optional `subject_type`,
+`object_type`, `subject_name`, `object_name`); JSONL with the same keys; N-Triples
+(`rdfs:label` becomes the name, `rdf:type` the type, literals become `literal` nodes).
+Give nodes readable names and types: decisions are made from names, relation names,
+and types, not from opaque ids.
+
+## Recipe 2: locate passages in documents (experimental)
+
+Only when your questions chain through named entities (see the table). Otherwise use
+dense retrieval or multi-step RAG.
+
+```python
+from graphwalk import Index
+
+async with Index.open("docs.db") as index:  # inside async code; needs [llm,embeddings]
+    await index.ingest("docs/")  # LLM extraction; costs money; idempotent
+    for location in await index.locate("Who directed ...?", k=5, mode="hybrid"):
+        passage = await index.read(location, context=200)
+        print(location.path, passage.text)  # answer from the text, not the graph
+```
+
+## Recipe 3: give an agent the graph (MCP)
+
+```bash
+pip install 'graphwalk[mcp,llm]'
+graphwalk mcp --db kg.db            # stdio; keys from the environment
+```
+
+Tools: `walk` (answers with confidence and path), `locate` and `read` (documents),
+`neighbors` and `get_node` (explore), `status`, `ingest` and `ingest_status`. Tell the
+agent to trust `walk` answers above the threshold you validated, and to check lower ones
+with `neighbors`.
+
+## API surface
+
+Public names are those exported from `graphwalk` (anything else may change):
+`Index`, `WalkResult`, `TraversalConfig`, `ImportReport`, `IngestConfig`,
+`IngestReport`, `Location`, `Passage`, `Node`, `Edge`, `Neighbor`, `Provenance`,
+`FileSource`, `TextSource`, `SourceDocument`, `FileDocuments`, `StoredDocuments`,
+`GraphwalkError`, `DocumentNotFoundError`, `StaleLocationError`, `guide`.
+
+`Index` methods: `open(path, **kwargs)`, `import_triples(path)`, `walk(query)`,
+`ingest(source)`, `locate(query, k, mode=)`, `read(location, context=)`,
+`neighbors(node)`, `close()`. All I/O methods are async.
+
+CLI: `graphwalk import`, `query`, `ingest`, `locate`, `migrate`, `mcp`, `guide`.
+
+## Performance
+
+- Per query: one Jev call per hop (~0.3–0.5 s each) plus graphwalk's overhead.
+  MetaQA walks cost $0.05–0.15 per 1,000 queries; Freebase subgraph walks ≈ $0.2.
+- SQLite: imports ~8k triples/s; a 1.4M-edge graph is ~1.1 GB on disk. Neighbor lookups
+  take ~0.4 ms on typical nodes.
+- Hubs: a step from a node with ~20k neighbors takes 1–3 s in the current release.
+  Avoid modelling very high-fan-out facts (e.g. `country → every person`) as plain
+  edges, or accept the latency.
+
+## Common mistakes
+
+- Using graphwalk to answer questions over documents. Use RAG; use `locate` only as a
+  retriever.
+- Expecting constraint handling ("first", "largest", "both A and B"). graphwalk doesn't
+  filter, rank, or intersect answer sets; do that in your own code, or pick another tool.
+- Comparing confidence across deciders. Only Jev's confidence was found informative.
+- Leaving `TraversalConfig()` at its defaults for KG-QA. Use `TraversalConfig.kgqa()`.
+- Assuming the escalation threshold transfers. Check it on your own graph.
+- Opaque node ids as names (`Q42`, `m.0abc`). Import names (`rdfs:label` or the name
+  columns) so the decider can read the options.
