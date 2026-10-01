@@ -277,9 +277,8 @@ folder, and a confidence interval where applicable.
 - E6: cost and amortization.
 - Budget: the first account held $10, not $41. Phase 4 spent about $5.90 across two
   keys.
-- Proposed next (E7): does the graph help multi-step RAG when retrieval is hard (no
-  title lookup, tight step budgets, bigger corpora)? On the current benchmarks it has
-  almost nothing to fix.
+- E7 (done): the graph as a first retrieval for multi-step RAG under hard retrieval.
+- Next: Phase 7.
 
 ### Phase 5: Documentation and public release (v0.1)
 
@@ -342,6 +341,42 @@ traversal beats retrieval."*
 **Exit:** the preprint is on arXiv and links to the v0.1 repo and to reproduction
 scripts.
 
+### Phase 7: Experiments, round 2 (large curated graphs and escalation)
+
+Phase 4 narrowed the claim: walking a graph with a cheap classifier pays off on
+existing, large or messy knowledge graphs, especially when low-confidence walks are
+escalated to an LLM. It does not pay off on graphs extracted from text. Phase 7 tests
+the narrowed claim where it would matter: real KG-QA benchmarks on Freebase.
+
+| # | Experiment | Question it answers | Est. cost |
+|---|---|---|---|
+| A1 | **Escalation**: re-walk with the LLM decider when Jev's confidence is below a threshold. An offline table from the E3 runs, then a library feature. | Does confidence routing buy LLM-decider accuracy at Jev's cost? | $0 |
+| A5 | **Scale**: a SQLite graph with 1M+ edges and high-degree hubs; latency per neighbor lookup and per walk (scripted decider). | Is the "fast traversal engine" claim true at size? | $0 |
+| A2 | **WebQSP and CWQ on Freebase**, using the published per-question subgraphs (not a full Freebase dump). Systems: Jev walk, Jev + escalation, LLM decider, LLM-written path; compared with published RoG and Think-on-Graph numbers. 50-question pilot first. | Does the narrowed claim hold on standard KG-QA benchmarks? | ~$10–20 |
+| A3 | Three seeds and bootstrap CIs on A2. | Are the A2 gaps real? | ~$10–15 |
+| A4 | Full MetaQA test sets instead of samples (time a pilot first; rate limits, not dollars, are the constraint). | Removes the small-sample caveat on the curated tables. | ~$10 |
+
+**Order:** A1, A5, A2 pilot, A2, A3, A4.
+
+**Kill criterion:** if the A2 pilot shows that Jev's confidence does not separate right
+from wrong walks on Freebase (AUROC near 0.5), or that escalation saves no money at
+equal accuracy, stop and reframe the paper before spending the rest.
+
+**Budget:** about $35–60. Auto top-up is on; every script keeps its $1 balance floor.
+
+### Phase 8: The library for existing knowledge graphs (v0.1 scope additions)
+
+1. **Import existing graphs**: triples from CSV, JSONL, and N-Triples; a read-only
+   Neo4j adapter (built after the A2 pilot, if it holds).
+2. **Escalation in the API**: `Index.walk` returns answers with their confidence;
+   `escalate_below=` re-walks with a fallback decider. Exposed over MCP too.
+3. **Text ingestion is marked experimental.** Hybrid becomes the documented `locate`
+   default for text (E1). Relation-schema normalization is removed (no gain in M7).
+4. **Hardening**: hub capping and prefiltering at scale (from A5); live tests for the
+   OpenAI, Anthropic, and x.ai providers, or a clear "untested" label.
+5. Then Phase 5 (docs, PyPI, GHCR, public repo). v0.1 is released after the A2 pilot,
+   so its headline use case has evidence behind it.
+
 ## Dependencies at a glance
 
 ```
@@ -349,6 +384,8 @@ Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 5 
               │                                        ▲                      ▲
               └──────────► Phase 4 (E1–E6) ────────────┴──────────────────────┘
 ```
+
+Phase 7 (A2 pilot) gates the v0.1 release; Phase 8 runs alongside Phase 7.
 
 E1 needs `locate` (Phase 1). E3 needs the LLM-as-decider (Phase 2). E2, E4, E5, and
 E6 need neither and can run any time.
