@@ -75,9 +75,10 @@ class Index:
 
     * ``decider`` drives the walk and ingestion routing (Jev, or the LLM fallback);
     * ``llm`` extracts entities and relations (needed only to ingest);
-    * ``fallback_decider`` (with ``escalate_below``) re-walks queries whose best answer's
-      confidence is below the threshold; by default the LLM-as-decider on the
-      escalation model (see :mod:`graphwalk.traversal.escalation`);
+    * ``fallback_decider`` (with ``escalate_below``, or ``GRAPHWALK_ESCALATE_BELOW`` when
+      the index builds its own backends or is given a config) re-walks queries whose
+      best answer's confidence is below the threshold; by default the LLM-as-decider
+      on the escalation model (see :mod:`graphwalk.traversal.escalation`);
     * ``embedder`` is optional for graph ``locate`` (it prefilters wide steps and backs
       name linking; not built by default, since fastembed downloads a model) and
       required for ``dense`` and ``hybrid`` (built from config if not passed).
@@ -232,17 +233,21 @@ class Index:
 
     def _graph_locator(self) -> GraphLocator:
         if self._graph is None:
+            threshold = self._escalate_below
+            if threshold is None and (self._config is not None or self._decider is None):
+                # Backends come from configuration, so the threshold does too.
+                threshold = self.config.settings.escalate_below
             traverser: Walker = Traverser(
                 self.store, self.decider, embedder=self._embedder, config=self._traversal
             )
-            if self._escalate_below is not None:
+            if threshold is not None:
                 fallback = Traverser(
                     self.store,
                     self.fallback_decider,
                     embedder=self._embedder,
                     config=self._traversal,
                 )
-                traverser = EscalatingTraverser(traverser, fallback, threshold=self._escalate_below)
+                traverser = EscalatingTraverser(traverser, fallback, threshold=threshold)
             self._graph = GraphLocator(self.store, traverser, documents=self._documents)
         return self._graph
 

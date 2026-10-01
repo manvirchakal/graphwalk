@@ -12,6 +12,9 @@ in [`roadmap.md`](roadmap.md).
 
 ### Added
 
+- MCP `walk` tool: the graph's own answers with paths and confidence, escalated per
+  `GRAPHWALK_ESCALATE_BELOW` (a new setting; also the `Index` default when it builds
+  its own backends or is given a config).
 - Import existing knowledge graphs (roadmap Phase 8): `graphwalk import` and
   `Index.import_triples` read CSV, TSV, JSONL, `|`-separated text, and N-Triples
   (labels and `rdf:type` become names and types; literals become nodes).

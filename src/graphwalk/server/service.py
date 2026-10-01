@@ -81,6 +81,29 @@ class NodeRef(BaseModel):
     type: str
 
 
+class AnswerOut(BaseModel):
+    names: list[str]
+    node_ids: list[str]
+    path: list[str]
+    """The walk from the entry entity: ``relation`` (followed forwards) or
+    ``relation^-1`` (backwards), one per hop."""
+    confidence: float
+    """The path's probability, length-normalized (``exp(score)``)."""
+
+
+class WalkOut(BaseModel):
+    answers: list[AnswerOut]
+    """Best first; one walk per entry entity, up to three answers each."""
+    entries: list[NodeRef]
+    confidence: float | None
+    """The best answer's confidence; ``None`` if no walk found an answer."""
+    escalated: bool
+    """A low-confidence walk was redone with the fallback decider."""
+    decision_model: str | None = None
+    decision_calls: int = 0
+    cost_usd: float | None = None
+
+
 class SourceRef(BaseModel):
     key: str
     start: int | None
@@ -269,6 +292,38 @@ class Service:
             entries=[entries[e].name for e in result.entries if e in entries],
             decision_model=walks[0].trace.decision_model if walks else None,
             decision_calls=result.decision_calls,
+        )
+
+    async def walk(self, headers: Mapping[str, str] | None, query: str) -> WalkOut:
+        if not query.strip():
+            raise ToolError("query is empty")
+        index = await self.index_for(headers)
+        result = await index.walk(query)
+        answers: list[AnswerOut] = []
+        for walk in result.walks:
+            answers += [
+                AnswerOut(
+                    names=list(a.names),
+                    node_ids=list(a.node_ids),
+                    path=[h.relation + ("" if h.direction == "out" else "^-1") for h in a.path],
+                    confidence=a.confidence,
+                )
+                for a in walk.answers[:3]
+            ]
+        answers.sort(key=lambda a: -a.confidence)
+        entries = await self.store.get_nodes(list(result.entries))
+        return WalkOut(
+            answers=answers,
+            entries=[_node_ref(entries[e]) for e in result.entries if e in entries],
+            confidence=result.confidence,
+            escalated=result.escalated,
+            decision_model=result.walks[0].trace.decision_model if result.walks else None,
+            decision_calls=sum(
+                w.trace.totals.decision_calls
+                + (0 if w.escalation is None else w.escalation.primary.trace.totals.decision_calls)
+                for w in result.walks
+            ),
+            cost_usd=result.cost_usd,
         )
 
     async def read(  # noqa: PLR0917 - mirrors the read tool

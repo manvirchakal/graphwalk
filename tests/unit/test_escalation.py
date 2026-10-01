@@ -117,3 +117,32 @@ def test_index_validates_escalate_below() -> None:
 
     with pytest.raises(ValueError, match="escalate_below"):
         Index(NetworkXStore(), escalate_below=0.0)
+
+
+async def test_index_threshold_from_config() -> None:
+    from graphwalk.config import resolve_config
+
+    config = resolve_config({"escalate_below": 0.9})
+    index = Index(
+        await movie_store(),
+        config=config,
+        decider=oracle(UNSURE),
+        fallback_decider=oracle(SURE),
+        traversal=GREEDY,
+    )
+    async with index:
+        result = await index.walk(BORN)
+    assert result.escalated
+    assert config.describe()["decision"]["escalate_below"] == 0.9  # pyright: ignore[reportIndexIssue]
+
+
+async def test_explicit_backends_ignore_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GRAPHWALK_ESCALATE_BELOW", "0.9")
+    fallback = oracle(SURE)
+    index = Index(
+        await movie_store(), decider=oracle(UNSURE), fallback_decider=fallback, traversal=GREEDY
+    )
+    async with index:
+        result = await index.walk(BORN)
+    assert not result.escalated
+    assert fallback.calls == 0

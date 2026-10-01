@@ -115,6 +115,9 @@ class GraphwalkSettings(BaseSettings):
     probabilities are not calibrated). Off by default so nobody gets it by accident."""
     jev_model_openrouter: str = JEV_MODEL_OPENROUTER
     jev_model_typesafe: str = JEV_MODEL_TYPESAFE
+    escalate_below: float | None = Field(default=None, gt=0.0, le=1.0)
+    """Re-walk with the LLM-as-decider when the best answer's confidence is below this
+    (``Index.walk``; see :mod:`graphwalk.traversal.escalation`). ``None``: never."""
     jev_timeout_s: float = Field(default=10.0, gt=0)
     jev_max_retries: int = Field(default=2, ge=0)
 
@@ -268,6 +271,7 @@ class ResolvedConfig:
                 "provider": s.decision_provider,
                 "model": s.jev_model,
                 "fallback": s.decision_fallback,
+                "escalate_below": s.escalate_below,
             },
             "llm": {
                 "provider": s.llm_provider,

@@ -31,6 +31,7 @@ from graphwalk.server.service import (
     ReadOut,
     Service,
     StatusOut,
+    WalkOut,
 )
 from graphwalk.server.settings import ServerSettings
 
@@ -41,9 +42,11 @@ INSTRUCTIONS = """\
 graphwalk indexes a set of documents as a knowledge graph and finds where in those
 documents a question is answered. Typical use: call `locate` with the question, then
 `read` the most promising locations (pass key, start, end, doc_hash exactly as returned)
-and answer from that text. Locations come with the graph path that found them. Use
-`neighbors`/`get_node` to explore entities, `status` to see what is indexed, and
-`ingest` + `ingest_status` to add documents."""
+and answer from that text. Locations come with the graph path that found them. When
+the graph itself holds the facts (an imported knowledge graph), `walk` answers from it
+directly, with a confidence: trust high-confidence answers, and check low ones with
+`neighbors` or `locate`. Use `neighbors`/`get_node` to explore entities, `status` to see
+what is indexed, and `ingest` + `ingest_status` to add documents."""
 
 
 def _headers(ctx: Context) -> dict[str, str]:
@@ -103,6 +106,19 @@ def build_server(service: Service) -> MCPServer:
         that led there, best first. Read the full text with `read`."""
         headers = _headers(ctx)
         return await guarded(ctx, lambda: service.locate(headers, query, k, mode))
+
+    @server.tool()
+    @_tool_errors
+    async def walk(
+        query: Annotated[str, Field(description="The question, in natural language.")],
+        ctx: Context,
+    ) -> WalkOut:
+        """Answer a question from the knowledge graph itself: link the entities it
+        names, walk the graph from each, and return the entities reached, with the path
+        and a confidence (0-1). Best for imported knowledge graphs, where the graph holds
+        the facts; for documents, prefer `locate` and `read`."""
+        headers = _headers(ctx)
+        return await guarded(ctx, lambda: service.walk(headers, query))
 
     @server.tool()
     @_tool_errors

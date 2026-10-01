@@ -107,7 +107,8 @@ async def test_every_tool_end_to_end() -> None:
     async with Client(build_server(service)) as client:
         names = {t.name for t in (await client.list_tools()).tools}
         assert names == {
-            "locate", "read", "neighbors", "get_node", "ingest", "ingest_status", "status"
+            "locate", "walk", "read", "neighbors", "get_node", "ingest", "ingest_status",
+            "status",
         }  # fmt: skip
         done = await ingest_and_wait(client, documents=DOCS, source_id="wiki")
         assert done["state"] == "done"
@@ -128,6 +129,17 @@ async def test_every_tool_end_to_end() -> None:
             texts.append(data(await client.call_tool("read", args))["text"])
         for gold in GOLD:
             assert any(gold in t for t in texts)
+
+        walked = data(await client.call_tool("walk", {"query": QUERY}))
+        assert [e["name"] for e in walked["entries"]] == ["Marie Curie"]
+        assert walked["answers"]
+        best = walked["answers"][0]
+        assert walked["confidence"] == pytest.approx(best["confidence"])
+        assert best["path"]
+        assert not walked["escalated"]
+        assert walked["decision_model"] == "fake-decider-1"
+        assert walked["decision_calls"] > 0
+        assert "query is empty" in error_text(await client.call_tool("walk", {"query": " "}))
         first = located["locations"][0]
         assert first["path"] == ["Marie Curie --spouse_of--> Pierre Curie"]
 
