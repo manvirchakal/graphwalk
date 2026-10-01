@@ -1,21 +1,29 @@
 # graphwalk
 
-Fast, probabilistic knowledge-graph traversal and ingestion.
+Fast, probabilistic knowledge-graph traversal.
 
-graphwalk treats each hop through a knowledge graph as a **constrained classification
-decision**: the current node's neighbors (plus `STOP`) are the options, and a fast
-decision model returns a calibrated probability distribution over them. The bet is that
-many cheap, calibrated decisions beat LLM-driven graph RAG on cost and latency at
-competitive accuracy. The built-in eval harness exists to test exactly that bet.
+graphwalk answers questions over a knowledge graph by walking it: each hop is a
+**constrained classification decision** (the current node's relations or neighbors,
+plus `STOP`, are the options), made by a fast decision model that returns a probability
+distribution over them. Walks are cheap and fast, and their confidence is informative,
+so unsure walks can be escalated to a slower LLM decider only when needed.
 
-> **Status: pre-alpha.** Ingestion, graph stores (NetworkX, SQLite), traversal, the
-> `locate`/`read` retriever, and the eval harness work. Results so far:
-> [`docs/results-m7.md`](docs/results-m7.md) (graph walking has not beaten multi-step
-> RAG yet). Design: [`docs/design.md`](docs/design.md). Plan: [`roadmap.md`](roadmap.md).
+**What it is for:** answering questions over a graph you already have (imported from
+triples, or built with `ingest`), as a library or as a tool for an agent (MCP). **What
+it is not:** a replacement for RAG over text. On graphs extracted from documents,
+multi-step RAG answers better; there graphwalk is best used to *locate* passages, not
+to answer from the graph.
+
+> **Status: pre-alpha.** Results so far: on curated graphs (MetaQA, 2Wiki gold
+> graph), walking with escalation matches an LLM decider's accuracy at about half its
+> cost ([`docs/results-phase7.md`](docs/results-phase7.md)); on text-derived graphs it
+> loses to multi-step RAG ([`docs/results-phase4.md`](docs/results-phase4.md)).
+> Freebase KG-QA (WebQSP, CWQ) is next. Design: [`docs/design.md`](docs/design.md).
+> Plan: [`roadmap.md`](roadmap.md).
 
 ```bash
-graphwalk ingest docs/ --graph my.db
-graphwalk locate my.db "Where was the director of Inception born?"
+graphwalk import kg.nt --graph kg.db          # an existing graph, no LLM needed
+graphwalk query kg.db "Where was the director of Inception born?" --escalate-below 0.9
 ```
 
 ## Quickstart
@@ -41,7 +49,11 @@ Optional extras:
 uv sync --extra llm --extra embeddings
 ```
 
-## Ingestion
+## Ingestion from documents (experimental)
+
+Building a graph from text works, but walking a text-derived graph has not beaten
+multi-step RAG at answering (extraction drops the dates, order, and qualifiers questions
+need). Use it to `locate` passages, preferably in `hybrid` mode.
 
 ```bash
 uv sync --extra llm --extra embeddings
@@ -76,8 +88,11 @@ async with Index.open("my.db", llm=llm, decider=decider) as index:
 ```
 
 `mode="dense"` ranks text chunks by embedding similarity instead, and `mode="hybrid"`
-fuses both (needs `embedder=`). Which default is best is still an open experiment
-(E1 in the roadmap). `read` detects documents that changed since `locate` ran and
+fuses both (needs `embedder=`). For text, prefer `hybrid` over `graph`: in E1 the graph
+alone recalled less than dense retrieval on HotpotQA and FanOutQA. Hybrid beat dense by
+18 points on 2Wiki (entity chains), tied on HotpotQA, and trailed by about 5 on
+FanOutQA, so `dense` is the safer choice for broad questions
+([`docs/results-phase4.md`](docs/results-phase4.md)). `read` detects documents that changed since `locate` ran and
 flags the passage as `stale` (or refuses, with `on_stale="refuse"`). By default the
 text is kept in the store; `IngestConfig(store_text=False)` with `FileDocuments`
 re-reads it from disk instead.

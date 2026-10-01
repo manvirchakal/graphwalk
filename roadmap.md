@@ -371,7 +371,9 @@ equal accuracy, stop and reframe the paper before spending the rest.
 2. **Escalation in the API**: `Index.walk` returns answers with their confidence;
    `escalate_below=` re-walks with a fallback decider. Exposed over MCP too.
 3. **Text ingestion is marked experimental.** Hybrid becomes the documented `locate`
-   default for text (E1). Relation-schema normalization is removed (no gain in M7).
+   default for text (E1). Relation-schema normalization stays internal and
+   undocumented: it showed no gain in M7, but `scripts/eval/walk_read.py` needs it to
+   reproduce the M7 tables.
 4. **Hardening**: hub capping and prefiltering at scale (from A5); live tests for the
    OpenAI, Anthropic, and x.ai providers, or a clear "untested" label.
 5. Then Phase 5 (docs, PyPI, GHCR, public repo). v0.1 is released after the A2 pilot,
