@@ -262,7 +262,27 @@ class SQLiteStore:
         direction: Direction = "out",
         edge_types: Collection[str] | None = None,
     ) -> int:
-        return len(self._incident(node_id, direction, edge_types))
+        """Counted in SQL: a hub's degree never parses its edges."""
+        self._node(node_id)  # raise if missing
+        types = None if edge_types is None else sorted(set(edge_types))
+        if types == []:
+            return 0
+        type_filter = "" if types is None else f" AND type IN ({','.join('?' * len(types))})"
+        args = [] if types is None else types
+        total = 0
+        if direction in ("out", "both"):
+            total += self._db.execute(
+                f"SELECT COUNT(*) FROM edges WHERE source = ?{type_filter}",  # noqa: S608 - placeholders only
+                (node_id, *args),
+            ).fetchone()[0]
+        if direction in ("in", "both"):
+            # With "both", a self-loop is counted once (as "out"), as neighbors reports it.
+            loops = " AND source != target" if direction == "both" else ""
+            total += self._db.execute(
+                f"SELECT COUNT(*) FROM edges WHERE target = ?{type_filter}{loops}",  # noqa: S608 - placeholders only
+                (node_id, *args),
+            ).fetchone()[0]
+        return total
 
     async def find_nodes(
         self,
