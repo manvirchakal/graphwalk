@@ -361,7 +361,8 @@ class Traverser:
         that survive capping (:meth:`_load`), so a hub's thousands of neighbors are never
         all parsed into models."""
         cfg = self.config
-        grouped: dict[tuple[str, Literal["out", "in"]], list[NodeId]] = defaultdict(list)
+        # Ordered sets (dict keys): a list's ``in`` made hubs quadratic.
+        grouped: dict[tuple[str, Literal["out", "in"]], dict[NodeId, None]] = defaultdict(dict)
         moves: list[Move] = []
         for node_id in beam.frontier:
             for relation, direction, target in await self._adjacent(run, node_id):
@@ -370,13 +371,11 @@ class Traverser:
                 if cfg.hop_mode == "entity":
                     moves.append(Move(relation, direction, (target,)))
                 else:
-                    targets = grouped[(relation, direction)]
-                    if target not in targets:
-                        targets.append(target)
+                    grouped[(relation, direction)][target] = None
         pruned: list[Pruned] = []
         if cfg.hop_mode == "relation":
             for (relation, direction), targets in grouped.items():
-                kept, dropped = await self._cap_frontier(run, targets)
+                kept, dropped = await self._cap_frontier(run, list(targets))
                 if dropped:
                     reason = "frontier_prefilter" if self._cache else "frontier_truncated"
                     pruned.append(Pruned(reason=reason, relation=relation, targets=tuple(dropped)))
