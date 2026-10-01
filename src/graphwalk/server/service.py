@@ -98,7 +98,11 @@ class WalkOut(BaseModel):
     confidence: float | None
     """The best answer's confidence; ``None`` if no walk found an answer."""
     escalated: bool
-    """A low-confidence walk was redone with the fallback decider."""
+    """A low-confidence walk was redone with the fallback decider. Its confidence then
+    comes from that decider, which is not calibrated: verify the answer."""
+    threshold: float | None = None
+    """Walks whose best confidence is below this are escalated (``None``: escalation
+    is off, and a low confidence is only a warning)."""
     decision_model: str | None = None
     decision_calls: int = 0
     cost_usd: float | None = None
@@ -317,6 +321,7 @@ class Service:
             entries=[_node_ref(entries[e]) for e in result.entries if e in entries],
             confidence=result.confidence,
             escalated=result.escalated,
+            threshold=index.escalate_below,
             decision_model=result.walks[0].trace.decision_model if result.walks else None,
             decision_calls=sum(
                 w.trace.totals.decision_calls

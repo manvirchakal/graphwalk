@@ -27,6 +27,7 @@ from test_index import CURIE, EINSTEIN, GOLD, PIERRE, QUERY, extract, walker
 
 from graphwalk.config import ResolvedConfig
 from graphwalk.embeddings import FakeEmbedder
+from graphwalk.guide import guide
 from graphwalk.index import Index
 from graphwalk.ingest.pipeline import IngestConfig
 from graphwalk.llm import FakeLLM
@@ -59,6 +60,7 @@ class Recorder:
             config=config,
             owns_store=False,
             decider=walker(),
+            fallback_decider=walker(),
             llm=FakeLLM(extract),
             embedder=FakeEmbedder(),
             ingest=IngestConfig(routing="exact"),
@@ -137,6 +139,7 @@ async def test_every_tool_end_to_end() -> None:
         assert walked["confidence"] == pytest.approx(best["confidence"])
         assert best["path"]
         assert not walked["escalated"]
+        assert walked["threshold"] is None
         assert walked["decision_model"] == "fake-decider-1"
         assert walked["decision_calls"] > 0
         assert "query is empty" in error_text(await client.call_tool("walk", {"query": " "}))
@@ -152,6 +155,27 @@ async def test_every_tool_end_to_end() -> None:
         (node,) = data(await client.call_tool("get_node", {"node": "Pierre Curie"}))
         assert node["type"] == "person"
         assert node["degree"] == 2
+
+
+async def test_guide_resource_and_threshold_in_instructions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _ = make_service()
+    async with Client(build_server(service)) as client:
+        assert "Escalation is off" in (client.instructions or "")
+        resources = (await client.list_resources()).resources
+        assert [str(r.uri) for r in resources] == ["graphwalk://guide"]
+        contents = (await client.read_resource("graphwalk://guide")).contents
+        assert getattr(contents[0], "text", "") == guide()
+
+    monkeypatch.setenv("GRAPHWALK_ESCALATE_BELOW", "0.01")
+    service, _ = make_service()
+    async with Client(build_server(service)) as client:
+        assert "confidence below 0.01 are redone" in (client.instructions or "")
+        await ingest_and_wait(client, documents=DOCS, source_id="wiki")
+        walked = data(await client.call_tool("walk", {"query": QUERY}))
+        assert walked["threshold"] == pytest.approx(0.01)
+        assert not walked["escalated"]
 
 
 async def test_tool_errors_are_readable() -> None:

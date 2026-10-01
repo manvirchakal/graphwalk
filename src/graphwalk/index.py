@@ -235,12 +235,17 @@ class Index:
 
     # ------------------------------------------------------------------ locate / read
 
+    @property
+    def escalate_below(self) -> float | None:
+        """The confidence below which walks are escalated (``None``: never)."""
+        if self._escalate_below is None and (self._config is not None or self._decider is None):
+            # Backends come from configuration, so the threshold does too.
+            return self.config.settings.escalate_below
+        return self._escalate_below
+
     def _graph_locator(self) -> GraphLocator:
         if self._graph is None:
-            threshold = self._escalate_below
-            if threshold is None and (self._config is not None or self._decider is None):
-                # Backends come from configuration, so the threshold does too.
-                threshold = self.config.settings.escalate_below
+            threshold = self.escalate_below
             traverser: Walker = Traverser(
                 self.store,
                 self.decider,

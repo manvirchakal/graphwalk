@@ -15,7 +15,11 @@ in [`roadmap.md`](roadmap.md).
 - A guide for coding agents, shipped in the package: `graphwalk guide` (and
   `graphwalk.guide()`) prints when to use graphwalk (the measured regime map), recipes,
   the public API, and common mistakes; `graphwalk guide --skill` prints a `SKILL.md`.
-  `llms.txt` at the repository root indexes the docs and evidence.
+  `llms.txt` at the repository root indexes the docs and evidence. The MCP server
+  serves the guide as the resource `graphwalk://guide`.
+- MCP: the instructions state the escalation threshold (or that escalation is off),
+  and `walk` results report the `threshold` they used; `Index.escalate_below` exposes
+  the effective threshold.
 - `TraversalConfig.kgqa()`: the configuration measured on curated graphs (the eval
   suite's `relation-v2` preset), and `Index(node_types=...)` so its answer-type hint
   works through `Index`.

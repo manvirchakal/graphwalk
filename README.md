@@ -141,7 +141,8 @@ graphwalk mcp --http --db my.db               # streamable HTTP: keys from clien
 ```
 
 Tools: `walk`, `locate`, `read`, `neighbors`, `get_node`, `ingest`/`ingest_status`,
-`status`.
+`status`; resource `graphwalk://guide` (the agent guide). With `GRAPHWALK_ESCALATE_BELOW`
+set, the server's instructions and every `walk` result state the threshold.
 The HTTP server supports bearer-token or OAuth 2.1 (resource server) auth, and the same
 server ships as a container (`Dockerfile`). Client configs, Claude Code commands,
 server settings, and a from-scratch agent harness are in [`examples/`](examples/).

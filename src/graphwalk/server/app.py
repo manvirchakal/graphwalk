@@ -20,6 +20,7 @@ from starlette.responses import JSONResponse, Response
 
 from graphwalk import __version__
 from graphwalk.core.errors import GraphwalkError
+from graphwalk.guide import guide
 from graphwalk.server.auth import BearerTokenMiddleware, IntrospectionVerifier, JWTVerifier
 from graphwalk.server.service import (
     InlineDocument,
@@ -37,18 +38,40 @@ from graphwalk.server.settings import ServerSettings
 
 MCP_PATH = "/mcp"
 HEALTH_PATH = "/healthz"
+GUIDE_URI = "graphwalk://guide"
 
 INSTRUCTIONS = """\
-graphwalk indexes a set of documents as a knowledge graph and finds where in those
-documents a question is answered. Typical use: call `locate` with the question, then
-`read` the most promising locations (pass key, start, end, doc_hash exactly as returned)
-and answer from that text. Locations come with the graph path that found them. When
-the graph itself holds the facts (an imported knowledge graph), `walk` answers from it
-directly, with a confidence: trust high-confidence answers, and check low ones with
-`neighbors` or `locate`. `walk` follows relations from the entities the question
-names; it does not apply constraints (earliest, largest, both A and B), so filter its
-answers yourself. Use `neighbors`/`get_node` to explore entities, `status` to see
-what is indexed, and `ingest` + `ingest_status` to add documents."""
+graphwalk answers questions from a knowledge graph and finds where in indexed documents
+a question is answered.
+
+Imported knowledge graph (the graph holds the facts): call `walk` with the question. It
+links the entities the question names, follows relations from them, and returns the
+entities reached, each with its path and a confidence (0-1). `walk` does not apply
+constraints (earliest, largest, both A and B): filter its answers yourself, or answer
+from `neighbors`. {threshold}
+
+Documents: call `locate` with the question, then `read` the most promising locations
+(pass key, start, end, doc_hash exactly as returned) and answer from that text.
+
+Use `neighbors`/`get_node` to explore entities, `status` to see what is indexed,
+`ingest` + `ingest_status` to add documents, and the `graphwalk://guide` resource for
+when graphwalk works well and when it does not."""
+
+_WITH_THRESHOLD = """\
+On this server, walks with confidence below {t:g} are redone by a stronger decider
+(`escalated`: true). Answers not escalated cleared the threshold. Escalated answers'
+confidences are not calibrated: verify them with `neighbors` before relying on them."""
+_WITHOUT_THRESHOLD = """\
+Escalation is off on this server. Treat confidence below 0.9 as a warning and verify
+with `neighbors` (0.9 was the best default on curated benchmarks; check
+it on this graph)."""
+
+
+def instructions(threshold: float | None) -> str:
+    """The server instructions, stating the escalation threshold clients get by default
+    (remote clients can set their own; each `walk` result reports the one it used)."""
+    note = _WITHOUT_THRESHOLD if threshold is None else _WITH_THRESHOLD.format(t=threshold)
+    return INSTRUCTIONS.format(threshold=note.replace("\n", " "))
 
 
 def _headers(ctx: Context) -> dict[str, str]:
@@ -78,7 +101,7 @@ def build_server(service: Service) -> MCPServer:
     server = MCPServer(
         name="graphwalk",
         title="graphwalk",
-        instructions=INSTRUCTIONS,
+        instructions=instructions(service.config_for(None).settings.escalate_below),
         version=__version__,
         log_level=settings.log_level,
         token_verifier=_verifier(settings) if service.mode == "http" else None,
@@ -199,6 +222,17 @@ def build_server(service: Service) -> MCPServer:
         """What is indexed (entities, relations, documents per source), which providers
         and models requests from this client use, and the server's limits."""
         return await service.status(_headers(ctx))
+
+    @server.resource(
+        GUIDE_URI,
+        name="guide",
+        title="graphwalk guide",
+        description="When graphwalk works well and when it does not (measured), recipes, "
+        "and the API.",
+        mime_type="text/markdown",
+    )
+    def guide_resource() -> str:  # pyright: ignore[reportUnusedFunction]
+        return guide()
 
     @server.custom_route(HEALTH_PATH, methods=["GET"])
     async def health(request: Request) -> Response:  # pyright: ignore[reportUnusedFunction]

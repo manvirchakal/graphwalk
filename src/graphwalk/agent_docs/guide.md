@@ -138,9 +138,14 @@ graphwalk mcp --db kg.db            # stdio; keys from the environment
 ```
 
 Tools: `walk` (answers with confidence and path), `locate` and `read` (documents),
-`neighbors` and `get_node` (explore), `status`, `ingest` and `ingest_status`. Tell the
-agent to trust `walk` answers above the threshold you validated, and to check lower ones
-with `neighbors`.
+`neighbors` and `get_node` (explore), `status`, `ingest` and `ingest_status`. The server
+also serves this guide as the resource `graphwalk://guide`.
+
+Set `GRAPHWALK_ESCALATE_BELOW=0.9` (after checking it on your graph) to escalate unsure
+walks. The server's instructions then state the threshold, and every `walk` result
+reports the threshold it used, so the agent knows which answers cleared it. Escalated
+answers carry the LLM decider's confidence, which is not calibrated, so the agent
+should verify them with `neighbors`.
 
 ## API surface
 
