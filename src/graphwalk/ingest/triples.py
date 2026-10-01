@@ -327,13 +327,17 @@ async def import_triples(
         for node_id, (name, type_) in nodes.items()
         if node_id not in existing
     ]
-    new_edges = [Edge(source=s, target=o, type=r, provenance=provenance) for s, r, o in edges]
     # Every node before any edge: an edge's endpoints must exist.
     for start in range(0, len(new_nodes), batch_size):
         await _write(store, new_nodes[start : start + batch_size], ())
-    for start in range(0, len(new_edges), batch_size):
-        await _write(store, (), new_edges[start : start + batch_size])
-    return ImportReport(nodes=len(new_nodes), edges=len(new_edges), skipped=0)
+    keys = list(edges)
+    for start in range(0, len(keys), batch_size):
+        batch = [
+            Edge(source=s, target=o, type=r, provenance=provenance)
+            for s, r, o in keys[start : start + batch_size]
+        ]  # built per batch: a million Edge models at once is gigabytes
+        await _write(store, (), batch)
+    return ImportReport(nodes=len(new_nodes), edges=len(keys), skipped=0)
 
 
 async def _write(store: GraphStore, nodes: Sequence[Node], edges: Sequence[Edge]) -> None:
