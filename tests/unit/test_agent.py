@@ -84,6 +84,7 @@ async def test_agent_explores_then_answers(tmp_path: Path) -> None:
     assert answer.cost_usd is not None
     assert abs(answer.cost_usd - 0.003) < 1e-9
     assert answer.detail["tool_calls"] == {"relations": 1, "neighbors": 1, "answer": 1}
+    assert answer.detail["grounded"] == 1.0
     relations_out = chat.seen[1][-1]["content"]
     assert "location.country.languages_spoken (out): 2" in relations_out  # name resolved
     neighbors_out = chat.seen[2][-1]["content"]
@@ -107,6 +108,7 @@ async def test_last_turn_offers_only_answer_and_errors_go_back(tmp_path: Path) -
     assert chat.offered[1] == [ANSWER_SPEC["function"]["name"]]
     assert "error: no node named 'Atlantis'" in chat.seen[1][-1]["content"]
     assert answer.answer_set == ("Jamaican English",)  # a bare string is accepted
+    assert answer.detail["grounded"] == 0.0  # no tool output named it
     await store.close()
 
 

@@ -242,6 +242,7 @@ class AgentSystem:
         agent_cost: float | None = 0.0
         tool_cost = latency = 0.0
         first_walk: float | None = None
+        seen: list[str] = []
         final: list[str] | None = None
         status: Literal["ok", "error"] = "ok"
         error: str | None = None
@@ -291,6 +292,7 @@ class AgentSystem:
                     walk_conf = output.detail.get("confidence")
                     if first_walk is None and name == "walk" and isinstance(walk_conf, float):
                         first_walk = walk_conf
+                    seen.append(output.text.casefold())
                     transcript.append(
                         {"tool": name, "args": json.dumps(args)[:200], "out": output.text[:300]}
                     )
@@ -302,6 +304,8 @@ class AgentSystem:
         except LLMError as failure:
             status, error = "error", str(failure)
         answers = tuple(dict.fromkeys(final or ()))
+        observed = "\n".join(seen)
+        grounded = sum(a.casefold() in observed for a in answers)
         return SystemAnswer(
             answers=answers,
             answer_set=answers,
@@ -322,6 +326,7 @@ class AgentSystem:
                 "tool_cost_usd": tool_cost,
                 "wall_s": time.perf_counter() - wall,
                 "first_walk_confidence": first_walk,
+                "grounded": grounded / len(answers) if answers else None,
                 "transcript": transcript,
             },
         )

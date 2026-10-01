@@ -10,7 +10,11 @@ budget; only the tools differ:
 * ``graph``: ``relations`` + ``neighbors`` (low-level graph tools);
 * ``walk``: the same plus graphwalk's ``walk`` with its confidence;
 * ``search``: dense search over the same facts as text (multi-step RAG);
-* ``jev``: the walk alone, no agent (reference).
+* ``jev``: the walk alone, no agent (reference);
+* ``closedbook``: no tools, one turn (what the model knows without the graph).
+
+``grounded`` is the share of an arm's answers that appeared in some tool output: the
+model knows much of WebQSP, so an answer can be right without the tools finding it.
 
 All arms see the same facts: the WebQSP test subgraphs of the sampled questions, merged
 into one graph (the search index embeds that graph's triples; the full 1,628-subgraph
@@ -69,8 +73,8 @@ async def passage_index(
 def agent_table(runs: list[SystemRun]) -> str:
     lines = [
         "| arm | n | F1 | hits@1 | answered | turns (mean) | agent in-tok (mean) | "
-        "agent out-tok | $/q (agent) | $/q (tools) | latency p50 / p90 s | tool calls |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "agent out-tok | $/q (agent) | $/q (tools) | latency p50 / p90 s | grounded | tool calls |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for run in runs:
         records = run.records
@@ -95,6 +99,8 @@ def agent_table(runs: list[SystemRun]) -> str:
             if any(isinstance(c, float) for c in tool_cost)
             else statistics.fmean(r.answer.cost_usd or 0.0 for r in records)
         )
+        shares = [float(g) for d in detail if isinstance(g := d.get("grounded"), float)]
+        grounded = f"{statistics.fmean(shares):.2f}" if shares else "-"
         calls: dict[str, int] = {}
         for d in detail:
             raw = d.get("tool_calls")
@@ -108,7 +114,7 @@ def agent_table(runs: list[SystemRun]) -> str:
             f"{statistics.fmean(r.answer.input_tokens for r in records):,.0f} | "
             f"{statistics.fmean(r.answer.output_tokens for r in records):,.0f} | "
             f"{agent_q:.5f} | {tools_q:.5f} | "
-            f"{percentile(lat, 50):.1f} / {percentile(lat, 90):.1f} | {call_text} |"
+            f"{percentile(lat, 50):.1f} / {percentile(lat, 90):.1f} | {grounded} | {call_text} |"
         )
     return "\n".join(lines)
 
@@ -117,7 +123,8 @@ def paired(runs: list[SystemRun]) -> str:
     by = {r.system: {x.question.id: x.score.f1 for x in r.records} for r in runs}
     lines: list[str] = []
     for a, b in (("agent-walk", "agent-graph"), ("agent-walk", "agent-search"),
-                 ("agent-graph", "agent-search"), ("agent-walk", "jev")):  # fmt: skip
+                 ("agent-graph", "agent-search"), ("agent-walk", "jev"),
+                 ("agent-walk", "closedbook")):  # fmt: skip
         if a in by and b in by:
             common = sorted(set(by[a]) & set(by[b]))
             diffs = [by[a][q] - by[b][q] for q in common]
@@ -161,6 +168,8 @@ async def main(args: argparse.Namespace) -> None:
     async def build(arm: str) -> QASystem:
         if arm == "jev":
             return GraphwalkSystem(store, traverser(), name="jev", linking="given")
+        if arm == "closedbook":
+            return AgentSystem("closedbook", chat, lambda _q: [], max_turns=1, model=args.llm)
         if arm == "search":
             index = await passage_index(triples, embedder, root / f"{tag}-passages")
             tools = [search_tool(index, embedder)]
@@ -206,8 +215,8 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=100, help="sample size (fixes the graph)")
     parser.add_argument("--pilot", type=int, default=0, help="run the first N only (0 = all)")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--arms", nargs="+", default=["jev", "graph", "walk", "search"],
-                        choices=["jev", "graph", "walk", "search"])  # fmt: skip
+    arms = ["jev", "closedbook", "graph", "walk", "search"]
+    parser.add_argument("--arms", nargs="+", default=arms, choices=arms)
     parser.add_argument("--llm", default="openrouter/openai/gpt-6-luna")
     parser.add_argument("--max-turns", type=int, default=10)
     parser.add_argument("--max-tokens", type=int, default=1024)
