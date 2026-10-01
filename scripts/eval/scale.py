@@ -8,7 +8,8 @@ about nodes / hubs incoming edges, like a country or a profession in Freebase). 
 imported with ``graphwalk.ingest.triples`` into a SQLite file, then timed:
 
 * import (triples per second) and file size;
-* ``neighbors`` and ``degree`` for random nodes and for hubs;
+* ``neighbors``, ``adjacency`` (ids only, what walks use), and ``degree`` for random
+  nodes and for hubs;
 * name linking (index build, then per query);
 * walks with a scripted decider (seeded random distributions, no I/O), entity and
   relation mode, from random nodes and from hubs, with and without an embedder
@@ -128,12 +129,15 @@ async def bench_lookups(store: SQLiteStore, groups: dict[str, list[str]]) -> dic
         times: list[float] = []
         sizes: list[int] = []
         degree_times: list[float] = []
+        adjacency_times: list[float] = []
         for node_id in ids:
             t, found = await timed(store.neighbors(node_id, direction="both"))
             times.append(t)
             sizes.append(len(found))
             degree_times.append((await timed(store.degree(node_id, direction="both")))[0])
+            adjacency_times.append((await timed(store.adjacency(node_id, direction="both")))[0])
         lookups[label] = {"neighbors": summary(times), "degree": summary(degree_times),
+                          "adjacency": summary(adjacency_times),
                           "mean_degree": statistics.mean(sizes)}  # fmt: skip
     return lookups
 
@@ -223,7 +227,7 @@ def render(out: dict[str, object]) -> str:
     lookups = out["lookups"]
     assert isinstance(lookups, dict)  # noqa: S101
     for label, data in lookups.items():
-        for op in ("neighbors", "degree"):
+        for op in ("neighbors", "adjacency", "degree"):
             s = data[op]
             lines.append(f"| {op}, {label} nodes | {s['n']} | {s['p50_ms']:.1f} | "
                          f"{s['p95_ms']:.1f} | {s['max_ms']:.1f} | mean degree "
