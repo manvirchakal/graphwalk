@@ -154,14 +154,20 @@ def query(  # noqa: PLR0917 - Typer maps parameters to CLI options
             "--start", "-s", help="Start node id (repeatable). Default: names in the query."
         ),
     ] = None,
-    strategy: Annotated[str, typer.Option(help="greedy | beam | sample")] = "beam",
-    beam_width: Annotated[int, typer.Option(help="Beams kept per depth.")] = 3,
-    max_depth: Annotated[int, typer.Option(help="Maximum decision depths (hops + STOP).")] = 4,
-    hop_mode: Annotated[str, typer.Option(help="entity | relation")] = "entity",
-    samples: Annotated[int, typer.Option(help="Walks for --strategy sample.")] = 5,
-    temperature: Annotated[float, typer.Option(help="Sampling temperature.")] = 1.0,
-    seed: Annotated[int, typer.Option(help="Sampling seed.")] = 0,
-    label_style: Annotated[str, typer.Option(help="opaque | readable")] = "opaque",
+    strategy: Annotated[
+        str | None, typer.Option(help="greedy | beam | sample. Default: greedy (kgqa).")
+    ] = None,
+    beam_width: Annotated[int | None, typer.Option(help="Beams kept per depth.")] = None,
+    max_depth: Annotated[
+        int | None, typer.Option(help="Maximum decision depths (hops + STOP). Default: 4.")
+    ] = None,
+    hop_mode: Annotated[
+        str | None, typer.Option(help="entity | relation. Default: relation (kgqa).")
+    ] = None,
+    samples: Annotated[int | None, typer.Option(help="Walks for --strategy sample.")] = None,
+    temperature: Annotated[float | None, typer.Option(help="Sampling temperature.")] = None,
+    seed: Annotated[int | None, typer.Option(help="Sampling seed.")] = None,
+    label_style: Annotated[str | None, typer.Option(help="opaque | readable")] = None,
     max_calls: Annotated[int | None, typer.Option(help="Abort after this many calls.")] = None,
     max_input_tokens: Annotated[
         int | None, typer.Option(help="Abort past this many tokens.")
@@ -175,23 +181,32 @@ def query(  # noqa: PLR0917 - Typer maps parameters to CLI options
         typer.Option(help="Re-walk with the LLM decider below this confidence (e.g. 0.9)."),
     ] = None,
 ) -> None:
-    """Answer a query by traversing the graph with Jev decisions."""
+    """Answer a query by traversing the graph with Jev decisions (by default the
+    measured KG-QA setting, ``TraversalConfig.kgqa()``; flags override it)."""
     if escalate_below is not None and not 0.0 < escalate_below <= 1.0:
         typer.echo("--escalate-below must be in (0, 1]", err=True)
         raise typer.Exit(code=2)
     try:
+        # Start from the measured KG-QA setting; flags given override it.
+        base = TraversalConfig.kgqa()
+        given = {
+            "strategy": strategy,
+            "beam_width": beam_width,
+            "hop_mode": hop_mode,
+            "n_samples": samples,
+            "temperature": temperature,
+            "seed": seed,
+            "label_style": label_style,
+        }
         config = TraversalConfig.model_validate(
             {
-                "strategy": strategy,
-                "beam_width": beam_width,
-                "hop_mode": hop_mode,
-                "n_samples": samples,
-                "temperature": temperature,
-                "seed": seed,
-                "label_style": label_style,
+                **base.model_dump(),
+                **{k: v for k, v in given.items() if v is not None},
                 "budget": {
-                    "max_depth": max_depth,
-                    "max_decision_calls": max_calls,
+                    "max_depth": base.budget.max_depth if max_depth is None else max_depth,
+                    "max_decision_calls": (
+                        base.budget.max_decision_calls if max_calls is None else max_calls
+                    ),
                     "max_input_tokens": max_input_tokens,
                 },
             }

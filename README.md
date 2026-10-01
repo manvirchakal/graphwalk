@@ -124,9 +124,10 @@ graphwalk query kg.db "Where was the director of Inception born?" --escalate-bel
 ```
 
 ```python
-from graphwalk import Index, TraversalConfig
+from graphwalk import Index
 
-async with Index.open("kg.db", traversal=TraversalConfig.kgqa(), escalate_below=0.9) as index:
+# walk() uses TraversalConfig.kgqa() unless you pass traversal=
+async with Index.open("kg.db", escalate_below=0.9) as index:
     await index.import_triples("kg.nt")
     result = await index.walk("Where was the director of Inception born?")
     print(result.best.names, result.confidence, result.escalated, result.cost_usd)

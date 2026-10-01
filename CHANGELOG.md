@@ -10,6 +10,14 @@ API; the changelog says when.
 The proof of concept (milestones M0–M7). Nothing is published yet; v0.1 is planned
 in [`roadmap.md`](roadmap.md).
 
+### Changed
+
+- Walks default to `TraversalConfig.kgqa()` (greedy relation hops), the setting
+  measured on curated graphs: `Index.walk`, `graphwalk query` (its flags now override
+  single settings of it), and the MCP `walk` tool. Previously they used a bare
+  `TraversalConfig()` (beam search over individual neighbors), which no experiment
+  found best. Graph `locate` keeps the bare default.
+
 ### Added
 
 - Faster walks at high-degree nodes: stores may implement `AdjacencyStore` (SQLite

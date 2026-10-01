@@ -3,10 +3,11 @@
 import re
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 import graphwalk
-from graphwalk import Index, TraversalConfig, guide
+from graphwalk import Index, TraversalConfig, cli, guide
 from graphwalk.cli import app
 from graphwalk.eval.suite import preset_config
 from kg_fixtures import movie_store, oracle
@@ -76,3 +77,31 @@ async def test_index_passes_node_types_for_the_answer_type_hint() -> None:
         assert traverser.config.answer_type == expected  # pyright: ignore[reportAttributeAccessIssue]
     await untyped.close()
     await typed.close()
+
+
+async def test_index_walks_with_kgqa_by_default() -> None:
+    index = Index(await movie_store(), decider=oracle({}))
+    walk = index._graph_locator("walk")._traverser  # pyright: ignore[reportPrivateUsage]
+    locate = index._graph_locator()._traverser  # pyright: ignore[reportPrivateUsage]
+    # Without node types the answer-type hint is off; the rest is kgqa().
+    expected = TraversalConfig.kgqa(answer_type="off")
+    assert walk.config == expected  # pyright: ignore[reportAttributeAccessIssue]
+    assert locate.config == TraversalConfig()  # pyright: ignore[reportAttributeAccessIssue]
+    await index.close()
+
+
+def test_cli_query_walks_with_kgqa_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[TraversalConfig] = []
+
+    async def fake_run(*args: object) -> None:
+        seen.append(args[3])  # pyright: ignore[reportArgumentType]
+        raise ValueError("stop")
+
+    monkeypatch.setattr(cli, "_run_query", fake_run)
+    graph = tmp_path / "g.json"
+    CliRunner().invoke(app, ["query", str(graph), "q"])
+    CliRunner().invoke(app, ["query", str(graph), "q", "--hop-mode", "entity"])
+    assert seen[0] == TraversalConfig.kgqa()
+    assert seen[1] == TraversalConfig.kgqa(hop_mode="entity")

@@ -60,12 +60,11 @@ Importing triples needs no key at all.
 
 ```bash
 graphwalk import kg.nt --graph kg.db      # .nt, .csv, .tsv, .jsonl, or a|b|c .txt
-graphwalk query kg.db "Where was the director of Inception born?" \
-    --hop-mode relation --strategy greedy --max-depth 4 --escalate-below 0.9
+graphwalk query kg.db "Where was the director of Inception born?" --escalate-below 0.9
 ```
 
-(The CLI flags approximate `TraversalConfig.kgqa()`; the library gives the full
-setting.)
+(`query` walks with `TraversalConfig.kgqa()` by default; flags such as `--hop-mode` or
+`--strategy` override single settings.)
 
 ```python
 import asyncio
@@ -75,7 +74,7 @@ from graphwalk import Index, TraversalConfig
 async def main() -> None:
     async with Index.open(
         "kg.db",
-        traversal=TraversalConfig.kgqa(),
+        traversal=TraversalConfig.kgqa(),  # the default; shown for clarity
         node_types=["person", "film", "place"],  # your graph's types, for the type hint
         escalate_below=0.9,
     ) as index:
@@ -91,9 +90,10 @@ asyncio.run(main())
 ```
 
 - `TraversalConfig.kgqa()` is the configuration measured in the experiments (greedy
-  relation hops, typed options, answer-type hint, depth ≤ 4). The default
-  `TraversalConfig()` (beam search over individual neighbors) was not the best measured
-  setting for KG-QA; prefer `kgqa()`.
+  relation hops, typed options, answer-type hint, depth ≤ 4), and what `Index`, the CLI,
+  and the MCP server walk with unless given another. A bare `TraversalConfig()` (beam
+  search over individual neighbors) is a low-level default for `Traverser`, not a
+  measured setting.
 - `result.best.names` is a **set** of entities (a relation hop moves to all its
   targets). `result.best.path` is the list of hops taken; show it to users as the
   justification.
@@ -178,7 +178,8 @@ CLI: `graphwalk import`, `query`, `ingest`, `locate`, `migrate`, `mcp`, `guide`.
 - Expecting constraint handling ("first", "largest", "both A and B"). graphwalk doesn't
   filter, rank, or intersect answer sets; do that in your own code, or pick another tool.
 - Comparing confidence across deciders. Only Jev's confidence was found informative.
-- Leaving `TraversalConfig()` at its defaults for KG-QA. Use `TraversalConfig.kgqa()`.
+- Passing a bare `TraversalConfig()` to `Index` or `Traverser` for KG-QA. Use
+  `TraversalConfig.kgqa()` (the `Index` default) and override single fields.
 - Assuming the escalation threshold transfers. Check it on your own graph.
 - Opaque node ids as names (`Q42`, `m.0abc`). Import names (`rdfs:label` or the name
   columns) so the decider can read the options.

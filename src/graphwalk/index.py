@@ -79,8 +79,11 @@ class Index:
       the index builds its own backends or is given a config) re-walks queries whose
       best answer's confidence is below the threshold; by default the LLM-as-decider
       on the escalation model (see :mod:`graphwalk.traversal.escalation`);
+    * ``traversal`` configures walks and graph ``locate``; by default ``walk`` uses
+      :meth:`TraversalConfig.kgqa`, the setting measured on curated graphs (greedy
+      relation hops), and ``locate`` the base ``TraversalConfig()``;
     * ``node_types`` lists the graph's node types, for the walk's answer-type hint
-      (``TraversalConfig(answer_type=...)``, e.g. :meth:`TraversalConfig.kgqa`);
+      (``TraversalConfig(answer_type=...)``, on in :meth:`TraversalConfig.kgqa`);
     * ``embedder`` is optional for graph ``locate`` (it prefilters wide steps and backs
       name linking; not built by default, since fastembed downloads a model) and
       required for ``dense`` and ``hybrid`` (built from config if not passed).
@@ -120,14 +123,15 @@ class Index:
         self._llm = llm
         self._escalation_llm = escalation_llm
         self._embedder = embedder
-        self._traversal = traversal or TraversalConfig()
+        self._traversal = traversal
         self._node_types = node_types
         self._ingest = ingest or IngestConfig()
         if documents is None and isinstance(store, DocumentStore):
             documents = StoredDocuments(store)
         self._documents = documents
         self._cache = extraction_cache
-        self._graph: GraphLocator | None = None
+        self._graphs: dict[str, GraphLocator] = {}
+        """Graph locators by use (``walk``, ``locate``); they differ only by default."""
         self._dense: DenseLocator | None = None
 
     @classmethod
@@ -210,8 +214,8 @@ class Index:
             escalation_llm=self._escalation_llm,
         )
         report = await pipeline.ingest(source, on_progress=on_progress)
-        if self._graph is not None:
-            self._graph.refresh()
+        for locator in self._graphs.values():
+            locator.refresh()
         if self._dense is not None:
             self._dense.refresh()
         return report
@@ -229,8 +233,8 @@ class Index:
         report = await import_file(
             self.store, Path(path), fmt=fmt, source_id=source_id, default_type=default_type
         )
-        if self._graph is not None:
-            self._graph.refresh()
+        for locator in self._graphs.values():
+            locator.refresh()
         return report
 
     # ------------------------------------------------------------------ locate / read
@@ -243,14 +247,24 @@ class Index:
             return self.config.settings.escalate_below
         return self._escalate_below
 
-    def _graph_locator(self) -> GraphLocator:
-        if self._graph is None:
+    def _traversal_for(self, use: Literal["walk", "locate"]) -> TraversalConfig:
+        """The configured traversal; by default :meth:`TraversalConfig.kgqa` for walks
+        (measured on curated graphs) and the base ``TraversalConfig()`` for ``locate``
+        (unchanged since E1)."""
+        if self._traversal is not None:
+            return self._traversal
+        return TraversalConfig.kgqa() if use == "walk" else TraversalConfig()
+
+    def _graph_locator(self, use: Literal["walk", "locate"] = "locate") -> GraphLocator:
+        locator = self._graphs.get(use)
+        if locator is None:
+            config = self._traversal_for(use)
             threshold = self.escalate_below
             traverser: Walker = Traverser(
                 self.store,
                 self.decider,
                 embedder=self._embedder,
-                config=self._traversal,
+                config=config,
                 node_types=self._node_types,
             )
             if threshold is not None:
@@ -258,12 +272,13 @@ class Index:
                     self.store,
                     self.fallback_decider,
                     embedder=self._embedder,
-                    config=self._traversal,
+                    config=config,
                     node_types=self._node_types,
                 )
                 traverser = EscalatingTraverser(traverser, fallback, threshold=threshold)
-            self._graph = GraphLocator(self.store, traverser, documents=self._documents)
-        return self._graph
+            locator = GraphLocator(self.store, traverser, documents=self._documents)
+            self._graphs[use] = locator
+        return locator
 
     def _dense_locator(self) -> DenseLocator:
         if self._dense is None:
@@ -306,7 +321,7 @@ class Index:
         """Answer ``query`` from the graph itself: link the entities it names, walk from
         each, and return the answers with their confidence. For curated graphs, where
         the graph holds the facts; for text, :meth:`locate` and read the source."""
-        entries, _, walks = await self._graph_locator().walk(query)
+        entries, _, walks = await self._graph_locator("walk").walk(query)
         return WalkResult(query=query, entries=tuple(entries), walks=tuple(walks))
 
     async def read(
