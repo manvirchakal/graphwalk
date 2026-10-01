@@ -30,6 +30,7 @@ from graphwalk.core.model import (
     NodeId,
     StoredDocument,
 )
+from graphwalk.stores.base import Adjacent, NodeLabel
 
 SCHEMA_VERSION = 1
 
@@ -254,6 +255,38 @@ class SQLiteStore:
         ]
         result.sort(key=lambda n: (n.direction != "out", n.edge.type, n.node.id))
         return result
+
+    async def adjacency(self, node_id: NodeId, *, direction: Direction) -> list[Adjacent]:
+        """Incident edges as ids only: no model is parsed (see :class:`AdjacencyStore`)."""
+        if self._db.execute("SELECT 1 FROM nodes WHERE id = ?", (node_id,)).fetchone() is None:
+            raise NodeNotFoundError(node_id)
+        found: list[Adjacent] = []
+        if direction in ("out", "both"):
+            rows = self._db.execute("SELECT type, target FROM edges WHERE source = ?", (node_id,))
+            found += [Adjacent(relation, "out", other) for relation, other in rows]
+        if direction in ("in", "both"):
+            # With "both", a self-loop is reported once, as "out" (as neighbors does).
+            loops = " AND source != target" if direction == "both" else ""
+            rows = self._db.execute(
+                f"SELECT type, source FROM edges WHERE target = ?{loops}",  # noqa: S608 - constant
+                (node_id,),
+            )
+            found += [Adjacent(relation, "in", other) for relation, other in rows]
+        return found
+
+    async def node_labels(self, node_ids: Sequence[NodeId]) -> dict[NodeId, NodeLabel]:
+        """Read in SQL (``json_extract``), without parsing the nodes."""
+        found: dict[NodeId, NodeLabel] = {}
+        unique = list(dict.fromkeys(node_ids))
+        for start in range(0, len(unique), 500):
+            batch = unique[start : start + 500]
+            marks = ",".join("?" * len(batch))
+            fields = "id, json_extract(data, '$.name'), type, json_extract(data, '$.summary')"
+            sql = f"SELECT {fields} FROM nodes WHERE id IN ({marks})"  # noqa: S608 - placeholders only
+            rows = self._db.execute(sql, batch)
+            for node_id, name, type_, summary in rows:
+                found[node_id] = NodeLabel(name, type_, summary)
+        return found
 
     async def degree(
         self,

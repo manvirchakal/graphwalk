@@ -82,8 +82,13 @@ def node_card(node: Node, *, include_summary: bool) -> dict[str, JsonValue]:
 
 def node_text(node: Node) -> str:
     """Plain text for embedding a node."""
-    text = f"{node.name} ({node.type})"
-    return f"{text}: {node.summary}" if node.summary else text
+    return label_text(node.name, node.type, node.summary)
+
+
+def label_text(name: str, type_: str, summary: str | None) -> str:
+    """:func:`node_text` from the fields alone (stores can read them without the node)."""
+    text = f"{name} ({type_})"
+    return f"{text}: {summary}" if summary else text
 
 
 def edge_text(current: str, relation: str, direction: Literal["out", "in"], other: str) -> str:

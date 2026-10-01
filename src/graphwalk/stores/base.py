@@ -16,7 +16,7 @@ contract pins down, so traversal is reproducible across backends:
 """
 
 from collections.abc import AsyncIterator, Collection, Sequence
-from typing import Protocol, runtime_checkable
+from typing import Literal, NamedTuple, Protocol, runtime_checkable
 
 from pydantic import JsonValue
 
@@ -122,6 +122,42 @@ class GraphStore(Protocol):
         ...
 
     async def close(self) -> None: ...
+
+
+class Adjacent(NamedTuple):
+    """One incident edge, without its models: what traversal needs to list options."""
+
+    relation: str
+    direction: Literal["out", "in"]
+    other: NodeId
+
+
+class NodeLabel(NamedTuple):
+    """The fields of a node that option ranking reads."""
+
+    name: str
+    type: str
+    summary: str | None
+
+
+@runtime_checkable
+class AdjacencyStore(Protocol):
+    """Optional fast path for traversal over high-degree nodes.
+
+    A hub with 20k edges costs seconds to load as models; traversal needs only the
+    edge types and endpoint ids to list its options, and full nodes only for the options
+    it keeps. Stores that implement this are walked through it (same results, same
+    order: ``tests/unit/test_adjacency.py`` checks parity with ``neighbors``).
+    """
+
+    async def adjacency(self, node_id: NodeId, *, direction: Direction) -> list[Adjacent]:
+        """``neighbors(node_id, direction=...)`` as ``(edge type, direction, other id)``,
+        in any order (the caller sorts). Raises :class:`NodeNotFoundError` like it."""
+        ...
+
+    async def node_labels(self, node_ids: Sequence[NodeId]) -> dict[NodeId, NodeLabel]:
+        """Name, type, and summary of each existing node in ``node_ids``."""
+        ...
 
 
 @runtime_checkable

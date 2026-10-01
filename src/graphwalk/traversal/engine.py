@@ -40,7 +40,7 @@ from graphwalk.decisions.base import (
     JSONContent,
 )
 from graphwalk.embeddings.base import Embedder, Vectors
-from graphwalk.stores.base import GraphStore
+from graphwalk.stores.base import AdjacencyStore, Adjacent, GraphStore
 from graphwalk.traversal import prompts
 from graphwalk.traversal.batching import split_questions
 from graphwalk.traversal.config import TraversalConfig
@@ -291,6 +291,7 @@ class Traverser:
         frontier_nodes = [run.nodes[n] for n in beam.frontier]
         moves, more_pruned = await self._cap_options(run, beam, moves)
         pruned.extend(more_pruned)
+        await self._load(run, [t for m in moves for t in m.targets])
         if cfg.hop_mode == "entity":
             names: list[str | None] = [run.nodes[m.targets[0]].name for m in moves]
         else:
@@ -356,19 +357,20 @@ class Traverser:
         return all(node.type != expected[0] for node in frontier)
 
     async def _moves(self, run: _Run, beam: _Beam) -> tuple[list[Move], list[Pruned]]:
+        """The beam's moves. Targets may not be loaded yet: :meth:`_plan` loads the ones
+        that survive capping (:meth:`_load`), so a hub's thousands of neighbors are never
+        all parsed into models."""
         cfg = self.config
         grouped: dict[tuple[str, Literal["out", "in"]], list[NodeId]] = defaultdict(list)
         moves: list[Move] = []
         for node_id in beam.frontier:
-            for neighbor in await self.store.neighbors(node_id, direction=cfg.direction):
-                target = neighbor.node.id
+            for relation, direction, target in await self._adjacent(run, node_id):
                 if cfg.exclude_visited and target in beam.visited:
                     continue
-                run.nodes.setdefault(target, neighbor.node)
                 if cfg.hop_mode == "entity":
-                    moves.append(Move(neighbor.edge.type, neighbor.direction, (target,)))
+                    moves.append(Move(relation, direction, (target,)))
                 else:
-                    targets = grouped[(neighbor.edge.type, neighbor.direction)]
+                    targets = grouped[(relation, direction)]
                     if target not in targets:
                         targets.append(target)
         pruned: list[Pruned] = []
@@ -382,6 +384,35 @@ class Traverser:
             moves.sort(key=lambda m: (m.direction != "out", m.relation))
         return moves, pruned
 
+    async def _adjacent(self, run: _Run, node_id: NodeId) -> list[Adjacent]:
+        """Incident edges in ``neighbors`` order: ``(direction, edge type, node id)``."""
+        direction = self.config.direction
+        if isinstance(self.store, AdjacencyStore):
+            found = await self.store.adjacency(node_id, direction=direction)
+            return sorted(found, key=lambda a: (a.direction != "out", a.relation, a.other))
+        adjacent: list[Adjacent] = []
+        for neighbor in await self.store.neighbors(node_id, direction=direction):
+            run.nodes.setdefault(neighbor.node.id, neighbor.node)
+            adjacent.append(Adjacent(neighbor.edge.type, neighbor.direction, neighbor.node.id))
+        return adjacent
+
+    async def _load(self, run: _Run, node_ids: Sequence[NodeId]) -> None:
+        missing = [n for n in dict.fromkeys(node_ids) if n not in run.nodes]
+        if missing:
+            run.nodes.update(await self.store.get_nodes(missing))
+
+    async def _texts(self, run: _Run, node_ids: Sequence[NodeId]) -> list[str]:
+        """Embedding text per node, read without loading nodes where the store can."""
+        missing = [n for n in node_ids if n not in run.nodes]
+        if missing and isinstance(self.store, AdjacencyStore):
+            labels = await self.store.node_labels(missing)
+            return [
+                prompts.label_text(*labels[n]) if n in labels else prompts.node_text(run.nodes[n])
+                for n in node_ids
+            ]
+        await self._load(run, missing)
+        return [prompts.node_text(run.nodes[n]) for n in node_ids]
+
     async def _cap_frontier(
         self, run: _Run, targets: list[NodeId]
     ) -> tuple[list[NodeId], list[NodeId]]:
@@ -390,7 +421,7 @@ class Traverser:
             return targets, []
         if self._cache is None:
             return targets[:cap], targets[cap:]
-        texts = [prompts.node_text(run.nodes[t]) for t in targets]
+        texts = await self._texts(run, targets)
         ranked = await rank_by_similarity(self._cache, run.query, texts)
         keep = sorted(i for i, _ in ranked[:cap])
         keep_set = set(keep)
@@ -404,7 +435,7 @@ class Traverser:
         hard_cap = self.decider.max_options - 1  # one slot for STOP
         if self._cache is not None and len(moves) > cfg.prefilter_threshold:
             cap = min(cfg.prefilter_top_n, hard_cap)
-            texts = [self._move_text(run, move) for move in moves]
+            texts = await self._move_texts(run, moves)
             ranked = await rank_by_similarity(self._cache, run.query, texts)
             keep = {i for i, _ in ranked[:cap]}
             pruned = [
@@ -430,12 +461,12 @@ class Traverser:
             return moves[:hard_cap], pruned
         return moves, []
 
-    def _move_text(self, run: _Run, move: Move) -> str:
+    async def _move_texts(self, run: _Run, moves: Sequence[Move]) -> list[str]:
         # Entity mode ranks by the target node's text alone, so vectors can be precomputed
         # once per graph (see preload_embeddings) instead of embedded per step.
         if self.config.hop_mode == "entity":
-            return prompts.node_text(run.nodes[move.targets[0]])
-        return move.relation
+            return await self._texts(run, [move.targets[0] for move in moves])
+        return [move.relation for move in moves]
 
     async def _ask(
         self, run: _Run, depth: int, questions: list[ChoiceQuestion]
