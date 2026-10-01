@@ -309,3 +309,37 @@ Limits: one dataset, one cheap agent model, topic entities given; a stronger age
 might explore more efficiently (narrowing the walk's token savings) or trust walks
 differently. Turns and tokens are logged per question, so other prices can be applied
 to `results.json` without rerunning.
+
+### A8b: a strong agent model (`results/agent/20261001T214718Z-webqsp-agent/`)
+
+The same harness, the first 30 questions, with a frontier-class agent (Gemini 3.1 Pro,
+$2/$12 per M tokens; actual OpenRouter charges). ≈ $3.30.
+
+| arm | F1 [95% CI] | hits@1 | turns | agent in / out tok | $/q (incl. tools) | p50 latency s |
+|---|---|---|---|---|---|---|
+| closed book | 0.57 [0.43, 0.71] | 0.77 | 1 | 177 / 886 | 0.011 | 7 |
+| graph tools | 0.71 [0.57, 0.85] | 0.77 | 6.4 | 9,839 / 1,882 | 0.042 | 30 |
+| graph tools + walk | **0.75** [0.62, 0.88] | 0.80 | 6.4 | 8,804 / 1,142 | 0.032 | 24 |
+| search (RAG) | 0.72 [0.57, 0.85] | 0.83 | 6.9 | 7,171 / 1,136 | **0.028** | 40 |
+
+Paired: walk − graph F1 +0.04 [−0.01, +0.12], cost **−$0.011/q [−0.019, −0.003] (−25%)**;
+walk − search F1 +0.03 [−0.03, +0.11], cost +$0.004/q [−0.002, +0.009].
+
+| first walk | q | F1 walk / graph | turns walk / graph | $/q walk / graph |
+|---|---|---|---|---|
+| ≥ 0.9 | 11 | 0.97 / 0.97 | 5.4 / 5.0 | 0.024 / 0.033 |
+| < 0.9 | 15 | 0.57 / 0.52 | 7.7 / 7.8 | 0.041 / 0.055 |
+| not called | 4 | 0.82 / 0.74 | 4.5 / 4.8 | 0.017 / 0.020 |
+
+- **The cost saving is real with an expensive agent** (−25%, CI excludes 0), close to
+  the −34% predicted by repricing A8's cheap-agent tokens, at equal or slightly better
+  accuracy.
+- **But not by the mechanism expected.** The strong agent does not stop at a confident
+  walk: it verifies (5.4 turns vs 5.0). The saving is in tokens: fewer `neighbors`/
+  `relations` calls per turn and ~40% less output (reasoning) per question. A strong
+  agent treats the walk as a map, not an answer.
+- **Search (RAG) is as accurate and slightly cheaper** than either graph arm on this
+  benchmark, but the slowest (p50 40 s, more rounds). Over short Freebase triples,
+  dense search is a strong baseline for a strong agent.
+- **The strong model knows WebQSP better** (closed book 0.57), which compresses every
+  arm's margin; 30 questions cannot separate the three tool sets on accuracy.
