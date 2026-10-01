@@ -128,3 +128,43 @@ Escalation, simulated offline (an escalated question pays for both systems):
   also favors the path writer, the paper's KG-QA claim narrows to "cheap first pass
   with informative confidence", and the release story to the cost and latency of
   walking.
+
+## A2 pilot: CWQ, 50 questions (`results/kgqa/20261001T160324Z-cwq/`)
+
+Same setup as WebQSP. CWQ composes WebQSP questions with constraints, conjunctions,
+comparisons, and superlatives, up to four hops. Only 40 of the 50 sampled questions
+have their answer inside their subgraph.
+
+| system | hits@1 | F1 | $ / 1k q | p50 s | AUROC of confidence |
+|---|---|---|---|---|---|
+| graphwalk, Jev | 0.28 | 0.32 | **0.22** | **1.7** | 0.71 |
+| graphwalk, LLM decider | 0.28 | 0.33 | 1.14 | 33.8 | 0.50 |
+| LLM writes the relation path (2 retries) | 0.26 | 0.29 | 1.23 | 8.1 | — |
+
+F1 gap, Jev − path writer: +0.02 [−0.07, +0.11]. Every cascade escalates 60–92% of
+questions and gains nothing measurable.
+
+- **Here Jev ties the alternatives at about a fifth of the cost and latency.** The
+  path writer's advantage on WebQSP disappears when the path is long and
+  compositional (it needs 1.7 calls per question and retries more often).
+- **But every system is weak.** Published methods report hits@1 of about 0.63 (RoG)
+  to 0.69 (Think-on-Graph with GPT-4) on CWQ. Our three systems are one greedy relation
+  path from the topic entity, or one written path, with a small model. None handles
+  CWQ's constraints ("the earliest", "that also ..."), and a fifth of the sample has
+  no answer in its subgraph. Parity at 0.3 is not evidence the method is good. It only
+  shows that nothing in this comparison is.
+- **Confidence is weaker here** (AUROC 0.71) but still informative; the LLM decider's
+  is not (0.50).
+
+## A2 verdict (both pilots, 100 questions, about $0.20)
+
+- **The full A2 run is not worth its $20–35 as designed.** On WebQSP the LLM path
+  writer wins outright. On CWQ everything ties at a low level, far below published
+  numbers. More seeds would firm up those two statements without changing them.
+- **What survives:** Jev's confidence is informative (AUROC 0.92 / 0.71, vs 0.63 /
+  0.50 for the LLM decider), and Jev walks are 4–5× cheaper and 2–15× faster.
+  Escalation pays off on curated graphs with a small schema (MetaQA, A1), not on
+  Freebase, where one LLM call can write the path.
+- **To compete on CWQ** would need beam search over multiple topic entities plus
+  constraint handling (filters and superlatives on the reached set). That is a
+  research project, not a run.
