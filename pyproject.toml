@@ -23,9 +23,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-neo4j = [
-    "neo4j>=5.26",
-]
 embeddings = [
     "fastembed>=0.7",
 ]
@@ -41,6 +38,12 @@ eval = [
     "httpx>=0.28",
     "pyarrow>=17",  # FanOutQA's Wikipedia corpus mirror is an Arrow file
 ]
+
+[project.urls]
+Homepage = "https://github.com/manvirchakal/graphwalk"
+Documentation = "https://github.com/manvirchakal/graphwalk#readme"
+Changelog = "https://github.com/manvirchakal/graphwalk/blob/main/CHANGELOG.md"
+Issues = "https://github.com/manvirchakal/graphwalk/issues"
 
 [project.scripts]
 graphwalk = "graphwalk.cli:app"

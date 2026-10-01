@@ -291,7 +291,7 @@ folder, and a confidence interval where applicable.
    curated knowledge graph (MetaQA subset).
 4. Packaging:
    - PyPI release through trusted publishing from CI.
-   - The optional dependency extras (`mcp`, `llm`, `embeddings`, `eval`, `neo4j`)
+   - The optional dependency extras (`mcp`, `llm`, `embeddings`, `eval`; the unused `neo4j` extra is dropped until an adapter exists)
      are rationalized.
    - The GHCR image is tagged `v0.1.0`.
 5. Licenses and attribution: Apache-2.0 for the code. Datasets aren't redistributed;

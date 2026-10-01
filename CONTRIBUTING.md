@@ -7,7 +7,7 @@ uv sync --all-extras      # base deps, every optional extra, and the dev group
 uvx pre-commit install    # optional: run the checks below on every commit
 ```
 
-Add extras as needed (`uv sync --extra neo4j`, and so on). Use `uv add` / `uv add --optional <extra>`
+Add extras as needed (`uv sync --extra llm`, and so on). Use `uv add` / `uv add --optional <extra>`
 to change dependencies, and commit the updated `uv.lock`.
 
 ## Checks

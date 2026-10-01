@@ -1,0 +1,16 @@
+subject,relation,object,subject_type,object_type
+Inception,directed_by,Christopher Nolan,film,person
+Inception,starred_actors,Leonardo DiCaprio,film,person
+Inception,release_year,2010,film,year
+Interstellar,directed_by,Christopher Nolan,film,person
+Interstellar,starred_actors,Matthew McConaughey,film,person
+Interstellar,release_year,2014,film,year
+The Prestige,directed_by,Christopher Nolan,film,person
+The Prestige,starred_actors,Hugh Jackman,film,person
+Christopher Nolan,born_in,London,person,place
+Leonardo DiCaprio,born_in,Los Angeles,person,place
+Matthew McConaughey,born_in,Uvalde,person,place
+Hugh Jackman,born_in,Sydney,person,place
+The Revenant,starred_actors,Leonardo DiCaprio,film,person
+The Revenant,directed_by,Alejandro González Iñárritu,film,person
+Alejandro González Iñárritu,born_in,Mexico City,person,place

@@ -105,3 +105,14 @@ def test_cli_query_walks_with_kgqa_by_default(
     CliRunner().invoke(app, ["query", str(graph), "q", "--hop-mode", "entity"])
     assert seen[0] == TraversalConfig.kgqa()
     assert seen[1] == TraversalConfig.kgqa(hop_mode="entity")
+
+
+async def test_kg_example_imports_and_names_its_types(tmp_path: Path) -> None:
+    example = Path(__file__).parents[2] / "examples" / "kg"
+    async with Index.open(tmp_path / "movies.db", decider=oracle({})) as index:
+        report = await index.import_triples(example / "movies.csv")
+        assert (report.nodes, report.edges, report.skipped) == (16, 15, 0)
+        types = {n.type async for n in index.store.iter_nodes()}
+    assert types == {"film", "person", "place", "year"}
+    listed = ", ".join(f'"{t}"' for t in sorted(types))
+    assert f"TYPES = [{listed}]" in (example / "walk.py").read_text(encoding="utf-8")
