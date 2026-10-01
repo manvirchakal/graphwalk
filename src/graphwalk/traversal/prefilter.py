@@ -31,17 +31,26 @@ class EmbeddingCache:
         return self._vectors.get(text) if vector is None else vector
 
     async def embed(self, texts: Sequence[str]) -> Vectors:
-        missing = list(dict.fromkeys(t for t in texts if self._get(t) is None))
-        if missing:
-            if len(self._vectors) + len(missing) > self._max_entries:
-                self._vectors.clear()
-            fresh = await self.embedder.embed(missing)
-            for text, vector in zip(missing, fresh, strict=True):
-                self._vectors[text] = vector
+        """One row per text, in order. Vectors found in the cache are held for this call
+        before any eviction, so eviction can never drop rows from the result."""
         if not texts:
             return np.zeros((0, 0), dtype=np.float32)
-        rows = [self._get(t) for t in texts]
-        return np.stack([r for r in rows if r is not None]).astype(np.float32, copy=False)
+        found: dict[str, np.ndarray] = {}
+        missing: list[str] = []
+        for text in dict.fromkeys(texts):
+            vector = self._get(text)
+            if vector is None:
+                missing.append(text)
+            else:
+                found[text] = vector
+        if missing:
+            fresh = await self.embedder.embed(missing)
+            if len(self._vectors) + len(missing) > self._max_entries:
+                self._vectors.clear()
+            for text, vector in zip(missing, fresh, strict=True):
+                self._vectors[text] = vector
+                found[text] = vector
+        return np.stack([found[t] for t in texts]).astype(np.float32, copy=False)
 
 
 async def rank_by_similarity(
