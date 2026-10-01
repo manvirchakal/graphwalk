@@ -89,3 +89,42 @@ somewhat pessimistic.
   overflowed it, so the prefilter crashed on a 20k-option step (now fixed, with a
   regression test). No earlier result was affected: any occurrence would have raised
   an error, and none was recorded.
+
+## A2 pilot: WebQSP, 50 questions (`scripts/eval/kgqa.py`, `results/kgqa/20261001T153829Z-webqsp/`)
+
+Freebase per-question subgraphs (RoG release; median ~4,400 triples), topic entities
+given, seed 0, n = 50 (every sampled question has its answer in its subgraph).
+
+| system | hits@1 | F1 | $ / 1k q | p50 s | AUROC of confidence |
+|---|---|---|---|---|---|
+| graphwalk, Jev | 0.54 | 0.54 | 0.21 | 3.4 | **0.92** |
+| graphwalk, LLM decider | 0.66 | 0.69 | 0.91 | 26.9 | 0.63 |
+| LLM writes the relation path (2 retries) | **0.74** | **0.76** | 0.72 | 2.6 | — |
+
+Escalation, simulated offline (an escalated question pays for both systems):
+
+| cascade | escalated | F1 | $ / 1k q | F1 vs path writer |
+|---|---|---|---|---|
+| Jev → LLM decider, below 0.9 | 52% | 0.68 | 0.77 | −0.08 [−0.18, +0.01] |
+| Jev → path writer, below 0.8 | 36% | 0.68 | 0.49 | −0.08 [−0.17, +0.00] |
+| Jev → path writer, below 0.9 | 52% | 0.72 | 0.61 | −0.04 [−0.10, +0.00] |
+| Jev → path writer, below 0.95 | 66% | 0.76 | 0.70 | +0.00 |
+
+- **Confidence is informative here too** (AUROC 0.92, vs 0.63 for the LLM decider),
+  so that half of the kill criterion passes.
+- **Escalation saves almost no money at equal accuracy**, so the other half fails.
+  The path writer is strongest: Freebase relation names are self-describing
+  (`people.person.place_of_birth`) and each subgraph's schema is small, so one LLM call
+  usually writes the right path. The questions Jev answers confidently are the easy
+  ones the path writer also gets (top 20 by confidence: both EM 0.80). Matching the
+  path writer's accuracy means escalating two thirds of the questions, at 96% of its
+  cost.
+- **Caveats:** n = 50, one seed, wide CIs. Jev's 3.4 s p50 is mostly not decisions
+  (0.58 s): it is the per-question graph build (0.33 s) and embedding each
+  question's relation options on CPU with a cold cache, on a machine also running A5.
+- **Verdict, per the Phase 7 rule:** stop before the full A2 run. The one cheap check
+  left is CWQ (compositional questions, up to four hops), where writing the whole path
+  in one go should be hardest; E2b found walking wins on large, noisy schemas. If CWQ
+  also favors the path writer, the paper's KG-QA claim narrows to "cheap first pass
+  with informative confidence", and the release story to the cost and latency of
+  walking.
