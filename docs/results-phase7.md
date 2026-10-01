@@ -83,12 +83,41 @@ somewhat pessimistic.
   per-relation counts and a few preview targets from SQL (`GROUP BY type`) and load
   only the chosen relation's targets. Entity mode at a hub needs the prefilter
   computed from names and types in SQL, not full models.
-- Until then, the "fast" claim holds for graphs without very high-degree nodes, or
-  with hubs capped at import.
+- Fixed since: see "A5 after the hub fix" below.
 - **Found and fixed on the way:** the embedding cache could drop rows when one call
   overflowed it, so the prefilter crashed on a 20k-option step (now fixed, with a
   regression test). No earlier result was affected: any occurrence would have raised
   an error, and none was recorded.
+
+### A5 after the hub fix (`results/20261001T164752Z-scale/`)
+
+Two changes (roadmap Phase 8, hardening): stores can list a node's edges as ids only
+(`AdjacencyStore`; SQLite reads them straight from its indexes), and the engine loads
+full nodes only for the options it keeps. Profiling then found a quadratic loop: relation
+hops deduplicated each relation's targets with a list scan, 1.8 s of a 1.9 s walk from
+a hub. Same graph and machine (now otherwise idle), same scripted decider:
+
+| operation | before | after | speedup |
+|---|---|---|---|
+| list a hub's edges (`neighbors` → `adjacency`) | 1,157 ms | 56 ms | 21× |
+| walk, relation hops, from a hub | 3,069 ms | 113 ms | 27× |
+| walk, relation hops, typical nodes, p95 | 6,048 ms | 176 ms | 34× |
+| walk, entity hops, from a hub | 1,307 ms | 191 ms | 7× |
+| walk, entity hops, from a hub, with prefilter | 1,624 ms | 539 ms | 3× |
+| walk, typical nodes, p50 | 9–10 ms | 7–8 ms | |
+
+- **Hubs no longer dominate a walk:** the overhead is now below one Jev call
+  (~0.3–0.5 s) in every configuration.
+- **Results are unchanged.** A parity test walks a random graph with hubs and
+  self-loops through both paths, in both hop modes, with and without the prefilter,
+  and compares every step. The loader order is the same, so earlier results stand.
+- **The quadratic loop was in the shared code path,** so earlier relation-mode
+  latencies on graphs with large fan-outs (MetaQA's genres and years) were somewhat
+  inflated. Accuracy and cost were not affected.
+- **Still open:** with the prefilter, a hub's 20k neighbor names are embedded and
+  ranked. The benchmark's fake embedder makes that cheap. A real local embedder needs a
+  few seconds the first time it sees a hub, then hits its cache. Entity mode at hubs
+  is best run without the prefilter or with relation hops.
 
 ## A2 pilot: WebQSP, 50 questions (`scripts/eval/kgqa.py`, `results/kgqa/20261001T153829Z-webqsp/`)
 

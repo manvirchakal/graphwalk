@@ -374,9 +374,12 @@ equal accuracy, stop and reframe the paper before spending the rest.
    default for text (E1). Relation-schema normalization stays internal and
    undocumented: it showed no gain in M7, but `scripts/eval/walk_read.py` needs it to
    reproduce the M7 tables.
-4. **Hardening**: hub capping and prefiltering at scale (from A5); live tests for the
-   OpenAI, Anthropic, and x.ai providers, or a clear "untested" label.
-5. Then Phase 5 (docs, PyPI, GHCR, public repo). v0.1 is released after the A2 pilot,
+4. **Hardening**: hub capping and prefiltering at scale (from A5; **done**: an
+   ids-only adjacency path and a quadratic-loop fix, hub walks 7–27× faster); live
+   tests for the OpenAI, Anthropic, and x.ai providers, or a clear "untested" label.
+5. **Agent guidance** (**done**): `graphwalk guide`, a packaged `SKILL.md`, `llms.txt`,
+   and the guide as an MCP resource, with tests that keep it in step with the API.
+6. Then Phase 5 (docs, PyPI, GHCR, public repo). v0.1 is released after the A2 pilot,
    so its headline use case has evidence behind it.
 
 ## Dependencies at a glance

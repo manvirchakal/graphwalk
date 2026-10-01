@@ -16,7 +16,7 @@ setting, mostly one seed), so treat the numbers as directions, not guarantees.
 |---|---|---|
 | A knowledge graph you already have (triples, RDF), with a **large or messy schema**: hundreds of relation names, inconsistent naming, or edges in either direction | **graphwalk `walk`**. An LLM writing the query from the schema writes plausible relations that don't exist. Walking chooses among edges that do. | E2b: 3–5× the F1 of LLM-written paths at 1/20–1/35 the cost (absolute F1 still low, 0.18–0.25, on text-extracted graphs) |
 | A graph with a **small, clean schema** you can show an LLM in one prompt (≲ 50 self-describing relations) | **Have an LLM write the query** (a relation path, Cypher, SPARQL). It is more accurate, and often cheaper. Use graphwalk only if you need its latency or a per-answer confidence. | E2: MetaQA 3-hop 0.955 vs 0.887 F1; A2: WebQSP 0.76 vs 0.54 F1 |
-| You want a **cheap first pass that knows when it's wrong**, and to pay for a strong model only on hard queries | **`walk` with `escalate_below=0.9`** | A1: on MetaQA, matches the LLM decider's accuracy at 47–61% of its cost. On Freebase (WebQSP) it saves almost nothing. |
+| You want a **cheap first pass that knows when it's wrong**, and to pay for a strong model only on hard queries | **`walk` with `escalate_below=0.9`**, where an LLM can't write the query (see the rows above and below) | A1: on MetaQA, matches the LLM decider's accuracy at 47–61% of its cost. But on MetaQA an LLM-written path is cheaper still and as accurate, and on Freebase (WebQSP) escalation saves almost nothing. |
 | **Compositional questions with constraints** ("the earliest...", "which X that also Y", superlatives, comparisons) | **Not graphwalk.** It follows one relation path from the topic entity and does no filtering, ranking, or intersection. Use a dedicated KG-QA method or LLM-written queries with filters. | A2: CWQ hits@1 ≈ 0.28 for every system tried, vs ≈ 0.63–0.69 published |
 | **Questions over documents** (no curated graph) | **Multi-step RAG**, not graphwalk. Building a graph from text loses dates, order, and qualifiers. | M7, E4: RAG wins by 10–19 F1 points |
 | Retrieval over documents where questions **chain through named entities** ("the director of the film X...") | graphwalk `locate(mode="hybrid")` as the retriever, then read the text | E1: +18 points recall over dense on 2Wiki; ties on HotpotQA; −5 on FanOutQA |
@@ -32,9 +32,8 @@ Rules of thumb:
   decision, and its confidence separates right from wrong answers (AUROC 0.92–0.97 on
   MetaQA 2–3 hop and WebQSP; weaker, 0.64–0.71, on MetaQA 1-hop, 2Wiki, and CWQ). The
   LLM decider's confidence barely does (0.50–0.69).
-- **High-degree nodes are slow** (current release): a node with ~20k neighbors costs
-  1–3 s per walk step on SQLite. Walks that avoid such hubs add ~10 ms of overhead on
-  top of the model calls. See "Performance" below.
+- **Walking is fast; the model calls dominate.** graphwalk adds ~10 ms per walk on
+  typical nodes and ~0.1–0.5 s at nodes with 20k neighbors (SQLite, 1.4M edges).
 
 ## Install and keys
 
@@ -165,11 +164,12 @@ CLI: `graphwalk import`, `query`, `ingest`, `locate`, `migrate`, `mcp`, `guide`.
 
 - Per query: one Jev call per hop (~0.3–0.5 s each) plus graphwalk's overhead.
   MetaQA walks cost $0.05–0.15 per 1,000 queries; Freebase subgraph walks ≈ $0.2.
-- SQLite: imports ~8k triples/s; a 1.4M-edge graph is ~1.1 GB on disk. Neighbor lookups
-  take ~0.4 ms on typical nodes.
-- Hubs: a step from a node with ~20k neighbors takes 1–3 s in the current release.
-  Avoid modelling very high-fan-out facts (e.g. `country → every person`) as plain
-  edges, or accept the latency.
+- SQLite: imports ~9k triples/s; a 1.4M-edge graph is ~1.1 GB on disk. Listing a
+  node's edges takes <0.1 ms (56 ms at a 20k-neighbor hub).
+- Walk overhead, excluding model calls: ~8 ms on typical nodes; 0.1 s (relation hops)
+  to 0.2 s (entity hops) from a 20k-neighbor hub. With an embedder, the first visit to a
+  hub embeds its neighbors' names (seconds with a local CPU model; cached after), so
+  prefer relation hops (`TraversalConfig.kgqa()`) on graphs with big hubs.
 
 ## Common mistakes
 

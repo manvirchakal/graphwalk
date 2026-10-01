@@ -12,6 +12,11 @@ in [`roadmap.md`](roadmap.md).
 
 ### Added
 
+- Faster walks at high-degree nodes: stores may implement `AdjacencyStore` (SQLite
+  does), so traversal lists options from edge ids and loads only the nodes it keeps;
+  relation hops no longer deduplicate targets in quadratic time. Walks from a
+  20k-neighbor hub: 3.1 s → 0.11 s (relation hops), 1.3 s → 0.19 s (entity hops).
+
 - A guide for coding agents, shipped in the package: `graphwalk guide` (and
   `graphwalk.guide()`) prints when to use graphwalk (the measured regime map), recipes,
   the public API, and common mistakes; `graphwalk guide --skill` prints a `SKILL.md`.

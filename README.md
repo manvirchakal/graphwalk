@@ -24,7 +24,7 @@ to answer from the graph.
 | Situation | Best choice |
 |---|---|
 | Existing KG with a large or messy schema | **graphwalk `walk`**: 3–5× the F1 of LLM-written queries at 1/20 the cost |
-| Cheap first pass that knows when it's wrong | **`walk` + `escalate_below=0.9`**: LLM-decider accuracy at about half its cost on MetaQA |
+| Cheap first pass that knows when it's wrong | **`walk` + `escalate_below=0.9`**: LLM-decider accuracy at about half its cost on MetaQA (where an LLM-written path is cheaper still) |
 | Small, clean schema (fits in one prompt) | An LLM writing the query (more accurate; on WebQSP, 0.76 vs 0.54 F1) |
 | Questions with constraints or superlatives (CWQ) | Neither: every system we tried scores about 0.3 |
 | QA over documents | Multi-step RAG (wins by 10–19 F1); graphwalk `locate` only for entity-chain retrieval |
