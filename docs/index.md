@@ -48,6 +48,6 @@ answer with a confidence you can act on, and it saves an agent tokens.
 Read next: the [quickstart](quickstart.md), or [agents and MCP](agents.md).
 
 !!! note "Status"
-    Alpha (v0.1). Jev is a hosted model from TypeSafe; this project has no affiliation
+    Alpha (v0.2). Jev is a hosted model from TypeSafe; this project has no affiliation
     with TypeSafe. Without Jev, `GRAPHWALK_DECIDER=logprob` decides with any model that
     returns token probabilities, open-weights ones included ([deciders](deciders.md)).

@@ -107,7 +107,7 @@ The package carries its own guide for coding agents: `graphwalk guide` (or
 
 ## Status
 
-Alpha (v0.1). The public API is what `graphwalk` exports; submodules may change between
+Alpha (v0.2). The public API is what `graphwalk` exports; submodules may change between
 minor versions. Results are from small samples, mostly one seed. Jev is a hosted model
 from TypeSafe; this project has no affiliation with TypeSafe, and does not depend on
 it: any model with token probabilities can decide.

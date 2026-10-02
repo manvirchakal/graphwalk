@@ -1,6 +1,6 @@
 [project]
 name = "graphwalk"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cheap, confidence-scored question answering over knowledge graphs: each hop is a calibrated classification decision. Library, CLI, and MCP server."
 readme = "README.md"
 license = "Apache-2.0"
