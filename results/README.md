@@ -23,18 +23,24 @@ supersedes the earlier one, and the results doc says which is current.
 | `20260929T180802Z-2wiki-walkread`, `182414Z-hotpotqa-walkread` | `scripts/eval/walk_read.py` | `d4439c7` | `docs/results-m7.md` (step 1) | **current** |
 | `tuning/20260929T200331Z-fanoutqa` | `scripts/eval/fanout.py` (dev slice) | `3c3e0db` | `docs/results-m7.md` (step 2) | tuning only |
 | `20260929T211957Z-fanoutqa` | `scripts/eval/fanout.py` | `3c3e0db` | `docs/results-m7.md` (step 2) | **current** |
-
 | `20260930T12*-{2wiki,hotpotqa,fanoutqa}-evidence` | `scripts/eval/evidence.py` | phase 4 | `docs/results-phase4.md` (E1) | **current** |
 | `20260930T123344Z-metaqa-{1,2,3}hop-llmpath` | `scripts/eval/query_writer.py` | phase 4 | `docs/results-phase4.md` (E2) | **current** |
 | `tuning/20260930T122636Z-metaqa-*-llmpath-dev` | `scripts/eval/query_writer.py --split dev --n 20` | phase 4 | E2 prompt check | dev only |
 | `decider/20260930T1235..1249Z-*` | `scripts/eval/decider.py --deciders jev --seed 0/1/2` | phase 4 | `docs/results-phase4.md` (E3/E4) | **current** |
 | `decider/20260930T140255Z-metaqa-1hop` | `scripts/eval/decider.py --deciders llm` | phase 4 | `docs/results-phase4.md` (E3) | **current** (1-hop only) |
+| `decider/20260930T15*..16*Z-*` (LLM decider, 2–3 hop and 2Wiki) | `scripts/eval/decider.py --deciders llm` | phase 4 | `docs/results-phase4.md` (E3) | **current** |
+| `2026093*-*-llmpath`, `*-extractor`, `*-ragaddon` | `scripts/eval/query_writer*.py`, `extractor.py`, `rag_addon.py` | phase 4 | `docs/results-phase4.md` (E2, E2b, E5, E7; each heading names its run) | **current** (later timestamp wins) |
+| `20261001T153517Z-scale`, `164752Z-scale` | `scripts/eval/scale.py` | phase 7 | `docs/results-phase7.md` (A5; before and after the hub fix) | **current** |
+| `kgqa/20261001T153829Z-webqsp`, `160324Z-cwq` | `scripts/eval/kgqa.py` | phase 7 | `docs/results-phase7.md` (A2 pilots) | **current** |
+| `kgqa/20261001T172038Z-webqsp-global` | `scripts/eval/kgqa_global.py` | phase 7 | `docs/results-phase7.md` (A6) | **current** |
+| `router/20261001T174239Z` | `scripts/eval/router_analysis.py` (no API calls) | phase 7 | `docs/results-phase7.md` (A7) | **current** |
+| `agent/20261001T182902Z-webqsp-agent` | `scripts/eval/agent_arms.py --pilot 20` | phase 7 | `docs/results-phase7.md` (A8 pilot) | superseded |
+| `agent/20261001T195538Z-webqsp-agent` | `scripts/eval/agent_arms.py` (cheap agent, 100 q) | phase 7 | `docs/results-phase7.md` (A8) | **current** |
+| `agent/20261001T214718Z-webqsp-agent` | `scripts/eval/agent_arms.py --pilot 30` (strong agent) | phase 7 | `docs/results-phase7.md` (A8b) | **current** |
 
 Each run also has a committed `scores.jsonl` (one row per system and question), which
 the paper scripts in `scripts/paper/` read; older runs got theirs from
 `scripts/paper/export_scores.py`.
 
 Scripts ran from the repo root; the commits above are where each summary was added.
-The script paths are as of Phase 0 (they lived directly in `scripts/` before).
-Paper tables will get their own one-command scripts under `scripts/paper/` (roadmap
-Phase 4).
+Each section heading in the results docs names the script and run behind its table.

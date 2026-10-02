@@ -4,6 +4,7 @@ Every test runs twice: with the fake backend directly, and with the same fake be
 the LLM-as-decider (``tests/llm_via.py``), so the fallback is held to the same suite.
 """
 
+import logging
 import math
 import sys
 from collections.abc import Mapping
@@ -545,6 +546,7 @@ async def test_answer_type_gate_withholds_stop_on_the_wrong_type() -> None:
 async def test_answer_type_is_turned_off_without_node_types(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.INFO)
     traverser = Traverser(
         await movie_store(), FakeDecisionBackend(), config=cfg(answer_type="hint")
     )

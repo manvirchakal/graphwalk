@@ -67,7 +67,7 @@ Decisions already made (see "Decisions" below):
 | Roles | **Decisions**: Jev via TypeSafe or OpenRouter. If neither key is present, an **LLM-as-decider fallback** (any chat provider) runs behind an explicit flag and is documented as slower and uncalibrated. **LLM** (extraction, escalation): any chat provider. **Embeddings**: local fastembed by default; OpenAI or OpenRouter optional. |
 | Keys | **stdio**: environment variables with conventional names (`OPENROUTER_API_KEY`, `TYPESAFE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`, each with a `*_BASE_URL`). **Remote**: the same names as headers on the MCP initialize request, bound to that session only, held in memory, never logged or persisted. Precedence: headers, then the server's environment (only if the operator opts in), then a clear error. |
 | Remote security | Server access is authenticated separately from provider keys, and the operator configures how: none (local only), a static bearer token, or **OAuth 2.1 per the MCP authorization spec** (graphwalk acts as a resource server that validates tokens from the operator's authorization server). All three ship in v0.1. **Base URLs sent in headers are ignored unless their host is on an operator allowlist** (`GRAPHWALK_ALLOWED_BASE_URLS`), which prevents server-side request forgery. Server-side keys are used only if the operator allows it. |
-| Positioning | "A graph index over your documents, walked cheaply with a calibrated classifier, returning auditable locations." It's strongest on curated knowledge graphs and composes with dense retrieval on text. We do **not** claim to beat RAG on text. |
+| Positioning | **Revised after Phase 7:** "Cheap, confidence-scored question answering over a knowledge graph you already have, as a library or an agent tool." The evidence: walks are ~6× cheaper than an LLM writing the query and their confidence is informative (AUROC up to 0.97); as an agent tool, `walk` cut a strong agent's cost by 25% at equal accuracy (A8b). We do **not** claim more accuracy than an LLM, or to beat RAG on text; text ingestion is experimental. (The original framing, "a graph index over your documents", did not survive M7/E1: text is graphwalk's weakest case.) |
 | Affiliation | None with TypeSafe. The paper says so, and the LLM-as-decider ablation makes the method vendor-neutral. |
 
 ## Phases
@@ -283,6 +283,11 @@ folder, and a confidence interval where applicable.
 - Next: Phase 7.
 
 ### Phase 5: Documentation and public release (v0.1)
+
+**Status:** prepared. README, docs site (`mkdocs.yml`, `.github/workflows/docs.yml`),
+changelog, metadata, and a history scan for secrets (none found) are done; PyPI trusted
+publishing and the `pypi` environment are set up. Left: make the repo public, enable
+GitHub Pages (source: GitHub Actions), and push the `v0.1.0` tag.
 
 1. A README quickstart that gets someone from zero to `locate` in 5 minutes,
    covering both the library and MCP.

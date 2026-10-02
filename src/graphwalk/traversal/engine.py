@@ -147,8 +147,10 @@ class Traverser:
         self.config = config or TraversalConfig()
         self.node_types = tuple(dict.fromkeys(node_types or ()))
         if self.config.answer_type != "off" and len(self.node_types) < 2:  # noqa: PLR2004
-            # An untyped graph has nothing to predict; run without the question.
-            logger.warning(
+            # An untyped graph has nothing to predict; run without the question. Not
+            # passing node types is normal (info); passing one is likely a mistake.
+            logger.log(
+                logging.WARNING if self.node_types else logging.INFO,
                 "answer_type=%r needs at least 2 node types, got %s; turning it off",
                 self.config.answer_type,
                 list(self.node_types),

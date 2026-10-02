@@ -1,0 +1,52 @@
+site_name: graphwalk
+site_description: Cheap, confidence-scored question answering over knowledge graphs.
+site_url: https://manvirchakal.github.io/graphwalk/
+repo_url: https://github.com/manvirchakal/graphwalk
+repo_name: manvirchakal/graphwalk
+edit_uri: edit/main/docs/
+copyright: Apache-2.0
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: { icon: material/brightness-7, name: Dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: { icon: material/brightness-4, name: Light mode }
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.snippets: { base_path: ["."], check_paths: true }
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Agents and MCP: agents.md
+  - Guide (for coding agents): guide.md
+  - Configuration: configuration.md
+  - Text ingestion (experimental): text.md
+  - Evidence:
+      - Summary: evidence.md
+      - "Phase 7: KG-QA, escalation, agents": results-phase7.md
+      - "Phase 4: paper experiments": results-phase4.md
+      - "M7: QA over text graphs": results-m7.md
+      - "M6: ingestion quality": results-m6.md
+      - "M5: curated graphs": results-m5.md
+  - Design record: design.md
+
+hooks:
+  - scripts/mkdocs_hooks.py
