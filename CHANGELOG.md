@@ -7,6 +7,23 @@ API; the changelog says when.
 
 ## [Unreleased]
 
+### Fixed
+
+- With an embedder, options over the decider's limit but under `prefilter_threshold`
+  were cut in arbitrary order; they are now ranked by similarity to the question.
+
+### Changed
+
+- Evidence: an open-weights model's token probabilities make the walk's confidence as
+  informative as Jev's (paper P1), so the docs no longer credit Jev alone; and over 100
+  questions the strong agent's saving from `walk` is 17% (95% CI 8–27%), not 25% (P4).
+
+### Added
+
+- Paper experiments P0, P1, P4, P5 (`docs/results-paper.md`), the token-probability
+  decider `graphwalk.eval.logprob_decider`, and `scripts/paper/figure_selective.py`
+  and `table_agent.py`.
+
 ## [0.1.0] - 2026-10-02
 
 The first public release: confidence-scored question answering over existing knowledge

@@ -23,7 +23,7 @@ seed: read them as directions.
 
 | Situation | Use | What we measured |
 |---|---|---|
-| An **agent** exploring a KG with graph tools | Give it `walk` too ([MCP](agents.md)) | 25% cheaper (95% CI 7–45%) at equal F1, strong agent, WebQSP, n=30 |
+| An **agent** exploring a KG with graph tools | Give it `walk` too ([MCP](agents.md)) | 17% cheaper (95% CI 8–27%) at equal F1, strong agent, WebQSP, n=100 |
 | Existing KG, **cost or latency** first, or a per-answer confidence | `walk` | ~6× cheaper, ~4× faster than an LLM writing the query; AUROC of confidence 0.92 (WebQSP) to 0.97 (MetaQA) |
 | Existing KG, **best accuracy** | An LLM writing the query | 0.66 vs 0.49 F1 on a 5,419-relation Freebase graph |
 | A cheap first pass that **knows when it's wrong** | `walk` with `escalate_below` | Modest savings: the LLM path writer's accuracy for ~19% less (Freebase) |

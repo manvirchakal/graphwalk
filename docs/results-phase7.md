@@ -312,6 +312,10 @@ to `results.json` without rerunning.
 
 ### A8b: a strong agent model (`results/agent/20261001T214718Z-webqsp-agent/`)
 
+!!! note "Superseded by P4"
+    Over all 100 questions ([P4](results-paper.md)), the saving is 17% (95% CI 8–27%),
+    not 25%: these first 30 questions overstated it.
+
 The same harness, the first 30 questions, with a frontier-class agent (Gemini 3.1 Pro,
 $2/$12 per M tokens; actual OpenRouter charges). ≈ $3.30.
 

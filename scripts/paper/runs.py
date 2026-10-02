@@ -142,3 +142,12 @@ LOGPROB_CALIBRATION = {
     "WebQSP": ("kgqa/20261002T024219Z-webqsp", _LP, "hits1"),
     "CWQ": ("kgqa/20261002T024438Z-cwq", _LP, "hits1"),
 }  # fmt: skip
+
+# A8b + P4: strong agent (Gemini 3.1 Pro), WebQSP agent graph, n=100 sample (seed 0).
+# A8b ran the first 30 questions; P4 the other 70, one arm per run.
+STRONG_AGENT = {
+    "graph tools": [("agent/20261001T214718Z-webqsp-agent", "agent-graph"),
+                    ("agent/20261002T025127Z-webqsp-agent", "agent-graph")],
+    "graph tools + walk": [("agent/20261001T214718Z-webqsp-agent", "agent-walk"),
+                           ("agent/20261002T030706Z-webqsp-agent", "agent-walk")],
+}  # fmt: skip
