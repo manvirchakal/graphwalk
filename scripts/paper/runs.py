@@ -160,5 +160,5 @@ CHEAP_AGENT_ANON = {
     "closed book": ("closedbook", _A8, "agent/20261002T144313Z-webqsp-agent-anon"),
     "graph tools": ("agent-graph", _A8, "agent/20261002T145824Z-webqsp-agent-anon"),
     "graph tools + walk": ("agent-walk", _A8, "agent/20261002T151303Z-webqsp-agent-anon"),
-    "search (RAG)": ("agent-search", _A8, "SEARCH_RUN"),
+    "search (RAG)": ("agent-search", _A8, "agent/20261002T154650Z-webqsp-agent-anon"),
 }

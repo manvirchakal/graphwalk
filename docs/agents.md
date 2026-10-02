@@ -23,8 +23,9 @@ First 30 questions (A8b), all four tool sets:
 - With a cheap agent model, `walk` saved 70% of tokens on questions where the first walk
   was confident (≥ 0.9), but the cost overall was a wash: the walk's own calls cost about
   as much as the cheap tokens it saved.
-- Text search over the same facts was as accurate. graphwalk's advantage is cost and a
-  map of the graph, not accuracy.
+- Text search over the same facts was as accurate, on a graph whose names the model
+  knows. With the names replaced by aliases (P3), agents with graph tools beat it by
+  0.25–0.32 F1, and `walk` added +0.07 F1 (CI includes 0).
 
 ## Tools
 

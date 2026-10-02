@@ -97,7 +97,48 @@ Paired, walk arm minus graph-tools arm:
   accuracy. The first 30 questions overstated it (−25%); the other 70 alone give −13%.
 - **No accuracy effect** (+0.01 F1, CI ±0.05) and no latency effect.
 
-## P5: walk vs the LLM path writer, 500 questions (MetaQA)
+## P3: how much is memory? Entity names replaced by aliases (`scripts/paper/table_anon.py`)
+
+A8's cheap-agent setup (gpt-6-luna, the same 100 WebQSP questions, one graph merging
+their subgraphs), rerun with every entity name replaced by a meaningless alias
+(`Entity 3fa9c1`) in the graph, the gold answers, and the question text
+(`rog.anonymize`; relations, compound-value ids, numbers and dates kept). The topic
+entity's name was found and replaced in 70 of 100 questions; in the rest the question
+names it another way ("usa"). Runs: `results/agent/20261002T1*-webqsp-agent-anon`.
+≈ $0.70.
+
+| arm | F1, real names (A8) | F1, aliases | change | $/q real | $/q aliases |
+|---|---|---|---|---|---|
+| closed book | 0.42 [0.34, 0.50] | 0.01 [0.00, 0.01] | −0.42 | 0.00009 | 0.00012 |
+| walk alone (no agent) | 0.51 [0.42, 0.60] | 0.36 [0.27, 0.45] | −0.15 | 0.00022 | 0.00024 |
+| agent + graph tools | 0.74 [0.67, 0.81] | 0.45 [0.36, 0.54] | −0.29 | 0.00088 | 0.00186 |
+| agent + graph tools + walk | 0.72 [0.64, 0.80] | **0.52** [0.43, 0.61] | −0.20 | 0.00100 | 0.00227 |
+| agent + search (RAG) | 0.68 [0.60, 0.75] | 0.20 [0.13, 0.27] | **−0.48** | 0.00044 | 0.00179 |
+
+Paired on the aliased graph:
+
+| comparison | F1 | $/q |
+|---|---|---|
+| graph tools + walk − graph tools | +0.073 [−0.014, +0.162] | +0.00042 [+0.00016, +0.00068] |
+| graph tools + walk − search | **+0.322** [+0.226, +0.417] | +0.00049 [+0.00020, +0.00077] |
+| graph tools − search | **+0.249** [+0.157, +0.345] | +0.00007 [−0.00017, +0.00031] |
+| graph tools + walk − walk alone | +0.161 [+0.066, +0.257] | +0.00203 [+0.00175, +0.00231] |
+
+- **The renaming works as a memory control:** closed book falls to 0.01.
+- **Every arm leaned on names, search the most.** Without them, an agent exploring
+  the graph beats one searching the same facts as text by 0.25–0.32 F1. A8/A8b's
+  "search ties graph tools" holds only on a graph whose names the model knows. Part of
+  this is dense retrieval losing meaningful names to embed, which a private graph with
+  real but unfamiliar names would not suffer as much; the aliased graph is a lower
+  bound for search, not a model of a private KG.
+- **`walk` may help accuracy when memory can't:** +0.07 F1 over graph tools alone, but
+  the CI includes 0 (n=100). With this cheap agent it costs a little more, as in A8.
+- **The walk alone loses 0.15 F1:** Jev reads entity names in the options it scores,
+  so its relation choices also used what the names mean.
+- Agents explore about twice as much on aliases (15–18k vs 6–9k input tokens per
+  question), so every agent arm costs roughly twice as much.
+
+, 500 questions (MetaQA)
 
 Same seed-0 samples at n = 500 (`results/decider/20261002T021023Z-metaqa-2hop`,
 `…021310Z-metaqa-3hop`, `results/20261002T023850Z-metaqa-2hop-llmpath`,

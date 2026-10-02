@@ -16,11 +16,13 @@ API; the changelog says when.
 
 - Evidence: an open-weights model's token probabilities make the walk's confidence as
   informative as Jev's (paper P1), so the docs no longer credit Jev alone; and over 100
-  questions the strong agent's saving from `walk` is 17% (95% CI 8–27%), not 25% (P4).
+  questions the strong agent's saving from `walk` is 17% (95% CI 8–27%), not 25% (P4);
+  text search ties graph tools only while the model knows the names (P3).
 
 ### Added
 
-- Paper experiments P0, P1, P4, P5 (`docs/results-paper.md`), the token-probability
+- Paper experiments P0, P1, P3, P4, P5 (`docs/results-paper.md`), `rog.anonymize`
+  and `agent_arms.py --anonymize`, the token-probability
   decider `graphwalk.eval.logprob_decider`, and `scripts/paper/figure_selective.py`
   and `table_agent.py`.
 

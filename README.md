@@ -27,7 +27,7 @@ questions. Treat them as directions, not guarantees.
 
 | Situation | What we found |
 |---|---|
-| **An agent exploring a KG** with graph tools (MCP) | Adding graphwalk's `walk` tool cut a strong agent's cost by **17%** (95% CI 8–27%) at equal accuracy (0.76 vs 0.75 F1, n=100, WebQSP). Text search over the same facts was as accurate and a little cheaper, but slower. |
+| **An agent exploring a KG** with graph tools (MCP) | Adding graphwalk's `walk` tool cut a strong agent's cost by **17%** (95% CI 8–27%) at equal accuracy (0.76 vs 0.75 F1, n=100, WebQSP). Text search over the same facts was as accurate and a little cheaper, but slower; with entity names replaced by meaningless aliases (no help from the model's memory), graph tools beat it by 0.25 F1. |
 | **Existing KG, cost or latency first**, or you need a per-answer confidence | `walk` is ~6× cheaper and ~4× faster than an LLM writing the query, and its confidence ranks answers well (AUROC 0.92 on WebQSP, up to 0.97 on MetaQA). |
 | **Existing KG, best accuracy** | Have an LLM write the query instead: 0.66 vs 0.49 F1 on a 5,419-relation Freebase graph. |
 | Questions with constraints or superlatives (CWQ) | Not graphwalk. Every system we tried scored about 0.3. |
