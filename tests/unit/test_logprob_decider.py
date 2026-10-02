@@ -142,6 +142,24 @@ async def test_openrouter_retries_a_provider_that_dropped_logprobs(
     response = await backend.decide(DecisionRequest(state="s", questions=(question(),)))
     assert response.results["move"].top == "rel_0"
     assert len(bodies) == 2
+    assert "ignore" not in bodies[0]["provider"]
+    assert bodies[1]["provider"] == {"require_parameters": True, "ignore": ["SomeHost"]}
+
+
+async def test_a_provider_is_skipped_once_then_the_error_is_final(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def no_sleep(_: float) -> None:
+        return None
+
+    monkeypatch.setattr("graphwalk.decisions.logprob.asyncio.sleep", no_sleep)
+    no_logprobs = {"provider": "SomeHost", "choices": [{"logprobs": None}]}
+    backend, bodies = decider(
+        [httpx2.Response(200, json=no_logprobs)] * 2, base_url="https://openrouter.ai/api/v1"
+    )
+    with pytest.raises(DecisionBackendError, match="SomeHost returned no token"):
+        await backend.decide(DecisionRequest(state="s", questions=(question(),)))
+    assert len(bodies) == 2
 
 
 async def test_rate_limits_are_retried(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -16,9 +16,10 @@ OpenAI API returns.
 
 An endpoint that answers without log-probabilities raises
 :class:`~graphwalk.decisions.base.DecisionBackendError` at once, rather than deciding
-uniformly: a decider without probabilities is not this decider. Through OpenRouter the
-request is retried first, since its next pick of provider for the same model may
-return them (some providers silently drop the parameters).
+uniformly: a decider without probabilities is not this decider. Through OpenRouter,
+some providers of a model silently drop the parameters: the decider then asks
+OpenRouter to skip that provider (``provider.ignore``) for the rest of its life and
+retries, failing only when no provider left returns log-probabilities.
 """
 
 import asyncio
@@ -149,6 +150,8 @@ class LogprobDecider:
             else {}
         )
         self._extra.update(extra_body or {})
+        self._skip: list[str] = []
+        """OpenRouter providers seen dropping log-probabilities for this model."""
         self._interval = 0.0 if not max_rpm else 60.0 / max_rpm
         self._next = 0.0
         self._lock = asyncio.Lock()
@@ -178,25 +181,33 @@ class LogprobDecider:
     def _error(self, text: str) -> DecisionBackendError:
         return DecisionBackendError(redact(text, [self._api_key]))
 
-    async def _ask(
-        self, state: JsonValue, question: ChoiceQuestion
-    ) -> tuple[ChoiceResult, Usage, float, str]:
+    def _body(self, messages: list[JsonValue]) -> dict[str, JsonValue]:
         body: dict[str, JsonValue] = {
             "model": self._model,
-            "messages": [
-                {"role": "system", "content": SYSTEM},
-                {"role": "user", "content": prompt(state, question)},
-            ],
+            "messages": messages,
             "max_tokens": 1,
             "temperature": 0,
             "logprobs": True,
             "top_logprobs": len(LETTERS),
             **self._extra,
         }
+        if self._skip:
+            routing = cast("dict[str, JsonValue]", body.get("provider") or {})
+            body["provider"] = {**routing, "ignore": cast("list[JsonValue]", list(self._skip))}
+        return body
+
+    async def _ask(
+        self, state: JsonValue, question: ChoiceQuestion
+    ) -> tuple[ChoiceResult, Usage, float, str]:
+        messages: list[JsonValue] = [
+            {"role": "system", "content": SYSTEM},
+            {"role": "user", "content": prompt(state, question)},
+        ]
         error = "no attempts made"
         for attempt in range(self._attempts):
             if attempt:
                 await asyncio.sleep(min(30.0, 2.0 * 2 ** (attempt - 1)))
+            body = self._body(messages)
             await self._slot()
             start = time.monotonic()
             try:
@@ -220,7 +231,15 @@ class LogprobDecider:
                     f"{served} returned no token log-probabilities; the logprob decider "
                     "needs a model and endpoint that support logprobs/top_logprobs"
                 )
-                if self._routed:  # OpenRouter may pick a provider that honors them next
+                provider = data.get("provider")
+                routing = cast("dict[str, Any]", body.get("provider") or {})
+                skipped = cast("list[str]", routing.get("ignore") or [])
+                if self._routed and isinstance(provider, str) and provider not in skipped:
+                    # OpenRouter served the model from a provider that drops the
+                    # parameters; skip that provider from now on and ask again.
+                    if provider not in self._skip:
+                        logger.warning("%s; asking OpenRouter to skip it", msg)
+                        self._skip.append(provider)
                     error = msg
                     continue
                 raise self._error(msg)
