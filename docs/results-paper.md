@@ -113,4 +113,15 @@ Same seed-0 samples at n = 500 (`results/decider/20261002T021023Z-metaqa-2hop`,
 - **Confirms E2 at 2.5× the sample:** on a small clean schema the LLM path writer is
   more accurate *and* cheaper; the walk is about 2× faster. The case for walking here is
   latency and the per-answer confidence, not cost or accuracy.
-- WebQSP at n = 500: running.
+
+WebQSP, 500 test questions, per-question subgraphs (`results/kgqa/20261002T031206Z-webqsp`):
+
+| system | hits@1 | F1 | $ / 1k q | p50 / p95 s | AUROC (EM) |
+|---|---|---|---|---|---|
+| walk (Jev) | 0.54 | 0.54 | **0.22** | **1.8 / 3.1** | 0.86 |
+| LLM writes the path, 2 retries | **0.68** | **0.69** | 0.78 | 2.4 / 15.8 | – |
+
+- On Freebase's larger per-question schemas the walk is **3.6× cheaper** with a much
+  shorter tail (p95 3 s vs 16 s), and 15 F1 points less accurate, as in A2.
+- Its confidence stays informative at 10× the A2 sample (AUROC 0.86 with EM, vs 0.92
+  on the 50-question pilot).
