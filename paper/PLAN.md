@@ -2,6 +2,14 @@
 
 Status: draft plan, 2026-10-02. Nothing here has been run yet.
 
+> **Update after the literature search ([RELATED_WORK.md](RELATED_WORK.md)):** the hop
+> framing and path probability are prior art (SR 2022, MINERVA 2018), and the working
+> title below overclaims. The paper is an empirical study: path confidence as selective
+> prediction across deciders (not found published, but Ca2KG and CPR are close), the
+> memorization control for agents, and cost trade-offs. Before writing, add the controls
+> listed there: option-order shuffling, letter-mass diagnostics, ECE/temperature
+> scaling, a fairer stated-confidence baseline.
+
 ## The claim
 
 Working title: *Hops as calibrated classification: cheap, confidence-scored question
