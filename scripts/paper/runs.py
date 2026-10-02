@@ -151,3 +151,14 @@ STRONG_AGENT = {
     "graph tools + walk": [("agent/20261001T214718Z-webqsp-agent", "agent-walk"),
                            ("agent/20261002T030706Z-webqsp-agent", "agent-walk")],
 }  # fmt: skip
+
+# A8 (cheap agent, real names) vs P3 (the same 100 questions, entity names replaced by
+# aliases): arm -> (A8 run, P3 run), system name as in both.
+_A8 = "agent/20261001T195538Z-webqsp-agent"
+CHEAP_AGENT_ANON = {
+    "walk alone (no agent)": ("jev", _A8, "agent/20261002T144100Z-webqsp-agent-anon"),
+    "closed book": ("closedbook", _A8, "agent/20261002T144313Z-webqsp-agent-anon"),
+    "graph tools": ("agent-graph", _A8, "agent/20261002T145824Z-webqsp-agent-anon"),
+    "graph tools + walk": ("agent-walk", _A8, "agent/20261002T151303Z-webqsp-agent-anon"),
+    "search (RAG)": ("agent-search", _A8, "SEARCH_RUN"),
+}
