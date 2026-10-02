@@ -8,6 +8,8 @@ own harness) the graph as tools.
 On WebQSP (100 questions; 30 with a strong agent), one tool-calling loop, same model
 and prompt, only the tools varied (section A8 of the [phase 7 results](results-phase7.md)):
 
+First 30 questions (A8b), all four tool sets:
+
 | Agent tools | F1, strong agent | $/question | p50 latency |
 |---|---|---|---|
 | none (closed book) | 0.57 | 0.011 | 7 s |
@@ -15,13 +17,15 @@ and prompt, only the tools varied (section A8 of the [phase 7 results](results-p
 | the same + `walk` | **0.75** | 0.032 | 24 s |
 | dense search over the same facts | 0.72 | **0.028** | 40 s |
 
-- `walk` cut the strong agent's cost by 25% (95% CI 7–45%) at equal accuracy. The agent
+- Over all 100 questions (A8b + P4), `walk` cut the strong agent's cost by 17% (95% CI
+  8–27%; 25% on the first 30) at equal accuracy (F1 0.755 vs 0.747). The agent
   still verified confident walks; it explored less and reasoned less.
 - With a cheap agent model, `walk` saved 70% of tokens on questions where the first walk
   was confident (≥ 0.9), but the cost overall was a wash: the walk's own calls cost about
   as much as the cheap tokens it saved.
-- Text search over the same facts was as accurate. graphwalk's advantage is cost and a
-  map of the graph, not accuracy.
+- Text search over the same facts was as accurate, on a graph whose names the model
+  knows. With the names replaced by aliases (P3), agents with graph tools beat it by
+  0.25–0.32 F1, and `walk` added +0.07 F1 (CI includes 0).
 
 ## Tools
 

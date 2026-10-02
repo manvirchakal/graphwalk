@@ -14,7 +14,7 @@ setting, mostly one seed), so treat the numbers as directions, not guarantees.
 
 | Your situation | Use | Evidence |
 |---|---|---|
-| An **agent** that already explores a knowledge graph with low-level tools (`neighbors`, a relation list) | **Also give it `walk`** (the MCP server does). The agent calls `walk` first, then checks or continues with `neighbors`. | A8b: a strong agent with `walk` cost 25% less (95% CI 7–45%) at equal F1 (0.75 vs 0.71, n=30, WebQSP); with a cheap agent, F1 was equal and the cost a wash. Text search over the same facts tied on F1 |
+| An **agent** that already explores a knowledge graph with low-level tools (`neighbors`, a relation list) | **Also give it `walk`** (the MCP server does). The agent calls `walk` first, then checks or continues with `neighbors`. | A8b: a strong agent with `walk` cost 17% less (95% CI 8–27%) at equal F1 (0.76 vs 0.75, n=100, WebQSP); with a cheap agent, F1 was equal and the cost a wash. Text search over the same facts tied on F1, but only while the model knew the names: with names replaced by aliases, graph tools beat it by 0.25 F1 (P3) |
 | A knowledge graph you already have (triples, RDF), **any schema size**, and you want the best accuracy | **Have an LLM write the query** from the relations around the question's entity (fetch them with one adjacency query; for a whole large schema, it fits a 1M-token context too). | A6: Freebase, 5,419 relations in one graph: 0.66 vs 0.49 F1 for walking |
 | The same, but **cost or latency matters more than ~15 F1 points**, or you need a **per-answer confidence** | **graphwalk `walk`**: 6× cheaper and ~4× faster than the LLM path writer, with a confidence that ranks its answers | A6; A2 (AUROC 0.92 on WebQSP) |
 | A **noisy graph extracted from text** (inconsistent relation names, edges in either direction) | graphwalk `walk` beats LLM-written paths, but every method is weak here; prefer RAG over the source text | E2b: 3–5× the F1 of LLM-written paths at 1/20–1/35 the cost, absolute F1 0.18–0.25 |
@@ -30,11 +30,14 @@ Rules of thumb:
 
 - **The graph must hold the answer.** graphwalk's answers are nodes. If facts live in
   free text, attributes, or qualifiers the graph lacks, no walk finds them.
-- **Jev buys cost, speed, and confidence, not accuracy.** An LLM deciding each hop is
-  as accurate or better (+0.06 F1 at 3 hops). Jev is 3–4× cheaper, 7–10× faster per
-  decision, and its confidence separates right from wrong answers (AUROC 0.92–0.97 on
-  MetaQA 2–3 hop and WebQSP; weaker, 0.64–0.71, on MetaQA 1-hop, 2Wiki, and CWQ). The
-  LLM decider's confidence barely does (0.50–0.69).
+- **A decider that reads probabilities buys cost, speed, and confidence, not
+  accuracy.** An LLM writing the query is as accurate or better. Jev is 3–4× cheaper
+  and 7–10× faster per decision than an LLM deciding, and its confidence separates
+  right from wrong answers (AUROC 0.92–0.97 on MetaQA 2–3 hop and WebQSP; weaker,
+  0.64–0.71, on MetaQA 1-hop, 2Wiki, and CWQ). The `logprob` decider with an
+  open-weights model matched that (P1) at ~10× Jev's latency: the confidence comes from
+  reading probabilities, not from Jev. The `llm` decider's stated scores barely do
+  (0.50–0.69).
 - **Walking is fast; the model calls dominate.** graphwalk adds ~10 ms per walk on
   typical nodes and ~0.1–0.5 s at nodes with 20k neighbors (SQLite, 1.4M edges).
 
@@ -47,15 +50,19 @@ pip install 'graphwalk[embeddings]'   # or, from a clone: uv sync --extra embedd
 Extras: `embeddings` (local fastembed embedder: prefilter and dense `locate`), `llm`
 (LiteLLM: text ingestion, the LLM decider, escalation), `mcp` (the MCP server), `eval`.
 
-Keys come from the environment:
+Each hop is decided by a **decider**, and you choose it (`GRAPHWALK_DECIDER`, or
+`Index.open(decider=...)` with your own `DecisionBackend`):
 
-- Decisions (Jev): `OPENROUTER_API_KEY` (model `typesafe/jev-1.13`) or `TYPESAFE_API_KEY`
-  with `GRAPHWALK_DECISION_PROVIDER=typesafe`.
-- LLM (escalation, ingestion): `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` /
-  `ANTHROPIC_API_KEY` / `XAI_API_KEY` with `GRAPHWALK_LLM_PROVIDER`.
-- No Jev access: `GRAPHWALK_DECISION_FALLBACK=llm` makes the chat model decide. It works,
-  but it is slower and its confidence is not calibrated, so escalation thresholds mean
-  little with it.
+| Decider | What it is | Keys and settings | Measured |
+|---|---|---|---|
+| `jev` (default) | TypeSafe's Jev classification model | `OPENROUTER_API_KEY` (model `typesafe/jev-1.13`) or `TYPESAFE_API_KEY` with `GRAPHWALK_DECISION_PROVIDER=typesafe` | Fastest: ~0.3–0.5 s per hop |
+| `logprob` | Any chat model that returns token log-probabilities, at any OpenAI-compatible endpoint (OpenRouter, vLLM, llama.cpp, OpenAI) | `GRAPHWALK_DECIDER_MODEL`, `GRAPHWALK_DECIDER_BASE_URL` (default OpenRouter, with an open-weights model), `GRAPHWALK_DECIDER_API_KEY` | With Qwen3.8-27B (the default): as accurate as Jev, confidence as informative (P1); ~10× slower through OpenRouter. Other models vary (DeepSeek V4 Flash: EM 0.44 vs 0.80), so check yours |
+| `llm` | A chat model that states a score per option | the LLM settings below | Works, but its confidence is barely informative (stated scores, not probabilities) |
+
+`GRAPHWALK_DECISION_FALLBACK=logprob` (or `llm`) uses another decider only when no Jev
+key is set. LLM (escalation, ingestion): `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` /
+`ANTHROPIC_API_KEY` / `XAI_API_KEY` with `GRAPHWALK_LLM_PROVIDER`; set
+`GRAPHWALK_ESCALATION_DECIDER=logprob` so escalated answers carry probabilities too.
 
 Importing triples needs no key at all.
 
@@ -155,7 +162,10 @@ Public names are those exported from `graphwalk` (anything else may change):
 `Index`, `WalkResult`, `TraversalConfig`, `ImportReport`, `IngestConfig`,
 `IngestReport`, `Location`, `Passage`, `Node`, `Edge`, `Neighbor`, `Provenance`,
 `FileSource`, `TextSource`, `SourceDocument`, `FileDocuments`, `StoredDocuments`,
-`GraphwalkError`, `DocumentNotFoundError`, `StaleLocationError`, `guide`.
+`GraphwalkError`, `DocumentNotFoundError`, `StaleLocationError`, `guide`; and for
+deciders, `DecisionBackend`, `DecisionRequest`, `DecisionResponse`, `ChoiceQuestion`,
+`ChoiceResult`, `Usage`, `DecisionBackendError`, `normalize_distribution`,
+`LogprobDecider`, `LLMDecider`.
 
 `Index` methods: `open(path, **kwargs)`, `import_triples(path)`, `walk(query)`,
 `ingest(source)`, `locate(query, k, mode=)`, `read(location, context=)`,
@@ -180,7 +190,8 @@ CLI: `graphwalk import`, `query`, `ingest`, `locate`, `migrate`, `mcp`, `guide`.
   retriever.
 - Expecting constraint handling ("first", "largest", "both A and B"). graphwalk doesn't
   filter, rank, or intersect answer sets; do that in your own code, or pick another tool.
-- Comparing confidence across deciders. Only Jev's confidence was found informative.
+- Comparing confidence across deciders, or trusting the LLM-decider fallback's: it is
+  the model's stated scores, not probabilities, and was found barely informative.
 - Passing a bare `TraversalConfig()` to `Index` or `Traverser` for KG-QA. Use
   `TraversalConfig.kgqa()` (the `Index` default) and override single fields.
 - Assuming the escalation threshold transfers. Check it on your own graph.

@@ -400,6 +400,28 @@ async def test_prefilter_keeps_the_query_relevant_options() -> None:
     assert result.trace.embedder_model == "fake-embedder-1"
 
 
+async def test_with_embedder_options_over_the_backend_limit_are_ranked() -> None:
+    backend = FakeDecisionBackend(max_options=10)
+    config = cfg(strategy="greedy", prefilter_threshold=50, budget=Budget(max_depth=1))
+    traverser = Traverser(await hub_store(40), backend, embedder=FakeEmbedder(), config=config)
+    result = await traverser.traverse("find the golden retriever puppy", ["hub"])
+    question = backend.requests[0].questions[0]
+    assert len(question.options) == 10  # 9 kept + STOP
+    assert any("golden retriever" in str(d) for d in question.options.values())
+    assert {p.reason for p in result.trace.steps[0].pruned} == {"prefilter"}
+
+
+async def test_without_embedder_options_over_the_limit_are_ranked_by_word_overlap() -> None:
+    backend = FakeDecisionBackend(max_options=10)
+    config = cfg(strategy="greedy", budget=Budget(max_depth=1))
+    traverser = Traverser(await hub_store(40), backend, config=config)
+    result = await traverser.traverse("find the golden retriever puppy", ["hub"])
+    question = backend.requests[0].questions[0]
+    assert len(question.options) == 10  # 9 kept + STOP
+    assert any("golden retriever" in str(d) for d in question.options.values())
+    assert {p.reason for p in result.trace.steps[0].pruned} == {"truncated"}
+
+
 async def test_without_embedder_options_are_truncated_to_the_backend_limit() -> None:
     backend = FakeDecisionBackend(max_options=10)
     config = cfg(strategy="greedy", budget=Budget(max_depth=1))

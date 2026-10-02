@@ -244,5 +244,5 @@ async def test_neighbors_by_name_or_id_and_ingest_inputs(tmp_path: Path) -> None
         with pytest.raises(ConfigError, match="set OPENROUTER_API_KEY"):
             await index.ingest(corpus())
     async with Index(NetworkXStore()) as index:
-        with pytest.raises(ConfigError, match="GRAPHWALK_DECISION_FALLBACK=llm"):
+        with pytest.raises(ConfigError, match="GRAPHWALK_DECIDER=logprob"):
             await index.locate(QUERY)

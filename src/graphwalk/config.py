@@ -5,8 +5,10 @@ Three roles, five providers:
 ========== ============================================ =================================
 Role       Providers                                    Default
 ========== ============================================ =================================
-decision   Jev via ``openrouter`` or ``typesafe``;       ``openrouter`` / pinned Jev
-           or the LLM-as-decider fallback (opt-in)
+decision   ``jev`` (via ``openrouter`` or ``typesafe``),   ``jev`` via ``openrouter``
+           ``logprob`` (any OpenAI-compatible endpoint
+           with token log-probabilities), or ``llm``
+           (a chat model's stated scores)
 llm        ``openrouter``, ``openai``, ``anthropic``,     ``openrouter``
            ``xai``
 embedding  ``fastembed`` (local), ``openai``,           ``fastembed``
@@ -39,7 +41,9 @@ type Provider = Literal["openrouter", "typesafe", "openai", "anthropic", "xai"]
 type DecisionProvider = Literal["openrouter", "typesafe"]
 type ChatProvider = Literal["openrouter", "openai", "anthropic", "xai"]
 type EmbeddingProvider = Literal["fastembed", "openai", "openrouter"]
-type DecisionFallback = Literal["off", "llm"]
+type DecisionFallback = Literal["off", "llm", "logprob"]
+type DeciderKind = Literal["jev", "logprob", "llm"]
+type EscalationDecider = Literal["llm", "logprob"]
 type Source = Literal["argument", "header", "environment", "default"]
 
 PROVIDERS: tuple[Provider, ...] = get_args(Provider.__value__)
@@ -109,15 +113,36 @@ class GraphwalkSettings(BaseSettings):
     xai_base_url: str = _url("XAI_BASE_URL", XAI_BASE_URL)
 
     # -- decision role
+    decider: DeciderKind = "jev"
+    """Which decider walks: ``jev``; ``logprob`` (a chat model's token probabilities,
+    any OpenAI-compatible endpoint; see :mod:`graphwalk.decisions.logprob`); or ``llm``
+    (a chat model's stated scores; not calibrated). Or pass your own ``DecisionBackend``
+    to ``Index.open(decider=...)``."""
+    decider_model: str | None = None
+    """For ``logprob``: the model id at the endpoint. ``None``: an open-weights default
+    through OpenRouter; required with ``decider_base_url``."""
+    decider_base_url: str | None = None
+    """For ``logprob``: an OpenAI-compatible API root including ``/v1``
+    (``http://localhost:8000/v1`` for vLLM). ``None``: OpenRouter."""
+    decider_api_key: SecretStr | None = None
+    """For ``logprob`` at ``decider_base_url``; ``None`` for a local server. Through
+    OpenRouter, ``OPENROUTER_API_KEY`` is used."""
+    decider_max_rpm: float | None = Field(default=None, gt=0)
+    """For ``logprob``: space request starts to this rate (requests per minute)."""
     decision_provider: DecisionProvider = "openrouter"
+    """Where Jev is served (``decider="jev"``)."""
     decision_fallback: DecisionFallback = "off"
-    """``llm``: with no Jev key, decide with the chat model instead (slower, and its
-    probabilities are not calibrated). Off by default so nobody gets it by accident."""
+    """With ``decider="jev"`` and no Jev key: ``logprob`` or ``llm`` decides instead.
+    Off by default so nobody gets another decider by accident."""
     jev_model_openrouter: str = JEV_MODEL_OPENROUTER
     jev_model_typesafe: str = JEV_MODEL_TYPESAFE
     escalate_below: float | None = Field(default=None, gt=0.0, le=1.0)
-    """Re-walk with the LLM-as-decider when the best answer's confidence is below this
-    (``Index.walk``; see :mod:`graphwalk.traversal.escalation`). ``None``: never."""
+    """Re-walk with the escalation decider when the best answer's confidence is below
+    this (``Index.walk``; see :mod:`graphwalk.traversal.escalation`). ``None``: never."""
+    escalation_decider: EscalationDecider = "llm"
+    """What escalated walks decide with: ``llm`` (the chat model's stated scores) or
+    ``logprob`` (``escalation_model`` or ``decider_model`` at the logprob endpoint, so
+    the escalated answer's confidence is a probability too)."""
     jev_timeout_s: float = Field(default=10.0, gt=0)
     jev_max_retries: int = Field(default=2, ge=0)
 
@@ -138,9 +163,12 @@ class GraphwalkSettings(BaseSettings):
         "openai_base_url",
         "anthropic_base_url",
         "xai_base_url",
+        "decider_base_url",
     )
     @classmethod
-    def _http_url(cls, url: str) -> str:
+    def _http_url(cls, url: str | None) -> str | None:
+        if url is None:
+            return None
         url = url.strip().rstrip("/")
         if not url.startswith(("https://", "http://")):
             msg = f"base URL must start with http:// or https://, got {url!r}"
@@ -225,8 +253,8 @@ FIELD_NAMES: dict[str, str] = {
 }
 """Every accepted environment (and header) name -> settings field."""
 
-SECRET_FIELDS = frozenset(f"{p}_api_key" for p in PROVIDERS)
-BASE_URL_FIELDS = frozenset(f"{p}_base_url" for p in PROVIDERS)
+SECRET_FIELDS = frozenset({*(f"{p}_api_key" for p in PROVIDERS), "decider_api_key"})
+BASE_URL_FIELDS = frozenset({*(f"{p}_base_url" for p in PROVIDERS), "decider_base_url"})
 
 
 def header_field(header: str) -> str | None:
@@ -268,10 +296,15 @@ class ResolvedConfig:
         s = self.settings
         return {
             "decision": {
+                "decider": s.decider,
                 "provider": s.decision_provider,
                 "model": s.jev_model,
+                "decider_model": s.decider_model,
+                "decider_base_url": s.decider_base_url,
+                "decider_key": s.decider_api_key is not None,
                 "fallback": s.decision_fallback,
                 "escalate_below": s.escalate_below,
+                "escalation_decider": s.escalation_decider,
             },
             "llm": {
                 "provider": s.llm_provider,

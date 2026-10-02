@@ -25,9 +25,17 @@ from graphwalk.core.redact import redact
 from graphwalk.decisions import ChoiceQuestion, DecisionBackendError, DecisionRequest
 from graphwalk.decisions.jev import JevBackend
 from graphwalk.decisions.llm_decider import LLMDecider, parse_scores
+from graphwalk.decisions.logprob import DEFAULT_OPENROUTER_MODEL, LogprobDecider
 from graphwalk.llm import FakeLLM, LLMError, Message
 from graphwalk.llm.litellm_import import import_litellm
-from graphwalk.providers import REGISTRY, make_decider, make_embedder, make_llm, supports
+from graphwalk.providers import (
+    REGISTRY,
+    make_decider,
+    make_embedder,
+    make_escalation_decider,
+    make_llm,
+    supports,
+)
 
 SECRET = "sk-test-SECRET-0123456789abcdef"  # noqa: S105 - a fake key
 
@@ -162,7 +170,7 @@ def test_decision_role_builds_jev_with_key_model_and_base_url(provider: str) -> 
 
 
 def test_decision_fallback_is_opt_in() -> None:
-    with pytest.raises(ConfigError, match="GRAPHWALK_DECISION_FALLBACK=llm"):
+    with pytest.raises(ConfigError, match="GRAPHWALK_DECIDER=logprob"):
         make_decider(config(openai_api_key=SECRET, llm_provider="openai"))
     pytest.importorskip("litellm")
     fallback = make_decider(
@@ -173,6 +181,48 @@ def test_decision_fallback_is_opt_in() -> None:
     # A Jev key wins over the fallback flag.
     jev = make_decider(config(decision_fallback="llm", openrouter_api_key=SECRET))
     assert isinstance(jev, JevBackend)
+
+
+def test_logprob_decider_defaults_to_an_open_model_on_openrouter() -> None:
+    decider = make_decider(config(decider="logprob", openrouter_api_key=SECRET))
+    assert isinstance(decider, LogprobDecider)
+    assert decider.model_id == f"logprob:{DEFAULT_OPENROUTER_MODEL}"
+    with pytest.raises(ConfigError, match="OPENROUTER_API_KEY"):
+        make_decider(config(decider="logprob"))
+
+
+def test_logprob_decider_at_a_local_endpoint_needs_a_model_not_a_key() -> None:
+    local = config(decider="logprob", decider_base_url="http://localhost:8000/v1")
+    with pytest.raises(ConfigError, match="GRAPHWALK_DECIDER_MODEL"):
+        make_decider(local)
+    decider = make_decider(
+        config(decider="logprob", decider_base_url="http://localhost:8000/v1", decider_model="m")
+    )
+    assert decider.model_id == "logprob:m"
+
+
+def test_logprob_is_a_fallback_for_jev_and_an_escalation_decider() -> None:
+    local = {"decider_base_url": "http://localhost:8000/v1", "decider_model": "m"}
+    fallback = make_decider(config(decision_fallback="logprob", **local))
+    assert fallback.model_id == "logprob:m"  # no Jev key: the fallback decides
+    jev = make_decider(config(decision_fallback="logprob", openrouter_api_key=SECRET, **local))
+    assert isinstance(jev, JevBackend)
+    escalation = make_escalation_decider(
+        config(escalation_decider="logprob", escalation_model="big", **local)
+    )
+    assert escalation.model_id == "logprob:big"
+
+
+def test_decider_endpoint_from_headers_is_allowlisted_and_its_key_is_secret() -> None:
+    resolved = resolve_config(
+        headers={"X-GraphWalk-Decider-Base-URL": "http://169.254.169.254/v1"},
+        environment=settings_from(),
+    )
+    assert resolved.settings.decider_base_url is None
+    assert resolved.warnings
+    env = settings_from({"decider_api_key": SECRET})
+    assert resolve_config(environment=env, env_keys=False).settings.decider_api_key is None
+    assert SECRET not in json.dumps(resolve_config(environment=env).describe())
 
 
 def recorder(monkeypatch: pytest.MonkeyPatch, name: str, reply: Any) -> list[dict[str, Any]]:

@@ -6,7 +6,7 @@ graphwalk uses models in three roles:
 
 | Role | Providers | Default |
 |---|---|---|
-| **Decision** (each hop, entity routing) | Jev via OpenRouter or TypeSafe | OpenRouter, `typesafe/jev-1.13` |
+| **Decision** (each hop, entity routing) | Jev via OpenRouter or TypeSafe; any model with token probabilities at an OpenAI-compatible endpoint; a chat model's stated scores; or your own ([deciders](deciders.md)) | Jev via OpenRouter, `typesafe/jev-1.13` |
 | **LLM** (escalation, text extraction) | OpenRouter, OpenAI, Anthropic, x.ai | OpenRouter, `openai/gpt-6-luna` |
 | **Embedding** (type prefilter, dense `locate`) | fastembed (local), OpenAI, OpenRouter | fastembed, `BAAI/bge-small-en-v1.5` |
 
@@ -27,21 +27,37 @@ config = resolve_config({"llm_provider": "anthropic", "escalate_below": 0.9})
 index = Index.open("kg.db", config=config)
 ```
 
-## Without Jev: the LLM decider
+## Choosing the decider
 
-`GRAPHWALK_DECISION_FALLBACK=llm` makes the chat model decide each hop: it scores the
-options and the scores become the distribution. It passes the same traversal test
-suite and is as accurate or better (+0.06 F1 at 3 hops on MetaQA), but it is 3–4×
-more expensive, 7–10× slower per decision, and **its confidence is not calibrated**
-(AUROC 0.50–0.69 vs Jev's 0.92–0.97), so escalation thresholds mean little with it.
-Traces and reports mark it (`llm-decider:` model ids). It is off by default so nobody
-gets it by accident.
+`GRAPHWALK_DECIDER` is `jev` (default), `logprob`, or `llm`; see [deciders](deciders.md)
+for what each measured and how to bring your own.
+
+| Variable | Meaning |
+|---|---|
+| `GRAPHWALK_DECIDER` | `jev`, `logprob` (token probabilities), or `llm` (stated scores) |
+| `GRAPHWALK_DECIDER_MODEL` | `logprob`: model id at the endpoint (default `qwen/qwen3.8-27b` on OpenRouter) |
+| `GRAPHWALK_DECIDER_BASE_URL` | `logprob`: OpenAI-compatible API root with `/v1` (default OpenRouter) |
+| `GRAPHWALK_DECIDER_API_KEY` | `logprob` at your own endpoint, if it needs one |
+| `GRAPHWALK_DECIDER_MAX_RPM` | `logprob`: request rate limit |
+| `GRAPHWALK_DECISION_FALLBACK` | With `jev` and no Jev key: `logprob` or `llm` decides instead (default `off`) |
+| `GRAPHWALK_ESCALATION_DECIDER` | What escalated walks use: `llm` (default) or `logprob` |
+
+The `llm` decider makes the chat model score each option; the scores become the
+distribution. It is as accurate as Jev or better (+0.06 F1 at 3 hops on MetaQA), but
+3–4× more expensive, 7–10× slower per decision, and **its confidence is barely
+informative** (AUROC 0.50–0.69): stated scores are not probabilities. Prefer `logprob`.
+Traces mark every decider by its model id (`logprob:`, `llm-decider:`).
+
+On a remote MCP server, `GRAPHWALK_DECIDER_BASE_URL` sent as a header is honored only
+if it matches `GRAPHWALK_ALLOWED_BASE_URLS`, and `GRAPHWALK_DECIDER_API_KEY` is a secret
+like the provider keys.
 
 ## Escalation
 
 `escalate_below` (or `GRAPHWALK_ESCALATE_BELOW`, or `--escalate-below`) re-walks a
-query whose confidence is below the threshold with the LLM decider, or with
-`fallback_decider=` if you pass one to `Index`. `result.escalated` says which walks
+query whose confidence is below the threshold with the escalation decider
+(`GRAPHWALK_ESCALATION_DECIDER`: the chat model's stated scores by default, or
+`logprob`), or with `fallback_decider=` if you pass one to `Index`. `result.escalated` says which walks
 were redone, and `result.cost_usd` includes both.
 
 ## Traversal settings

@@ -10,9 +10,20 @@ have.** Python library, CLI, and MCP server for agents.
 
 graphwalk answers a question by walking the graph from the entities it names. Each hop
 is a **constrained classification decision**: the current node's relations, plus
-`STOP`, are the options, and a fast decision model returns a probability for each. So
-every answer comes with a path and a **confidence**, and you can escalate the unsure
-ones to a stronger model.
+`STOP`, are the options, and a **decider** returns a probability for each. So every
+answer comes with a path and a **confidence**, and you can escalate the unsure ones to
+a stronger model.
+
+**Bring your own decider.** graphwalk is the machinery (options, walks, confidence,
+escalation, the MCP tools); the decider plugs in:
+
+- **Jev** (default), TypeSafe's classification model: the fastest we measured.
+- **Any model that returns token probabilities**, at any OpenAI-compatible endpoint
+  (OpenRouter, vLLM, llama.cpp, OpenAI). With Qwen3.8-27B (open weights) it matched
+  Jev's accuracy and confidence quality, at about 10× the latency through OpenRouter;
+  other models vary, so check yours.
+- **Your own**: anything implementing `DecisionBackend` (a fine-tuned classifier, a
+  cross-encoder). See [deciders](https://manvirchakal.github.io/graphwalk/deciders/).
 
 ```bash
 pip install graphwalk
@@ -27,7 +38,7 @@ questions. Treat them as directions, not guarantees.
 
 | Situation | What we found |
 |---|---|
-| **An agent exploring a KG** with graph tools (MCP) | Adding graphwalk's `walk` tool cut a strong agent's cost by **25%** (95% CI 7–45%) at equal accuracy (0.75 vs 0.71 F1, n=30, WebQSP). Text search over the same facts was as accurate and a little cheaper, but slower. |
+| **An agent exploring a KG** with graph tools (MCP) | Adding graphwalk's `walk` tool cut a strong agent's cost by **17%** (95% CI 8–27%) at equal accuracy (0.76 vs 0.75 F1, n=100, WebQSP). Text search over the same facts was as accurate and a little cheaper, but slower; with entity names replaced by meaningless aliases (no help from the model's memory), graph tools beat it by 0.25 F1. |
 | **Existing KG, cost or latency first**, or you need a per-answer confidence | `walk` is ~6× cheaper and ~4× faster than an LLM writing the query, and its confidence ranks answers well (AUROC 0.92 on WebQSP, up to 0.97 on MetaQA). |
 | **Existing KG, best accuracy** | Have an LLM write the query instead: 0.66 vs 0.49 F1 on a 5,419-relation Freebase graph. |
 | Questions with constraints or superlatives (CWQ) | Not graphwalk. Every system we tried scored about 0.3. |
@@ -38,9 +49,10 @@ answer that **knows when it might be wrong**.
 
 ## Quickstart
 
-Decisions use the Jev model, through [OpenRouter](https://openrouter.ai)
-(`OPENROUTER_API_KEY`) or TypeSafe (`TYPESAFE_API_KEY`). Without either,
-`GRAPHWALK_DECISION_FALLBACK=llm` lets any chat model decide (slower, not calibrated).
+The default decider is Jev, through [OpenRouter](https://openrouter.ai)
+(`OPENROUTER_API_KEY`) or TypeSafe (`TYPESAFE_API_KEY`). `GRAPHWALK_DECIDER=logprob`
+decides with an open-weights model's token probabilities instead (on OpenRouter by
+default, or your own server via `GRAPHWALK_DECIDER_BASE_URL`).
 
 ```python
 import asyncio
@@ -95,10 +107,10 @@ The package carries its own guide for coding agents: `graphwalk guide` (or
 
 ## Status
 
-Alpha (v0.1). The public API is what `graphwalk` exports; submodules may change between
-minor versions. Results are from small samples, mostly one seed. The decision model
-(Jev) is a hosted model from TypeSafe; this project has no affiliation with TypeSafe,
-and the LLM-decider fallback keeps it usable without Jev.
+Alpha (v0.2). The public API is what `graphwalk` exports; submodules may change between
+minor versions. Results are from small samples, mostly one seed. Jev is a hosted model
+from TypeSafe; this project has no affiliation with TypeSafe, and does not depend on
+it: any model with token probabilities can decide.
 
 ## Development
 

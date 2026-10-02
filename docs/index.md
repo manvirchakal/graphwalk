@@ -5,9 +5,11 @@ have.** A Python library, a CLI, and an MCP server for agents.
 
 graphwalk answers a question by walking the graph from the entities it names. Each hop
 is a **constrained classification decision**: the current node's relations, plus
-`STOP`, are the options, and a fast decision model (Jev) returns a probability for each.
-Every answer comes with the path that reached it and a **confidence**. Unsure answers
-can be escalated to a stronger model, or checked by an agent.
+`STOP`, are the options, and a **decider** returns a probability for each: Jev (a fast
+classification model, the default), any model that exposes token probabilities (an
+open-weights model on your own server, say), or [your own](deciders.md). Every answer
+comes with the path that reached it and a **confidence**. Unsure answers can be
+escalated to a stronger model, or checked by an agent.
 
 ```bash
 pip install graphwalk
@@ -23,7 +25,7 @@ seed: read them as directions.
 
 | Situation | Use | What we measured |
 |---|---|---|
-| An **agent** exploring a KG with graph tools | Give it `walk` too ([MCP](agents.md)) | 25% cheaper (95% CI 7–45%) at equal F1, strong agent, WebQSP, n=30 |
+| An **agent** exploring a KG with graph tools | Give it `walk` too ([MCP](agents.md)) | 17% cheaper (95% CI 8–27%) at equal F1, strong agent, WebQSP, n=100 |
 | Existing KG, **cost or latency** first, or a per-answer confidence | `walk` | ~6× cheaper, ~4× faster than an LLM writing the query; AUROC of confidence 0.92 (WebQSP) to 0.97 (MetaQA) |
 | Existing KG, **best accuracy** | An LLM writing the query | 0.66 vs 0.49 F1 on a 5,419-relation Freebase graph |
 | A cheap first pass that **knows when it's wrong** | `walk` with `escalate_below` | Modest savings: the LLM path writer's accuracy for ~19% less (Freebase) |
@@ -37,7 +39,7 @@ answer with a confidence you can act on, and it saves an agent tokens.
 
 1. **Link**: find the graph nodes the question names.
 2. **Decide**: at each node, the options are its relations (grouped, with counts and
-   example targets) and `STOP`. Jev returns a distribution over them; the walk follows
+   example targets) and `STOP`. The decider returns a distribution over them; the walk follows
    the best (greedy) or the top few (beam).
 3. **Answer**: the nodes where the walk stops, with the path and the confidence (the
    length-normalized path probability).
@@ -46,6 +48,6 @@ answer with a confidence you can act on, and it saves an agent tokens.
 Read next: the [quickstart](quickstart.md), or [agents and MCP](agents.md).
 
 !!! note "Status"
-    Alpha (v0.1). Jev is a hosted model from TypeSafe; this project has no affiliation
-    with TypeSafe. Without Jev, `GRAPHWALK_DECISION_FALLBACK=llm` makes any chat model
-    the decider (slower, and its confidence is not calibrated).
+    Alpha (v0.2). Jev is a hosted model from TypeSafe; this project has no affiliation
+    with TypeSafe. Without Jev, `GRAPHWALK_DECIDER=logprob` decides with any model that
+    returns token probabilities, open-weights ones included ([deciders](deciders.md)).

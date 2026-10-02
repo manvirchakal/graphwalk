@@ -120,3 +120,45 @@ CALIBRATION = {
     }
     for dataset, systems in CURATED.items()
 }
+
+# Freebase KG-QA (A2 pilots, A6 global graph): label -> decider -> (run, system).
+KGQA_CALIBRATION = {
+    "WebQSP": {"Jev": ("kgqa/20261001T153829Z-webqsp", "graphwalk-relation-v2-jev"),
+               "LLM decider": ("kgqa/20261001T153829Z-webqsp", "graphwalk-relation-v2-llm")},
+    "CWQ": {"Jev": ("kgqa/20261001T160324Z-cwq", "graphwalk-relation-v2-jev"),
+            "LLM decider": ("kgqa/20261001T160324Z-cwq", "graphwalk-relation-v2-llm")},
+    "WebQSP, one graph": {"Jev": ("kgqa/20261001T172038Z-webqsp-global", "graphwalk-kgqa-jev")},
+}  # fmt: skip
+
+# P1: the same walks with an open-weights model's token probabilities as the decider
+# (graphwalk.decisions.logprob). label -> (run, system, correctness metric).
+_LP = "graphwalk-relation-v2-logprob"
+LOGPROB_CALIBRATION = {
+    "MetaQA 1-hop": ("decider/20261002T021309Z-metaqa-1hop", _LP, "em"),
+    "MetaQA 2-hop": ("decider/20261002T021917Z-metaqa-2hop", _LP, "em"),
+    "MetaQA 3-hop": ("decider/20261002T022745Z-metaqa-3hop", _LP, "em"),
+    "2Wiki gold-evidence graph": ("decider/20261002T024030Z-2wiki-gold",
+                                  "graphwalk-greedy-v2-logprob", "em"),
+    "WebQSP": ("kgqa/20261002T024219Z-webqsp", _LP, "hits1"),
+    "CWQ": ("kgqa/20261002T024438Z-cwq", _LP, "hits1"),
+}  # fmt: skip
+
+# A8b + P4: strong agent (Gemini 3.1 Pro), WebQSP agent graph, n=100 sample (seed 0).
+# A8b ran the first 30 questions; P4 the other 70, one arm per run.
+STRONG_AGENT = {
+    "graph tools": [("agent/20261001T214718Z-webqsp-agent", "agent-graph"),
+                    ("agent/20261002T025127Z-webqsp-agent", "agent-graph")],
+    "graph tools + walk": [("agent/20261001T214718Z-webqsp-agent", "agent-walk"),
+                           ("agent/20261002T030706Z-webqsp-agent", "agent-walk")],
+}  # fmt: skip
+
+# A8 (cheap agent, real names) vs P3 (the same 100 questions, entity names replaced by
+# aliases): arm -> (A8 run, P3 run), system name as in both.
+_A8 = "agent/20261001T195538Z-webqsp-agent"
+CHEAP_AGENT_ANON = {
+    "walk alone (no agent)": ("jev", _A8, "agent/20261002T144100Z-webqsp-agent-anon"),
+    "closed book": ("closedbook", _A8, "agent/20261002T144313Z-webqsp-agent-anon"),
+    "graph tools": ("agent-graph", _A8, "agent/20261002T145824Z-webqsp-agent-anon"),
+    "graph tools + walk": ("agent-walk", _A8, "agent/20261002T151303Z-webqsp-agent-anon"),
+    "search (RAG)": ("agent-search", _A8, "agent/20261002T154650Z-webqsp-agent-anon"),
+}

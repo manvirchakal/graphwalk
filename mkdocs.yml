@@ -30,17 +30,20 @@ markdown_extensions:
   - pymdownx.highlight
   - pymdownx.inlinehilite
   - pymdownx.superfences
+  - pymdownx.tabbed: { alternate_style: true }
   - pymdownx.snippets: { base_path: ["."], check_paths: true }
 
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - Agents and MCP: agents.md
+  - Deciders: deciders.md
   - Guide (for coding agents): guide.md
   - Configuration: configuration.md
   - Text ingestion (experimental): text.md
   - Evidence:
       - Summary: evidence.md
+      - "Paper experiments (P0–P5)": results-paper.md
       - "Phase 7: KG-QA, escalation, agents": results-phase7.md
       - "Phase 4: paper experiments": results-phase4.md
       - "M7: QA over text graphs": results-m7.md

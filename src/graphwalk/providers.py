@@ -1,8 +1,10 @@
 """Build backends for each role from a :class:`~graphwalk.config.ResolvedConfig`.
 
-* :func:`make_decider`: Jev if the decision provider has a key; else the
-  LLM-as-decider when ``decision_fallback="llm"``; else a :class:`ConfigError` naming
-  the variables to set.
+* :func:`make_decider`: the configured decider (``decider``): Jev, the token-probability
+  decider at any OpenAI-compatible endpoint, or the LLM-as-decider. With Jev and no Jev
+  key, ``decision_fallback`` picks another, or a :class:`ConfigError` names the
+  variables to set.
+* :func:`make_escalation_decider`: what escalated walks decide with.
 * :func:`make_llm`: any chat provider, through LiteLLM.
 * :func:`make_embedder`: local fastembed, or OpenAI-compatible remote embeddings.
 
@@ -67,32 +69,91 @@ def _key(config: ResolvedConfig, provider: Provider, role: Role) -> str:
     return key.get_secret_value()
 
 
-def make_decider(config: ResolvedConfig | None = None) -> DecisionBackend:
-    """Jev for the configured decision provider, or the LLM fallback if enabled."""
+def make_logprob_decider(
+    config: ResolvedConfig | None = None, *, model: str | None = None
+) -> DecisionBackend:
+    """The token-probability decider at ``decider_base_url`` (default: OpenRouter)."""
+    from graphwalk.decisions.logprob import (  # noqa: PLC0415
+        DEFAULT_OPENROUTER_MODEL,
+        LogprobDecider,
+    )
+
     config = config or resolve_config()
     s = config.settings
-    key = s.decision_api_key
-    if key is not None:
-        from graphwalk.decisions.jev import JevBackend  # noqa: PLC0415 - loads the SDK lazily
-
-        return JevBackend(
-            api_key=key.get_secret_value(),
-            provider=s.decision_provider,
-            model=s.jev_model,
-            base_url=s.decision_base_url,
-            timeout_s=s.jev_timeout_s,
-            max_retries=s.jev_max_retries,
+    model = model or s.decider_model
+    if s.decider_base_url is None:
+        return LogprobDecider(
+            model or DEFAULT_OPENROUTER_MODEL,
+            base_url=s.openrouter_base_url + REGISTRY["openrouter"].version_path,
+            api_key=_key(config, "openrouter", "decision"),
+            max_rpm=s.decider_max_rpm,
         )
-    if s.decision_fallback == "llm":
-        from graphwalk.decisions.llm_decider import LLMDecider  # noqa: PLC0415
+    if model is None:
+        msg = "decider_base_url is set but no model: set GRAPHWALK_DECIDER_MODEL"
+        raise ConfigError(msg)
+    key = s.decider_api_key
+    return LogprobDecider(
+        model,
+        base_url=s.decider_base_url,
+        api_key=None if key is None else key.get_secret_value(),
+        max_rpm=s.decider_max_rpm,
+    )
 
-        return LLMDecider(make_llm(config))
+
+def _jev(config: ResolvedConfig) -> DecisionBackend | None:
+    s = config.settings
+    key = s.decision_api_key
+    if key is None:
+        return None
+    from graphwalk.decisions.jev import JevBackend  # noqa: PLC0415 - loads the SDK lazily
+
+    return JevBackend(
+        api_key=key.get_secret_value(),
+        provider=s.decision_provider,
+        model=s.jev_model,
+        base_url=s.decision_base_url,
+        timeout_s=s.jev_timeout_s,
+        max_retries=s.jev_max_retries,
+    )
+
+
+def _llm_decider(config: ResolvedConfig, role: Literal["llm", "escalation"]) -> DecisionBackend:
+    from graphwalk.decisions.llm_decider import LLMDecider  # noqa: PLC0415
+
+    return LLMDecider(make_llm(config, role=role))
+
+
+def make_decider(config: ResolvedConfig | None = None) -> DecisionBackend:
+    """The decider walks use, per ``decider`` (and ``decision_fallback`` for Jev)."""
+    config = config or resolve_config()
+    s = config.settings
+    if s.decider == "logprob":
+        return make_logprob_decider(config)
+    if s.decider == "llm":
+        return _llm_decider(config, "llm")
+    jev = _jev(config)
+    if jev is not None:
+        return jev
+    if s.decision_fallback == "logprob":
+        return make_logprob_decider(config)
+    if s.decision_fallback == "llm":
+        return _llm_decider(config, "llm")
     msg = (
         f"no key for the decision provider {s.decision_provider!r}: set "
-        f"{env_name(s.decision_provider)}, or set GRAPHWALK_DECISION_FALLBACK=llm to decide "
-        "with the chat model instead (slower, uncalibrated)"
+        f"{env_name(s.decision_provider)}, or choose another decider: "
+        "GRAPHWALK_DECIDER=logprob (token probabilities from any OpenAI-compatible "
+        "endpoint) or GRAPHWALK_DECISION_FALLBACK=logprob to use it only without a Jev key"
     )
     raise ConfigError(msg)
+
+
+def make_escalation_decider(config: ResolvedConfig | None = None) -> DecisionBackend:
+    """The decider escalated walks use (``escalation_decider``)."""
+    config = config or resolve_config()
+    s = config.settings
+    if s.escalation_decider == "logprob":
+        return make_logprob_decider(config, model=s.escalation_model)
+    return _llm_decider(config, "escalation")
 
 
 def litellm_model(provider: ChatProvider, model: str) -> str:

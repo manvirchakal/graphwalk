@@ -30,4 +30,5 @@ Short version:
 4. Treat `result.confidence` as a ranking signal. Validate the threshold on 50–100
    labeled questions from the user's own graph before trusting it.
 5. Keys: `OPENROUTER_API_KEY` (Jev decisions; the LLM for escalation). Without Jev,
-   use `GRAPHWALK_DECISION_FALLBACK=llm`; its confidence is not calibrated.
+   use `GRAPHWALK_DECIDER=logprob` (an open-weights model's token probabilities; as
+   informative a confidence, slower), not `llm` (stated scores, barely informative).

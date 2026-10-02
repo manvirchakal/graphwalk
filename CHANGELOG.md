@@ -7,6 +7,47 @@ API; the changelog says when.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-02
+
+Bring your own decider: graphwalk is the machinery (options, walks, confidence,
+escalation, the MCP tools), and the model that decides each hop is a choice. Jev stays
+the default and the fastest. No breaking changes: without new settings, graphwalk
+behaves as in 0.1.0, except that wide nodes are ranked instead of cut (below).
+
+### Added
+
+- `LogprobDecider` (`GRAPHWALK_DECIDER=logprob`): decisions from a chat model's token
+  probabilities at any OpenAI-compatible endpoint (OpenRouter by default, with the
+  open-weights Qwen3.8-27B; vLLM, llama.cpp, OpenAI). With Qwen3.8-27B it matched Jev's
+  accuracy and confidence quality in the paper experiments (P1), at about 10× the
+  latency through OpenRouter; other models vary (P1b). Settings
+  `GRAPHWALK_DECIDER_MODEL`, `_BASE_URL`, `_API_KEY`, `_MAX_RPM`. Endpoints that return
+  no log-probabilities fail with a clear error; through OpenRouter, providers that drop
+  them are skipped.
+- `GRAPHWALK_DECIDER` (`jev`, `logprob`, `llm`); `GRAPHWALK_DECISION_FALLBACK=logprob`;
+  `GRAPHWALK_ESCALATION_DECIDER` (`llm` or `logprob`). On a remote MCP server, a decider
+  base URL sent as a header must match `GRAPHWALK_ALLOWED_BASE_URLS`.
+- The decider protocol and types are public: `DecisionBackend`, `DecisionRequest`,
+  `DecisionResponse`, `ChoiceQuestion`, `ChoiceResult`, `Usage`,
+  `DecisionBackendError`, `normalize_distribution`, `LogprobDecider`, `LLMDecider`.
+- Docs: a [deciders](https://manvirchakal.github.io/graphwalk/deciders/) page, and the
+  paper experiments P0–P5 (`docs/results-paper.md`).
+- Evaluation: `rog.anonymize` and `agent_arms.py --anonymize` (entity names replaced by
+  aliases), `scripts/paper/figure_selective.py`, `table_agent.py`, `table_anon.py`.
+
+### Changed
+
+- Evidence, in the docs and the packaged agent guide: the walk's confidence comes from
+  reading a decider's probabilities, not from Jev (P1); over 100 questions the strong
+  agent's saving from `walk` is 17% (95% CI 8–27%), not 25% (P4); text search ties
+  graph tools only while the model knows the entity names (P3).
+
+### Fixed
+
+- Options over the decider's limit were cut in arbitrary order. They are now ranked:
+  by the embedder when there is one (also below `prefilter_threshold`), otherwise by
+  the words they share with the question.
+
 ## [0.1.0] - 2026-10-02
 
 The first public release: confidence-scored question answering over existing knowledge
@@ -150,5 +191,6 @@ Details, by area:
 - The Wikipedia page fetcher and HTML-to-text converter for FanOutQA (superseded by
   the pinned corpus mirror) and unused JSON cache helpers in `eval/ingest_eval.py`.
 
-[Unreleased]: https://github.com/manvirchakal/graphwalk/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/manvirchakal/graphwalk/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/manvirchakal/graphwalk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/manvirchakal/graphwalk/releases/tag/v0.1.0
