@@ -434,8 +434,11 @@ class Traverser:
         """Prefilter high-degree option sets; always respect the backend's option limit."""
         cfg = self.config
         hard_cap = self.decider.max_options - 1  # one slot for STOP
-        if self._cache is not None and len(moves) > cfg.prefilter_threshold:
-            cap = min(cfg.prefilter_top_n, hard_cap)
+        over_threshold = len(moves) > cfg.prefilter_threshold
+        if self._cache is not None and (over_threshold or len(moves) > hard_cap):
+            # Over the backend's limit but under the threshold: rank down to the limit
+            # rather than cutting in arbitrary order.
+            cap = min(cfg.prefilter_top_n, hard_cap) if over_threshold else hard_cap
             texts = await self._move_texts(run, moves)
             ranked = await rank_by_similarity(self._cache, run.query, texts)
             keep = {i for i, _ in ranked[:cap]}
