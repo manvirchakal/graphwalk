@@ -210,7 +210,14 @@ class JevBackend:
     def _check_model(self, echoed: str) -> None:
         if echoed != self._model and not self._warned_model_mismatch:
             self._warned_model_mismatch = True
-            logger.warning("requested model %r but server answered with %r", self._model, echoed)
+            # A dated snapshot of the requested model (``jev-1.13-20260917``) is expected.
+            snapshot = echoed.startswith(f"{self._model}-")
+            logger.log(
+                logging.DEBUG if snapshot else logging.WARNING,
+                "requested model %r but server answered with %r",
+                self._model,
+                echoed,
+            )
 
     async def aclose(self) -> None:
         await self._client.aclose()

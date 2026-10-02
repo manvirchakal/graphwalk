@@ -56,7 +56,8 @@ def test_llms_txt_links_resolve() -> None:
     assert text.startswith("# graphwalk\n\n> ")
     links = re.findall(r"\]\(([^)]+)\)", text)
     assert links
-    assert all((ROOT / link).is_file() for link in links)
+    local = [link for link in links if not link.startswith("https://")]
+    assert all((ROOT / link).is_file() for link in local)
 
 
 def test_kgqa_config_is_the_measured_preset() -> None:

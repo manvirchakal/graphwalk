@@ -1,11 +1,16 @@
 # Using graphwalk from an agent (MCP)
 
-graphwalk's MCP server gives any MCP client these tools: `locate`, `read`, `neighbors`,
-`get_node`, `ingest`, `ingest_status`, and `status`. The usual loop is: `locate` the
-question, `read` the best locations, answer from that text.
+graphwalk's MCP server gives any MCP client these tools: `walk`, `neighbors`,
+`get_node`, `status`, and, for documents, `locate`, `read`, `ingest`, and
+`ingest_status`. Over an imported knowledge graph, the usual loop is: `walk` the
+question; at confidence 0.9 or above, use the answer; below it, check with `neighbors`.
+Over documents: `locate` the question, `read` the best locations, answer from that text.
 
-Install with the extras: `pip install 'graphwalk[mcp,llm]'` (add `embeddings` for
-`dense`/`hybrid` locate with a local model).
+Install with the extras: `pip install 'graphwalk[mcp]'` (add `llm` for escalation and
+ingestion, `embeddings` for `dense`/`hybrid` locate with a local model). The docs site
+has the same material: <https://manvirchakal.github.io/graphwalk/agents/>.
+
+[`kg/walk.py`](kg/walk.py) is the library version: import a small movie graph, walk it.
 
 ## stdio (a local graph file)
 

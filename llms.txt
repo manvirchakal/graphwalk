@@ -2,10 +2,11 @@
 
 > Fast, probabilistic question answering over an existing knowledge graph. Each hop is a constrained classification decision made by a fast model (Jev), so a walk's answer comes with a confidence; low-confidence walks can be escalated to an LLM decider. Python library, CLI, and MCP server.
 
-When to use it, measured: on curated graphs of any schema size (up to 5,419 Freebase relations tested), an LLM writing the query from the relations near the question's entity is more accurate (0.66 vs 0.49 F1); graphwalk is 6x cheaper and ~4x faster, and its confidence separates right from wrong answers (AUROC up to 0.97). Use it when cost, latency, or a per-answer confidence matter more than accuracy. On noisy graphs extracted from text it beats LLM-written queries, but every method is weak there. It is the wrong tool for QA over documents (multi-step RAG wins by 10–19 F1) and for questions with constraints or superlatives. The installed package carries the same guide: run `graphwalk guide`.
+When to use it, measured: on curated graphs of any schema size (up to 5,419 Freebase relations tested), an LLM writing the query from the relations near the question's entity is more accurate (0.66 vs 0.49 F1); graphwalk is 6x cheaper and ~4x faster, and its confidence separates right from wrong answers (AUROC up to 0.97). Use it when cost, latency, or a per-answer confidence matter more than accuracy. As an agent's tool (MCP), adding `walk` to low-level graph tools cut a strong agent's cost by 25% at equal accuracy (n=30). On noisy graphs extracted from text it beats LLM-written queries, but every method is weak there. It is the wrong tool for QA over documents (multi-step RAG wins by 10–19 F1) and for questions with constraints or superlatives. The installed package carries the same guide: run `graphwalk guide`.
 
 ## Docs
 
+- [Docs site](https://manvirchakal.github.io/graphwalk/): quickstart, agents and MCP, configuration, evidence
 - [Agent guide](src/graphwalk/agent_docs/guide.md): when to use graphwalk, recipes, API surface, performance, common mistakes
 - [Agent skill](src/graphwalk/agent_docs/SKILL.md): a SKILL.md for agents that support skills (`graphwalk guide --skill`)
 - [README](README.md): overview, install, providers and configuration
@@ -13,7 +14,8 @@ When to use it, measured: on curated graphs of any schema size (up to 5,419 Free
 
 ## Evidence
 
-- [Phase 7 results](docs/results-phase7.md): escalation (A1), scale (A5), Freebase KG-QA pilots (A2)
+- [Evidence summary](docs/evidence.md): every claim, with links to its experiment
+- [Phase 7 results](docs/results-phase7.md): escalation (A1), Freebase KG-QA (A2, A6), scale (A5), routing (A7), agent tool (A8)
 - [Phase 4 results](docs/results-phase4.md): where graphwalk helps and where it doesn't (E1–E7)
 - [M7 results](docs/results-m7.md): QA over graphs built from text
 

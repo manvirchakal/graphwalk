@@ -1,15 +1,21 @@
 [project]
 name = "graphwalk"
 version = "0.1.0"
-description = "Fast, probabilistic knowledge-graph traversal and ingestion driven by calibrated classification decisions."
+description = "Cheap, confidence-scored question answering over knowledge graphs: each hop is a calibrated classification decision. Library, CLI, and MCP server."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-authors = [{ name = "graphwalk contributors" }]
+authors = [{ name = "Manvir Chakal" }]
+keywords = ["knowledge graph", "kgqa", "graph traversal", "mcp", "llm agents", "calibration", "retrieval"]
 requires-python = ">=3.12"
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Typing :: Typed",
 ]
@@ -41,7 +47,8 @@ eval = [
 
 [project.urls]
 Homepage = "https://github.com/manvirchakal/graphwalk"
-Documentation = "https://github.com/manvirchakal/graphwalk#readme"
+Documentation = "https://manvirchakal.github.io/graphwalk/"
+Source = "https://github.com/manvirchakal/graphwalk"
 Changelog = "https://github.com/manvirchakal/graphwalk/blob/main/CHANGELOG.md"
 Issues = "https://github.com/manvirchakal/graphwalk/issues"
 
@@ -60,6 +67,10 @@ dev = [
     "pytest-socket>=0.8.1",
     "ruff>=0.16.9",
     "types-networkx>=3.6.1.20260911",
+]
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.6",
 ]
 
 [tool.ruff]

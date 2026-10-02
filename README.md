@@ -1,203 +1,109 @@
 # graphwalk
 
-Fast, probabilistic knowledge-graph traversal.
+[![CI](https://github.com/manvirchakal/graphwalk/actions/workflows/ci.yml/badge.svg)](https://github.com/manvirchakal/graphwalk/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/graphwalk)](https://pypi.org/project/graphwalk/)
+[![Docs](https://img.shields.io/badge/docs-github.io-blue)](https://manvirchakal.github.io/graphwalk/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](https://github.com/manvirchakal/graphwalk/blob/main/LICENSE)
 
-graphwalk answers questions over a knowledge graph by walking it: each hop is a
-**constrained classification decision** (the current node's relations or neighbors,
-plus `STOP`, are the options), made by a fast decision model that returns a probability
-distribution over them. Walks are cheap and fast, and their confidence is informative,
-so unsure walks can be escalated to a slower LLM decider only when needed.
+**Cheap, confidence-scored question answering over a knowledge graph you already
+have.** Python library, CLI, and MCP server for agents.
 
-**What it is for:** answering questions over a graph you already have (imported from
-triples, or built with `ingest`), as a library or as a tool for an agent (MCP). **What
-it is not:** a replacement for RAG over text. On graphs extracted from documents,
-multi-step RAG answers better; there graphwalk is best used to *locate* passages, not
-to answer from the graph.
-
-> **Status: pre-alpha.** Every claim below is measured, on small samples (50–300
-> questions per setting): [`docs/results-phase7.md`](docs/results-phase7.md) (curated
-> graphs, escalation, Freebase), [`docs/results-phase4.md`](docs/results-phase4.md)
-> (text). Design: [`docs/design.md`](docs/design.md). Plan: [`roadmap.md`](roadmap.md).
-
-**When to use it** (the regime map; the full version is in `graphwalk guide`):
-
-| Situation | Best choice |
-|---|---|
-| Existing KG, best accuracy (any schema size) | **An LLM writing the query** from the relations near the entity: 0.66 vs 0.49 F1 on a 5,419-relation Freebase graph (A6) |
-| Existing KG, cost/latency first, or a per-answer confidence | **graphwalk `walk`**: 6× cheaper, ~4× faster, AUROC up to 0.97 |
-| KG extracted from text (noisy schema) | graphwalk beats LLM-written queries (3–5× F1), but all score 0.18–0.25; prefer RAG |
-| Cheap first pass that knows when it's wrong | `walk` + `escalate_below`: modest savings (escalating to an LLM-written path: its accuracy for ~19% less on Freebase, A6) |
-| Questions with constraints or superlatives (CWQ) | Neither: every system we tried scores about 0.3 |
-| QA over documents | Multi-step RAG (wins by 10–19 F1); graphwalk `locate` only for entity-chain retrieval |
+graphwalk answers a question by walking the graph from the entities it names. Each hop
+is a **constrained classification decision**: the current node's relations, plus
+`STOP`, are the options, and a fast decision model returns a probability for each. So
+every answer comes with a path and a **confidence**, and you can escalate the unsure
+ones to a stronger model.
 
 ```bash
-graphwalk import kg.nt --graph kg.db          # an existing graph, no LLM needed
+pip install graphwalk
+graphwalk import kg.nt --graph kg.db          # triples: CSV, TSV, JSONL, N-Triples; no key needed
 graphwalk query kg.db "Where was the director of Inception born?" --escalate-below 0.9
 ```
+
+## When to use it (measured)
+
+Every number below comes from an experiment in [`docs/`](https://github.com/manvirchakal/graphwalk/tree/main/docs/), on samples of 30–300
+questions. Treat them as directions, not guarantees.
+
+| Situation | What we found |
+|---|---|
+| **An agent exploring a KG** with graph tools (MCP) | Adding graphwalk's `walk` tool cut a strong agent's cost by **25%** (95% CI 7–45%) at equal accuracy (0.75 vs 0.71 F1, n=30, WebQSP). Text search over the same facts was as accurate and a little cheaper, but slower. |
+| **Existing KG, cost or latency first**, or you need a per-answer confidence | `walk` is ~6× cheaper and ~4× faster than an LLM writing the query, and its confidence ranks answers well (AUROC 0.92 on WebQSP, up to 0.97 on MetaQA). |
+| **Existing KG, best accuracy** | Have an LLM write the query instead: 0.66 vs 0.49 F1 on a 5,419-relation Freebase graph. |
+| Questions with constraints or superlatives (CWQ) | Not graphwalk. Every system we tried scored about 0.3. |
+| **Questions over documents** | Not graphwalk. Multi-step RAG wins by 10–19 F1. Text ingestion exists but is experimental. |
+
+graphwalk does not claim to be more accurate than an LLM. What it offers is a cheap first
+answer that **knows when it might be wrong**.
 
 ## Quickstart
 
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
-
-```bash
-git clone <repo-url> graphwalk && cd graphwalk
-uv sync                       # base install + dev tools
-cp .env.example .env          # add OPENROUTER_API_KEY or TYPESAFE_API_KEY
-uv run graphwalk --help
-```
-
-Optional extras:
-
-| Extra        | Enables                                           |
-|--------------|---------------------------------------------------|
-| `embeddings` | local fastembed embedder (prefilter, dense locate) |
-| `llm`        | LiteLLM backend for ingestion and the RAG baseline |
-| `eval`       | dataset download for the eval harness             |
-
-```bash
-uv sync --extra llm --extra embeddings
-```
-
-## Ingestion from documents (experimental)
-
-Building a graph from text works, but walking a text-derived graph has not beaten
-multi-step RAG at answering (extraction drops the dates, order, and qualifiers questions
-need). Use it to `locate` passages, preferably in `hybrid` mode.
-
-```bash
-uv sync --extra llm --extra embeddings
-graphwalk ingest docs/ --graph my.db --report ingest-report.json
-graphwalk locate my.db "Who directed ...?" -k 5 --context 200
-```
-
-A `.db` graph is SQLite (write-ahead logging, so it can be read while ingestion
-writes); any other path is NetworkX JSON. `graphwalk migrate graph.json graph.db`
-converts one to the other.
-
-`ingest` reads `.txt`/`.md` files (one document each) and `.json`/`.jsonl`/`.csv`
-records (one document per record). An LLM extracts entities and relations, and Jev
-decides for each entity whether it is an existing node or a new one. Low-confidence
-decisions go to the LLM. Re-running is idempotent: unchanged documents are skipped, and
-changed ones are retracted and re-ingested (`--prune` also retracts deleted ones).
-
-## Library: `locate` and `read`
-
-The graph is an index over your text. `locate` walks it from the entities a question
-names and returns the source spans behind the walk (each extracted fact records the
-sentence it came from), with the path that reached them; `read` returns the text.
+Decisions use the Jev model, through [OpenRouter](https://openrouter.ai)
+(`OPENROUTER_API_KEY`) or TypeSafe (`TYPESAFE_API_KEY`). Without either,
+`GRAPHWALK_DECISION_FALLBACK=llm` lets any chat model decide (slower, not calibrated).
 
 ```python
+import asyncio
 from graphwalk import Index
 
-async with Index.open("my.db", llm=llm, decider=decider) as index:
-    await index.ingest("docs/")
-    for location in await index.locate("Where was Marie Curie's husband born?", k=5):
-        passage = await index.read(location, context=100)
-        print(location.key, location.path, passage.text)
+
+async def main() -> None:
+    async with Index.open("kg.db", escalate_below=0.9) as index:
+        await index.import_triples("kg.nt")  # idempotent
+        result = await index.walk("Where was the director of Inception born?")
+        print(result.best.names, result.confidence, result.escalated, result.cost_usd)
+
+
+asyncio.run(main())
 ```
 
-`mode="dense"` ranks text chunks by embedding similarity instead, and `mode="hybrid"`
-fuses both (needs `embedder=`). For text, prefer `hybrid` over `graph`: in E1 the graph
-alone recalled less than dense retrieval on HotpotQA and FanOutQA. Hybrid beat dense by
-18 points on 2Wiki (entity chains), tied on HotpotQA, and trailed by about 5 on
-FanOutQA, so `dense` is the safer choice for broad questions
-([`docs/results-phase4.md`](docs/results-phase4.md)). `read` detects documents that changed since `locate` ran and
-flags the passage as `stale` (or refuses, with `on_stale="refuse"`). By default the
-text is kept in the store; `IngestConfig(store_text=False)` with `FileDocuments`
-re-reads it from disk instead.
+A runnable example over a 15-triple movie graph is in
+[`examples/kg/`](https://github.com/manvirchakal/graphwalk/blob/main/examples/kg/walk.py).
 
-Only names exported from `graphwalk` are public API; submodules may change.
-
-## Existing knowledge graphs: `walk` and escalation
-
-On a curated graph the graph holds the facts, so the walk's answer is the answer.
-`walk` returns it with its confidence; `escalate_below` re-walks unsure queries with a
-slower, stronger decider (the LLM-as-decider by default). On MetaQA, escalating below
-0.9 matched the LLM decider's accuracy at about half its cost
-([`docs/results-phase7.md`](docs/results-phase7.md)).
-
-Import a graph you already have from triples (CSV, TSV, JSONL, or N-Triples; no LLM
-or API key needed), then walk it:
+## For agents (MCP)
 
 ```bash
-graphwalk import kg.nt --graph kg.db
-graphwalk query kg.db "Where was the director of Inception born?" --escalate-below 0.9
+pip install 'graphwalk[mcp]'
+claude mcp add --env OPENROUTER_API_KEY=sk-or-... graphwalk -- graphwalk mcp --db kg.db
 ```
 
-```python
-from graphwalk import Index
+Tools: `walk` (answers, paths, confidence), `neighbors`, `get_node`, `status`, plus
+`locate`/`read`/`ingest` for text. The usual loop: call `walk` first; at confidence 0.9
+or above, take the answer; below it, check it with `neighbors` or escalate. The server
+also runs over HTTP with bearer or OAuth 2.1 auth, and ships as a container. See
+[MCP setup](https://manvirchakal.github.io/graphwalk/agents/).
 
-# walk() uses TraversalConfig.kgqa() unless you pass traversal=
-async with Index.open("kg.db", escalate_below=0.9) as index:
-    await index.import_triples("kg.nt")
-    result = await index.walk("Where was the director of Inception born?")
-    print(result.best.names, result.confidence, result.escalated, result.cost_usd)
-```
+The package carries its own guide for coding agents: `graphwalk guide` (or
+`graphwalk guide --skill` for a `SKILL.md`), and [`llms.txt`](https://github.com/manvirchakal/graphwalk/blob/main/llms.txt).
 
-## MCP server
+## Install options
 
-```bash
-pip install 'graphwalk[mcp,llm]'
-graphwalk mcp --db my.db                      # stdio: keys from the environment
-graphwalk mcp --http --db my.db               # streamable HTTP: keys from client headers
-```
+| Extra | Enables |
+|---|---|
+| (none) | import, walk, query, the CLI |
+| `mcp` | the MCP server (stdio and HTTP) |
+| `llm` | LiteLLM: escalation, the LLM decider, text ingestion |
+| `embeddings` | local fastembed embedder (prefilter, dense `locate`) |
+| `eval` | dataset loaders for the benchmarks |
 
-Tools: `walk`, `locate`, `read`, `neighbors`, `get_node`, `ingest`/`ingest_status`,
-`status`; resource `graphwalk://guide` (the agent guide). With `GRAPHWALK_ESCALATE_BELOW`
-set, the server's instructions and every `walk` result state the threshold.
-The HTTP server supports bearer-token or OAuth 2.1 (resource server) auth, and the same
-server ships as a container (`Dockerfile`). Client configs, Claude Code commands,
-server settings, and a from-scratch agent harness are in [`examples/`](examples/).
+## Documentation
 
-## For coding agents
+- [Docs site](https://manvirchakal.github.io/graphwalk/): quickstart, agents and MCP,
+  configuration, text ingestion, evidence.
+- [Results](https://github.com/manvirchakal/graphwalk/blob/main/docs/evidence.md): every experiment, with CIs, costs, and the runs behind it.
+- [Design record](https://github.com/manvirchakal/graphwalk/blob/main/docs/design.md) and [roadmap](https://github.com/manvirchakal/graphwalk/blob/main/roadmap.md).
 
-The package ships its own guide for agents: when to use graphwalk (the regime map, with
-the evidence), recipes, the public API, and common mistakes.
+## Status
 
-```bash
-graphwalk guide                  # Markdown, from the installed package
-graphwalk guide --skill > .claude/skills/graphwalk/SKILL.md   # a skill, for agents that load them
-python -c "import graphwalk; print(graphwalk.guide())"
-```
-
-[`llms.txt`](llms.txt) indexes the same files for agents reading the repository or the
-docs site ([llmstxt.org](https://llmstxt.org) format). The MCP server's instructions
-carry the short version.
-
-## Providers and configuration
-
-graphwalk uses models in three roles:
-
-| Role | Providers | Default |
-|---|---|---|
-| **Decision** (each hop, entity routing) | Jev via OpenRouter or TypeSafe | OpenRouter, `typesafe/jev-1.13` |
-| **LLM** (extraction, escalation) | OpenRouter, OpenAI, Anthropic, x.ai | OpenRouter, `openai/gpt-6-luna` |
-| **Embedding** (prefilter, dense `locate`) | fastembed (local), OpenAI, OpenRouter | fastembed, `BAAI/bge-small-en-v1.5` |
-
-Keys and base URLs use the conventional variables (`OPENAI_API_KEY`,
-`ANTHROPIC_BASE_URL`, ...); everything else is `GRAPHWALK_*`. See
-[`.env.example`](.env.example) for the full list. Precedence, highest first: explicit
-arguments, request headers (remote MCP sessions), the environment, defaults. Keys are
-kept as secrets and never appear in logs, traces, or error messages.
-
-With no Jev key, `GRAPHWALK_DECISION_FALLBACK=llm` makes the chat model decide
-instead: it scores the options and the scores become the distribution. It works
-everywhere Jev does (it passes the same traversal test suite), but it is slower and
-its probabilities are **not calibrated**. Traces and reports mark it (`llm-decider:`
-model ids). It is off by default so nobody gets it by accident.
-
-```python
-from graphwalk.config import resolve_config
-from graphwalk import Index
-
-config = resolve_config({"llm_provider": "anthropic", "decision_fallback": "llm"})
-index = Index.open("my.db", config=config)
-```
+Alpha (v0.1). The public API is what `graphwalk` exports; submodules may change between
+minor versions. Results are from small samples, mostly one seed. The decision model
+(Jev) is a hosted model from TypeSafe; this project has no affiliation with TypeSafe,
+and the LLM-decider fallback keeps it usable without Jev.
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](https://github.com/manvirchakal/graphwalk/blob/main/CONTRIBUTING.md).
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](https://github.com/manvirchakal/graphwalk/blob/main/LICENSE).

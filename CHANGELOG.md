@@ -7,8 +7,26 @@ API; the changelog says when.
 
 ## [Unreleased]
 
-The proof of concept (milestones M0–M7). Nothing is published yet; v0.1 is planned
-in [`roadmap.md`](roadmap.md).
+## [0.1.0] - 2026-10-02
+
+The first public release: confidence-scored question answering over existing knowledge
+graphs, as a library, a CLI, and an MCP server.
+
+Highlights:
+
+- `graphwalk import` / `Index.import_triples`: load a graph from CSV, TSV, JSONL, or
+  N-Triples into SQLite, with no API key.
+- `graphwalk query` / `Index.walk`: answers with their path and confidence, walked with
+  the measured `TraversalConfig.kgqa()` setting; `escalate_below` re-walks unsure
+  queries with an LLM decider.
+- `graphwalk mcp`: the same as MCP tools (`walk`, `neighbors`, `get_node`, ...), over
+  stdio or authenticated HTTP, and as a container.
+- `graphwalk guide`: a packaged guide for coding agents, with the measured regime map.
+- Text ingestion with `locate`/`read` (experimental: RAG answers documents better).
+- A documentation site, and the evidence behind every claim in `docs/` (experiments
+  E1–E7 and A1–A8, with the scripts and runs that regenerate them).
+
+Details, by area:
 
 ### Changed
 
@@ -20,6 +38,10 @@ in [`roadmap.md`](roadmap.md).
 
 ### Added
 
+- Documentation site (MkDocs Material, built in CI, deployed to GitHub Pages).
+- Experiments A7 (predicting walk success before walking: it barely works; walk
+  first) and A8 (graphwalk as an agent's tool: a strong agent with `walk` cost 25%
+  less at equal F1), with the agent harness in `graphwalk.eval.agent`.
 - Faster walks at high-degree nodes: stores may implement `AdjacencyStore` (SQLite
   does), so traversal lists options from edge ids and loads only the nodes it keeps;
   relation hops no longer deduplicate targets in quadratic time. Walks from a
@@ -127,3 +149,6 @@ in [`roadmap.md`](roadmap.md).
 
 - The Wikipedia page fetcher and HTML-to-text converter for FanOutQA (superseded by
   the pinned corpus mirror) and unused JSON cache helpers in `eval/ingest_eval.py`.
+
+[Unreleased]: https://github.com/manvirchakal/graphwalk/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/manvirchakal/graphwalk/releases/tag/v0.1.0

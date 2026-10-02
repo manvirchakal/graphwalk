@@ -28,3 +28,4 @@ results/**/results.json
 .vscode/
 .DS_Store
 examples/kg/movies.db
+site/

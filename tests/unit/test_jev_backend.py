@@ -1,6 +1,7 @@
 """JevBackend through the real typesafe-sdk, with HTTP answered by an in-process mock."""
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -121,6 +122,23 @@ async def test_openrouter_url_and_extras() -> None:
     assert response.usage.cost_usd == 0.00000504
     assert response.request_id == "gen-123"
     assert response.provider == "TypeSafe"
+
+
+@pytest.mark.parametrize(
+    ("echoed", "level"),
+    [("typesafe/jev-1.13-20260917", logging.DEBUG), ("typesafe/jev-2.0", logging.WARNING)],
+)
+async def test_model_echo_warns_only_for_another_model(
+    echoed: str, level: int, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG, logger="graphwalk.decisions.jev")
+    body = ok_body()
+    body["model"] = echoed
+    jev = backend(Recorder(respond_json(body)), provider="openrouter", model="typesafe/jev-1.13")
+    await jev.decide(REQUEST)
+    await jev.decide(REQUEST)
+    records = [r for r in caplog.records if "server answered with" in r.getMessage()]
+    assert [r.levelno for r in records] == [level]  # once per backend
 
 
 async def test_renormalizes_server_probabilities() -> None:
