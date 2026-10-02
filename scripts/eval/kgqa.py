@@ -8,6 +8,7 @@ Systems, all starting from the release's topic entities:
 
 * ``jev``: graphwalk, relation hops, greedy, Jev decisions (the ``relation-v2`` preset);
 * ``llm``: the same walk with the LLM-as-decider;
+* ``logprob``: the same walk, decisions from an option letter's token probabilities;
 * ``path``: the LLM writes the relation path from the subgraph's schema and code runs
   it (two retries when it returns nothing), as in E2.
 
@@ -29,6 +30,7 @@ from graphwalk.decisions.llm_decider import LLMDecider
 from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder
 from graphwalk.eval.calibration import CALIBRATION_HEADER, calibration_row
 from graphwalk.eval.datasets import rog
+from graphwalk.eval.logprob_decider import LogprobDecider
 from graphwalk.eval.per_question import PerQuestionSystem
 from graphwalk.eval.query_writer import PathQuerySystem
 from graphwalk.eval.runner import SystemRun, run_system, sample_questions, write_results
@@ -95,6 +97,10 @@ async def main(args: argparse.Namespace) -> None:
     builders = {
         "jev": lambda: walker(_make_backend(), f"graphwalk-{PRESET}-jev"),
         "llm": lambda: walker(LLMDecider(llm(args.max_tokens)), f"graphwalk-{PRESET}-llm"),
+        "logprob": lambda: walker(
+            LogprobDecider(args.logprob_model, api_key=api_key or "", max_rpm=args.logprob_rpm),
+            f"graphwalk-{PRESET}-logprob",
+        ),
         "path": path_writer,
     }
     runs: list[SystemRun] = []
@@ -138,9 +144,11 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=50)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--systems", nargs="+", default=["jev", "llm", "path"],
-                        choices=["jev", "llm", "path"])  # fmt: skip
+                        choices=["jev", "llm", "logprob", "path"])  # fmt: skip
     parser.add_argument("--llm", default="openrouter/openai/gpt-6-luna")
     parser.add_argument("--max-tokens", type=int, default=1024)
+    parser.add_argument("--logprob-model", default="qwen/qwen3.8-27b", help="open weights")
+    parser.add_argument("--logprob-rpm", type=float, default=120.0)
     parser.add_argument("--max-depth", type=int, default=4)
     parser.add_argument("--rpm", type=float, default=18.0)
     parser.add_argument("--concurrency", type=int, default=4)

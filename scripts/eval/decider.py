@@ -7,6 +7,8 @@ relation-v2, given start entities) and 2Wiki's pooled gold-evidence graph (n = 3
 greedy-v2, gold start entities). Both deciders run in the same invocation, so they see
 the same code and questions. The LLM decider (graphwalk.decisions.llm_decider) asks the
 chat model to score every option 0-100 and normalizes the scores into a distribution.
+``logprob`` (paper P1/P2) instead reads the token probabilities of an option letter
+(graphwalk.eval.logprob_decider).
 
 Also reports the calibration of each walk's confidence (graphwalk.eval.calibration).
 Other seeds (--seed 1, 2) are E4's re-samples of the same test sets.
@@ -21,6 +23,7 @@ from graphwalk.config import GraphwalkSettings
 from graphwalk.decisions.llm_decider import LLMDecider
 from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder
 from graphwalk.eval.calibration import CALIBRATION_HEADER, calibration_row
+from graphwalk.eval.logprob_decider import LogprobDecider
 from graphwalk.eval.suite import Factories, run_dataset
 from graphwalk.llm.litellm_backend import LiteLLMBackend
 
@@ -44,6 +47,13 @@ async def main(args: argparse.Namespace) -> None:
             embedder=lambda: embedder,
             llm=lambda: llm(512),
         ),
+        "logprob": Factories(
+            decider=lambda: LogprobDecider(
+                args.logprob_model, api_key=api_key or "", max_rpm=args.logprob_rpm
+            ),
+            embedder=lambda: embedder,
+            llm=lambda: llm(512),
+        ),
     }
     selected = [r for r in RUNS if f"{r[0]}-{r[1]}" in args.only or not args.only]
     for dataset, hops, preset, n in selected:
@@ -59,7 +69,7 @@ async def main(args: argparse.Namespace) -> None:
                 [preset],
                 factories,
                 hops=max(hops, 1),
-                n=n,
+                n=args.n or n,
                 seed=args.seed,
                 concurrency=args.concurrency,
                 out_root=Path("results") / "decider",
@@ -77,10 +87,15 @@ async def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--deciders", nargs="+", default=["jev", "llm"], choices=["jev", "llm"])
+    parser.add_argument("--n", type=int, default=0, help="questions per dataset (0 = default)")
+    parser.add_argument(
+        "--deciders", nargs="+", default=["jev", "llm"], choices=["jev", "llm", "logprob"]
+    )
     parser.add_argument("--only", nargs="*", default=[], help="e.g. metaqa-3 2wiki-0")
     parser.add_argument("--llm", default="openrouter/openai/gpt-6-luna")
     parser.add_argument("--max-tokens", type=int, default=1024)
+    parser.add_argument("--logprob-model", default="qwen/qwen3.8-27b", help="open weights")
+    parser.add_argument("--logprob-rpm", type=float, default=120.0)
     parser.add_argument("--rpm", type=float, default=18.0)
     parser.add_argument("--concurrency", type=int, default=4)
     asyncio.run(main(parser.parse_args()))

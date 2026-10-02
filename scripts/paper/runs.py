@@ -120,3 +120,12 @@ CALIBRATION = {
     }
     for dataset, systems in CURATED.items()
 }
+
+# Freebase KG-QA (A2 pilots, A6 global graph): label -> decider -> (run, system).
+KGQA_CALIBRATION = {
+    "WebQSP": {"Jev": ("kgqa/20261001T153829Z-webqsp", "graphwalk-relation-v2-jev"),
+               "LLM decider": ("kgqa/20261001T153829Z-webqsp", "graphwalk-relation-v2-llm")},
+    "CWQ": {"Jev": ("kgqa/20261001T160324Z-cwq", "graphwalk-relation-v2-jev"),
+            "LLM decider": ("kgqa/20261001T160324Z-cwq", "graphwalk-relation-v2-llm")},
+    "WebQSP, one graph": {"Jev": ("kgqa/20261001T172038Z-webqsp-global", "graphwalk-kgqa-jev")},
+}  # fmt: skip

@@ -139,7 +139,7 @@ def paired(runs: list[SystemRun]) -> str:
 async def main(args: argparse.Namespace) -> None:
     questions, graphs = rog.load("webqsp", "test")
     sample = sample_questions(questions, args.n, args.seed)
-    subset = sample[: args.pilot or None]
+    subset = sample[args.start : args.pilot or None]
     root = cache_dir() / "graphs"
     root.mkdir(parents=True, exist_ok=True)
     tag = f"webqsp-test-agent-n{args.n}-s{args.seed}"
@@ -200,6 +200,7 @@ async def main(args: argparse.Namespace) -> None:
         params={
             "dataset": "webqsp", "split": "test", "graph": f"subgraphs of {len(sample)} sampled q",
             "nodes": nodes, "edges": edges, "n": len(subset), "sample": len(sample),
+            "start": args.start,
             "seed": args.seed, "llm": args.llm, "max_turns": args.max_turns,
             "arms": args.arms, "concurrency": args.concurrency,
         },
@@ -214,6 +215,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=100, help="sample size (fixes the graph)")
     parser.add_argument("--pilot", type=int, default=0, help="run the first N only (0 = all)")
+    parser.add_argument("--start", type=int, default=0, help="skip the first N (extend a run)")
     parser.add_argument("--seed", type=int, default=0)
     arms = ["jev", "closedbook", "graph", "walk", "search"]
     parser.add_argument("--arms", nargs="+", default=arms, choices=arms)
