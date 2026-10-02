@@ -56,7 +56,7 @@ Each hop is decided by a **decider**, and you choose it (`GRAPHWALK_DECIDER`, or
 | Decider | What it is | Keys and settings | Measured |
 |---|---|---|---|
 | `jev` (default) | TypeSafe's Jev classification model | `OPENROUTER_API_KEY` (model `typesafe/jev-1.13`) or `TYPESAFE_API_KEY` with `GRAPHWALK_DECISION_PROVIDER=typesafe` | Fastest: ~0.3–0.5 s per hop |
-| `logprob` | Any chat model that returns token log-probabilities, at any OpenAI-compatible endpoint (OpenRouter, vLLM, llama.cpp, OpenAI) | `GRAPHWALK_DECIDER_MODEL`, `GRAPHWALK_DECIDER_BASE_URL` (default OpenRouter, with an open-weights model), `GRAPHWALK_DECIDER_API_KEY` | As accurate as Jev, and its confidence as informative (P1, Qwen3.8-27B); ~10× slower through OpenRouter |
+| `logprob` | Any chat model that returns token log-probabilities, at any OpenAI-compatible endpoint (OpenRouter, vLLM, llama.cpp, OpenAI) | `GRAPHWALK_DECIDER_MODEL`, `GRAPHWALK_DECIDER_BASE_URL` (default OpenRouter, with an open-weights model), `GRAPHWALK_DECIDER_API_KEY` | With Qwen3.8-27B (the default): as accurate as Jev, confidence as informative (P1); ~10× slower through OpenRouter. Other models vary (DeepSeek V4 Flash: EM 0.44 vs 0.80), so check yours |
 | `llm` | A chat model that states a score per option | the LLM settings below | Works, but its confidence is barely informative (stated scores, not probabilities) |
 
 `GRAPHWALK_DECISION_FALLBACK=logprob` (or `llm`) uses another decider only when no Jev

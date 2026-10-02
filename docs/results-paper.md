@@ -97,6 +97,27 @@ Paired, walk arm minus graph-tools arm:
   accuracy. The first 30 questions overstated it (−25%); the other 70 alone give −13%.
 - **No accuracy effect** (+0.01 F1, CI ±0.05) and no latency effect.
 
+### P1b: does it hold for other open models? (MetaQA 3-hop)
+
+The same decider and walks with two more open-weights models
+(`results/decider/20261002T190949Z-metaqa-3hop`, DeepSeek V4 Flash;
+`…191835Z-metaqa-3hop`, Gemma 4 31B). Jev from P5 (n = 500, same seed-0 sample).
+
+| decider | n | EM | F1 | AUROC | ECE | p50 s | $ / 1k q |
+|---|---|---|---|---|---|---|---|
+| Jev | 500 | 0.80 | 0.88 | **0.95** | 0.11 | **1.1** | 0.15 |
+| Qwen3.8-27B | 200 | 0.80 | 0.90 | **0.96** | 0.13 | 9.9 | 0.26 |
+| Gemma 4 31B | 200 | **0.82** | **0.93** | 0.82 | 0.18 | 9.7 | 0.30 |
+| DeepSeek V4 Flash | 200 | 0.44 | 0.49 | 0.84 | 0.36 | 10.5 | 0.09 |
+
+- **The confidence is informative with every model tried** (AUROC 0.82–0.96), but its
+  quality varies: Gemma's is overconfident (mean confidence 0.995 against 0.82 EM).
+- **Accuracy depends on the model.** Gemma matched or beat Jev; DeepSeek V4 Flash
+  collapsed (it rarely chose `STOP`: 150 of 200 walks used all four decisions). The
+  claim is "a decider that reads probabilities", not "any model": check the model on
+  labeled questions first.
+- Only Qwen3.8-27B matched Jev on both accuracy and confidence.
+
 ## P3: how much is memory? Entity names replaced by aliases (`scripts/paper/table_anon.py`)
 
 A8's cheap-agent setup (gpt-6-luna, the same 100 WebQSP questions, one graph merging

@@ -19,8 +19,9 @@ escalation, the MCP tools); the decider plugs in:
 
 - **Jev** (default), TypeSafe's classification model: the fastest we measured.
 - **Any model that returns token probabilities**, at any OpenAI-compatible endpoint
-  (OpenRouter, vLLM, llama.cpp, OpenAI). With an open-weights model it matched Jev's
-  accuracy and confidence quality, at about 10× the latency through OpenRouter.
+  (OpenRouter, vLLM, llama.cpp, OpenAI). With Qwen3.8-27B (open weights) it matched
+  Jev's accuracy and confidence quality, at about 10× the latency through OpenRouter;
+  other models vary, so check yours.
 - **Your own**: anything implementing `DecisionBackend` (a fine-tuned classifier, a
   cross-encoder). See [deciders](https://manvirchakal.github.io/graphwalk/deciders/).
 

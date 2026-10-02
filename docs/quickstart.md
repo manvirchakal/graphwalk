@@ -22,8 +22,8 @@ export OPENROUTER_API_KEY=sk-or-...        # model typesafe/jev-1.13 on OpenRout
 ```
 
 Or decide with an open-weights model's token probabilities, through OpenRouter or your
-own server (as accurate, its confidence as informative, about 10× slower through
-OpenRouter; see [deciders](deciders.md)):
+own server (with the default Qwen3.8-27B: as accurate, its confidence as informative,
+about 10× slower through OpenRouter; other models vary, see [deciders](deciders.md)):
 
 ```bash
 export GRAPHWALK_DECIDER=logprob           # default model qwen/qwen3.8-27b on OpenRouter

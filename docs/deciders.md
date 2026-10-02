@@ -11,13 +11,23 @@ MCP tools); the decider is yours to choose.
 | `GRAPHWALK_DECIDER` | What decides | Confidence | Speed (measured) |
 |---|---|---|---|
 | `jev` (default) | TypeSafe's Jev, a classification model | Informative (AUROC 0.92–0.97 on MetaQA 2–3 hop and WebQSP) | Fastest: 0.7–1.1 s per MetaQA walk |
-| `logprob` | Any chat model that returns token log-probabilities, at any OpenAI-compatible endpoint | As informative as Jev's with Qwen3.8-27B (P1) | ~10× Jev's latency through OpenRouter; local serving not measured |
+| `logprob` | Any chat model that returns token log-probabilities, at any OpenAI-compatible endpoint | Depends on the model: as informative as Jev's with Qwen3.8-27B (P1); informative but weaker with Gemma 4 31B and DeepSeek V4 Flash | ~10× Jev's latency through OpenRouter; local serving not measured |
 | `llm` | A chat model that *states* a score per option | Barely informative (AUROC 0.50–0.69): scores, not probabilities | Slowest |
 
 The evidence is in [P1](results-paper.md#p1-is-the-confidence-jevs-or-the-framings):
-the same walks with an open-weights model reading its own token probabilities matched
-Jev's accuracy and the informativeness of its confidence on every dataset tried, and
-beat it on 2Wiki and CWQ. What Jev adds is speed.
+the same walks with Qwen3.8-27B reading its own token probabilities matched Jev's
+accuracy and the informativeness of its confidence on every dataset tried, and beat it
+on 2Wiki and CWQ. **The model matters**, though (MetaQA 3-hop):
+
+| decider | EM | AUROC of confidence |
+|---|---|---|
+| Jev | 0.80 | 0.95 |
+| Qwen3.8-27B | 0.80 | 0.96 |
+| Gemma 4 31B | 0.82 | 0.82 (overconfident) |
+| DeepSeek V4 Flash | 0.44 | 0.84 |
+
+What Jev adds is speed, and not having to choose. With `logprob`, start from
+Qwen3.8-27B (the default) and check any other model on labeled questions.
 
 ## The `logprob` decider
 
@@ -67,8 +77,9 @@ Things to know:
   them; a model whose endpoints require reasoning (GLM 5.3 Flash) did not.
 - **Reasoning models must answer without reasoning.** Through OpenRouter, graphwalk
   turns reasoning off; endpoints that make reasoning mandatory cannot serve this decider.
-- **Only Qwen3.8-27B was evaluated in full** (P1, six datasets). Check a different
-  model on 50–100 labeled questions from your graph before relying on its confidence.
+- **Only Qwen3.8-27B was evaluated in full** (P1, six datasets); two other models were
+  checked on one (above), and one of them failed. Check a different model on 50–100
+  labeled questions from your graph before relying on it.
 
 As a fallback or for escalation only:
 
