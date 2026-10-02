@@ -131,7 +131,7 @@ KGQA_CALIBRATION = {
 }  # fmt: skip
 
 # P1: the same walks with an open-weights model's token probabilities as the decider
-# (graphwalk.eval.logprob_decider). label -> (run, system, correctness metric).
+# (graphwalk.decisions.logprob). label -> (run, system, correctness metric).
 _LP = "graphwalk-relation-v2-logprob"
 LOGPROB_CALIBRATION = {
     "MetaQA 1-hop": ("decider/20261002T021309Z-metaqa-1hop", _LP, "em"),

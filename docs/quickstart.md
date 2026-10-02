@@ -13,11 +13,21 @@ prefilter and dense `locate`) and `eval` (benchmark loaders).
 
 ## Keys
 
-Decisions use **Jev**, a fast decision model:
+Each hop is decided by a **decider**. The default is **Jev**, a fast classification
+model:
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...        # model typesafe/jev-1.13 on OpenRouter
 # or: export TYPESAFE_API_KEY=... GRAPHWALK_DECISION_PROVIDER=typesafe
+```
+
+Or decide with an open-weights model's token probabilities, through OpenRouter or your
+own server (as accurate, its confidence as informative, about 10× slower through
+OpenRouter; see [deciders](deciders.md)):
+
+```bash
+export GRAPHWALK_DECIDER=logprob           # default model qwen/qwen3.8-27b on OpenRouter
+# your own server: GRAPHWALK_DECIDER_BASE_URL=http://localhost:8000/v1 GRAPHWALK_DECIDER_MODEL=...
 ```
 
 Escalation needs an LLM key too (the same OpenRouter key works, or OpenAI, Anthropic,

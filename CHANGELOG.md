@@ -7,8 +7,27 @@ API; the changelog says when.
 
 ## [Unreleased]
 
+Bring your own decider: graphwalk is the machinery, and the model that decides each hop
+is a choice. Jev stays the default and the fastest.
+
+### Added
+
+- `LogprobDecider` (`GRAPHWALK_DECIDER=logprob`): decisions from any chat model's token
+  probabilities at any OpenAI-compatible endpoint (OpenRouter by default, with an
+  open-weights model; vLLM, llama.cpp, OpenAI). In the paper experiments (P1) it matched
+  Jev's accuracy and confidence quality. Settings `GRAPHWALK_DECIDER_MODEL`,
+  `_BASE_URL`, `_API_KEY`, `_MAX_RPM`.
+- `GRAPHWALK_DECIDER` (`jev`, `logprob`, `llm`); `GRAPHWALK_DECISION_FALLBACK=logprob`;
+  `GRAPHWALK_ESCALATION_DECIDER` (`llm` or `logprob`).
+- The decider protocol and types are public: `DecisionBackend`, `DecisionRequest`,
+  `DecisionResponse`, `ChoiceQuestion`, `ChoiceResult`, `Usage`,
+  `DecisionBackendError`, `normalize_distribution`, `LogprobDecider`, `LLMDecider`.
+- Docs: a [deciders](https://manvirchakal.github.io/graphwalk/deciders/) page.
+
 ### Fixed
 
+- Without an embedder, options over the decider's limit were cut in arbitrary order;
+  they are now ranked by the words they share with the question.
 - With an embedder, options over the decider's limit but under `prefilter_threshold`
   were cut in arbitrary order; they are now ranked by similarity to the question.
 
@@ -23,7 +42,7 @@ API; the changelog says when.
 
 - Paper experiments P0, P1, P3, P4, P5 (`docs/results-paper.md`), `rog.anonymize`
   and `agent_arms.py --anonymize`, the token-probability
-  decider `graphwalk.eval.logprob_decider`, and `scripts/paper/figure_selective.py`
+  decider `graphwalk.decisions.logprob`, and `scripts/paper/figure_selective.py`
   and `table_agent.py`.
 
 ## [0.1.0] - 2026-10-02

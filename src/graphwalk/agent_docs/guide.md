@@ -30,13 +30,14 @@ Rules of thumb:
 
 - **The graph must hold the answer.** graphwalk's answers are nodes. If facts live in
   free text, attributes, or qualifiers the graph lacks, no walk finds them.
-- **Jev buys cost, speed, and confidence, not accuracy.** An LLM deciding each hop is
-  as accurate or better (+0.06 F1 at 3 hops). Jev is 3–4× cheaper, 7–10× faster per
-  decision, and its confidence separates right from wrong answers (AUROC 0.92–0.97 on
-  MetaQA 2–3 hop and WebQSP; weaker, 0.64–0.71, on MetaQA 1-hop, 2Wiki, and CWQ). The
-  LLM-decider fallback's confidence barely does (0.50–0.69): it is the model's stated
-  scores. An open-weights model's token probabilities were as informative as Jev's
-  (P1), at ~10× Jev's latency, so the confidence comes from the framing, not from Jev.
+- **A decider that reads probabilities buys cost, speed, and confidence, not
+  accuracy.** An LLM writing the query is as accurate or better. Jev is 3–4× cheaper
+  and 7–10× faster per decision than an LLM deciding, and its confidence separates
+  right from wrong answers (AUROC 0.92–0.97 on MetaQA 2–3 hop and WebQSP; weaker,
+  0.64–0.71, on MetaQA 1-hop, 2Wiki, and CWQ). The `logprob` decider with an
+  open-weights model matched that (P1) at ~10× Jev's latency: the confidence comes from
+  reading probabilities, not from Jev. The `llm` decider's stated scores barely do
+  (0.50–0.69).
 - **Walking is fast; the model calls dominate.** graphwalk adds ~10 ms per walk on
   typical nodes and ~0.1–0.5 s at nodes with 20k neighbors (SQLite, 1.4M edges).
 
@@ -49,15 +50,19 @@ pip install 'graphwalk[embeddings]'   # or, from a clone: uv sync --extra embedd
 Extras: `embeddings` (local fastembed embedder: prefilter and dense `locate`), `llm`
 (LiteLLM: text ingestion, the LLM decider, escalation), `mcp` (the MCP server), `eval`.
 
-Keys come from the environment:
+Each hop is decided by a **decider**, and you choose it (`GRAPHWALK_DECIDER`, or
+`Index.open(decider=...)` with your own `DecisionBackend`):
 
-- Decisions (Jev): `OPENROUTER_API_KEY` (model `typesafe/jev-1.13`) or `TYPESAFE_API_KEY`
-  with `GRAPHWALK_DECISION_PROVIDER=typesafe`.
-- LLM (escalation, ingestion): `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` /
-  `ANTHROPIC_API_KEY` / `XAI_API_KEY` with `GRAPHWALK_LLM_PROVIDER`.
-- No Jev access: `GRAPHWALK_DECISION_FALLBACK=llm` makes the chat model decide. It works,
-  but it is slower and its confidence is not calibrated, so escalation thresholds mean
-  little with it.
+| Decider | What it is | Keys and settings | Measured |
+|---|---|---|---|
+| `jev` (default) | TypeSafe's Jev classification model | `OPENROUTER_API_KEY` (model `typesafe/jev-1.13`) or `TYPESAFE_API_KEY` with `GRAPHWALK_DECISION_PROVIDER=typesafe` | Fastest: ~0.3–0.5 s per hop |
+| `logprob` | Any chat model that returns token log-probabilities, at any OpenAI-compatible endpoint (OpenRouter, vLLM, llama.cpp, OpenAI) | `GRAPHWALK_DECIDER_MODEL`, `GRAPHWALK_DECIDER_BASE_URL` (default OpenRouter, with an open-weights model), `GRAPHWALK_DECIDER_API_KEY` | As accurate as Jev, and its confidence as informative (P1, Qwen3.8-27B); ~10× slower through OpenRouter |
+| `llm` | A chat model that states a score per option | the LLM settings below | Works, but its confidence is barely informative (stated scores, not probabilities) |
+
+`GRAPHWALK_DECISION_FALLBACK=logprob` (or `llm`) uses another decider only when no Jev
+key is set. LLM (escalation, ingestion): `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` /
+`ANTHROPIC_API_KEY` / `XAI_API_KEY` with `GRAPHWALK_LLM_PROVIDER`; set
+`GRAPHWALK_ESCALATION_DECIDER=logprob` so escalated answers carry probabilities too.
 
 Importing triples needs no key at all.
 
@@ -157,7 +162,10 @@ Public names are those exported from `graphwalk` (anything else may change):
 `Index`, `WalkResult`, `TraversalConfig`, `ImportReport`, `IngestConfig`,
 `IngestReport`, `Location`, `Passage`, `Node`, `Edge`, `Neighbor`, `Provenance`,
 `FileSource`, `TextSource`, `SourceDocument`, `FileDocuments`, `StoredDocuments`,
-`GraphwalkError`, `DocumentNotFoundError`, `StaleLocationError`, `guide`.
+`GraphwalkError`, `DocumentNotFoundError`, `StaleLocationError`, `guide`; and for
+deciders, `DecisionBackend`, `DecisionRequest`, `DecisionResponse`, `ChoiceQuestion`,
+`ChoiceResult`, `Usage`, `DecisionBackendError`, `normalize_distribution`,
+`LogprobDecider`, `LLMDecider`.
 
 `Index` methods: `open(path, **kwargs)`, `import_triples(path)`, `walk(query)`,
 `ingest(source)`, `locate(query, k, mode=)`, `read(location, context=)`,

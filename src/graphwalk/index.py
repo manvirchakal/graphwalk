@@ -73,12 +73,15 @@ class Index:
     Backends not passed are built on first use from ``config`` (by default the
     environment; see :mod:`graphwalk.config`):
 
-    * ``decider`` drives the walk and ingestion routing (Jev, or the LLM fallback);
+    * ``decider`` drives the walk and ingestion routing: any
+      :class:`~graphwalk.DecisionBackend` (bring your own), or by default the one
+      ``GRAPHWALK_DECIDER`` names (Jev, the token-probability decider, or the
+      LLM-as-decider; see :func:`graphwalk.providers.make_decider`);
     * ``llm`` extracts entities and relations (needed only to ingest);
     * ``fallback_decider`` (with ``escalate_below``, or ``GRAPHWALK_ESCALATE_BELOW`` when
       the index builds its own backends or is given a config) re-walks queries whose
-      best answer's confidence is below the threshold; by default the LLM-as-decider
-      on the escalation model (see :mod:`graphwalk.traversal.escalation`);
+      best answer's confidence is below the threshold; by default per
+      ``GRAPHWALK_ESCALATION_DECIDER`` (see :mod:`graphwalk.traversal.escalation`);
     * ``traversal`` configures walks and graph ``locate``; by default ``walk`` uses
       :meth:`TraversalConfig.kgqa`, the setting measured on curated graphs (greedy
       relation hops), and ``locate`` the base ``TraversalConfig()``;
@@ -170,12 +173,11 @@ class Index:
 
     @property
     def fallback_decider(self) -> DecisionBackend:
-        """The decider escalated walks use: as passed, or the LLM-as-decider."""
+        """The decider escalated walks use: as passed, or per ``escalation_decider``."""
         if self._fallback_decider is None:
-            from graphwalk.decisions.llm_decider import LLMDecider  # noqa: PLC0415
-            from graphwalk.providers import make_llm  # noqa: PLC0415
+            from graphwalk.providers import make_escalation_decider  # noqa: PLC0415
 
-            self._fallback_decider = LLMDecider(make_llm(self.config, role="escalation"))
+            self._fallback_decider = make_escalation_decider(self.config)
             self._owns.append(self._fallback_decider)
         return self._fallback_decider
 

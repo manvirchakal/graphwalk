@@ -1,5 +1,7 @@
-"""Embedding prefilter: keep the options most similar to the query."""
+"""Prefilter: keep the options most similar to the query (by embedding, or by word
+overlap without an embedder)."""
 
+import re
 from collections.abc import Sequence
 
 import numpy as np
@@ -63,3 +65,21 @@ async def rank_by_similarity(
     sims = vectors[1:] @ vectors[0]
     order = sorted(range(len(texts)), key=lambda i: (-float(sims[i]), i))
     return [(i, float(sims[i])) for i in order]
+
+
+_WORD = re.compile(r"[a-z0-9]+")
+_MIN_WORD = 3
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in _WORD.findall(text.lower()) if len(w) >= _MIN_WORD}
+
+
+def rank_by_overlap(query: str, texts: Sequence[str]) -> list[tuple[int, float]]:
+    """Indices of ``texts`` by how many of the query's words (3+ letters) they contain,
+    best first; ties keep order. The fallback when there is no embedder: crude, but
+    better than cutting an option list in arbitrary order."""
+    wanted = _words(query)
+    scores = [float(len(wanted & _words(text))) for text in texts]
+    order = sorted(range(len(texts)), key=lambda i: (-scores[i], i))
+    return [(i, scores[i]) for i in order]

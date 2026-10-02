@@ -43,7 +43,7 @@ on MetaQA and 2Wiki, hits@1 on WebQSP and CWQ. Curve points:
   is not uniform across graphs; the paper must say so.
 - AUROC on WebQSP/CWQ here uses hits@1; with EM (as in A2) Jev's is 0.92 / 0.71.
 
-## P1: is the confidence Jev's, or the framing's? (`graphwalk.eval.logprob_decider`)
+## P1: is the confidence Jev's, or the framing's? (`graphwalk.decisions.logprob`)
 
 The same walks, with the decision made by an open-weights model (Qwen3.8-27B via
 OpenRouter): options are lettered, the model answers with one letter, and the

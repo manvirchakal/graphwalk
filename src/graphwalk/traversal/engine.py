@@ -44,7 +44,7 @@ from graphwalk.stores.base import AdjacencyStore, Adjacent, GraphStore
 from graphwalk.traversal import prompts
 from graphwalk.traversal.batching import split_questions
 from graphwalk.traversal.config import TraversalConfig
-from graphwalk.traversal.prefilter import EmbeddingCache, rank_by_similarity
+from graphwalk.traversal.prefilter import EmbeddingCache, rank_by_overlap, rank_by_similarity
 from graphwalk.traversal.prompts import STOP, Move
 from graphwalk.traversal.sampling import draw, reshape
 from graphwalk.traversal.scoring import normalized_score, step_logp
@@ -454,15 +454,19 @@ class Traverser:
             return [m for i, m in enumerate(moves) if i in keep], pruned
         if len(moves) > hard_cap:
             logger.warning(
-                "beam %d: %d options exceed the backend limit; truncating (no embedder)",
+                "beam %d: %d options exceed the decider's limit of %d; keeping those that "
+                "share the most words with the query (no embedder to rank them)",
                 beam.beam_id,
                 len(moves),
+                hard_cap,
             )
+            ranked = rank_by_overlap(run.query, await self._move_texts(run, moves))
+            keep = {i for i, _ in ranked[:hard_cap]}
             pruned = [
-                Pruned(reason="truncated", relation=m.relation, targets=m.targets)
-                for m in moves[hard_cap:]
+                Pruned(reason="truncated", relation=moves[i].relation, targets=moves[i].targets)
+                for i, _ in ranked[hard_cap:]
             ]
-            return moves[:hard_cap], pruned
+            return [m for i, m in enumerate(moves) if i in keep], pruned
         return moves, []
 
     async def _move_texts(self, run: _Run, moves: Sequence[Move]) -> list[str]:

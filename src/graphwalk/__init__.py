@@ -9,6 +9,18 @@ from importlib.metadata import version
 
 from graphwalk.core.errors import DocumentNotFoundError, GraphwalkError, StaleLocationError
 from graphwalk.core.model import Edge, Neighbor, Node, Provenance
+from graphwalk.decisions import (
+    ChoiceQuestion,
+    ChoiceResult,
+    DecisionBackend,
+    DecisionBackendError,
+    DecisionRequest,
+    DecisionResponse,
+    LLMDecider,
+    LogprobDecider,
+    Usage,
+    normalize_distribution,
+)
 from graphwalk.guide import guide
 from graphwalk.index import Index, WalkResult
 from graphwalk.ingest.pipeline import IngestConfig, IngestReport
@@ -21,6 +33,12 @@ from graphwalk.traversal.config import TraversalConfig
 __version__ = version("graphwalk")
 
 __all__ = [
+    "ChoiceQuestion",
+    "ChoiceResult",
+    "DecisionBackend",
+    "DecisionBackendError",
+    "DecisionRequest",
+    "DecisionResponse",
     "DocumentNotFoundError",
     "Edge",
     "FileDocuments",
@@ -30,7 +48,9 @@ __all__ = [
     "Index",
     "IngestConfig",
     "IngestReport",
+    "LLMDecider",
     "Location",
+    "LogprobDecider",
     "Neighbor",
     "Node",
     "Passage",
@@ -40,7 +60,9 @@ __all__ = [
     "StoredDocuments",
     "TextSource",
     "TraversalConfig",
+    "Usage",
     "WalkResult",
     "__version__",
     "guide",
+    "normalize_distribution",
 ]

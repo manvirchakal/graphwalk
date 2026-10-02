@@ -8,7 +8,7 @@ greedy-v2, gold start entities). Both deciders run in the same invocation, so th
 the same code and questions. The LLM decider (graphwalk.decisions.llm_decider) asks the
 chat model to score every option 0-100 and normalizes the scores into a distribution.
 ``logprob`` (paper P1/P2) instead reads the token probabilities of an option letter
-(graphwalk.eval.logprob_decider).
+(graphwalk.decisions.logprob).
 
 Also reports the calibration of each walk's confidence (graphwalk.eval.calibration).
 Other seeds (--seed 1, 2) are E4's re-samples of the same test sets.
@@ -21,9 +21,9 @@ from pathlib import Path
 from graphwalk.cli import _make_backend  # pyright: ignore[reportPrivateUsage]
 from graphwalk.config import GraphwalkSettings
 from graphwalk.decisions.llm_decider import LLMDecider
+from graphwalk.decisions.logprob import LogprobDecider
 from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder
 from graphwalk.eval.calibration import CALIBRATION_HEADER, calibration_row
-from graphwalk.eval.logprob_decider import LogprobDecider
 from graphwalk.eval.suite import Factories, run_dataset
 from graphwalk.llm.litellm_backend import LiteLLMBackend
 

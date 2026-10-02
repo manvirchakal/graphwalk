@@ -27,10 +27,10 @@ from graphwalk.cli import _make_backend  # pyright: ignore[reportPrivateUsage]
 from graphwalk.config import GraphwalkSettings
 from graphwalk.decisions.base import DecisionBackend
 from graphwalk.decisions.llm_decider import LLMDecider
+from graphwalk.decisions.logprob import LogprobDecider
 from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder
 from graphwalk.eval.calibration import CALIBRATION_HEADER, calibration_row
 from graphwalk.eval.datasets import rog
-from graphwalk.eval.logprob_decider import LogprobDecider
 from graphwalk.eval.per_question import PerQuestionSystem
 from graphwalk.eval.query_writer import PathQuerySystem
 from graphwalk.eval.runner import SystemRun, run_system, sample_questions, write_results

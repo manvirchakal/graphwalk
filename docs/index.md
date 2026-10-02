@@ -5,9 +5,11 @@ have.** A Python library, a CLI, and an MCP server for agents.
 
 graphwalk answers a question by walking the graph from the entities it names. Each hop
 is a **constrained classification decision**: the current node's relations, plus
-`STOP`, are the options, and a fast decision model (Jev) returns a probability for each.
-Every answer comes with the path that reached it and a **confidence**. Unsure answers
-can be escalated to a stronger model, or checked by an agent.
+`STOP`, are the options, and a **decider** returns a probability for each: Jev (a fast
+classification model, the default), any model that exposes token probabilities (an
+open-weights model on your own server, say), or [your own](deciders.md). Every answer
+comes with the path that reached it and a **confidence**. Unsure answers can be
+escalated to a stronger model, or checked by an agent.
 
 ```bash
 pip install graphwalk
@@ -37,7 +39,7 @@ answer with a confidence you can act on, and it saves an agent tokens.
 
 1. **Link**: find the graph nodes the question names.
 2. **Decide**: at each node, the options are its relations (grouped, with counts and
-   example targets) and `STOP`. Jev returns a distribution over them; the walk follows
+   example targets) and `STOP`. The decider returns a distribution over them; the walk follows
    the best (greedy) or the top few (beam).
 3. **Answer**: the nodes where the walk stops, with the path and the confidence (the
    length-normalized path probability).
@@ -47,5 +49,5 @@ Read next: the [quickstart](quickstart.md), or [agents and MCP](agents.md).
 
 !!! note "Status"
     Alpha (v0.1). Jev is a hosted model from TypeSafe; this project has no affiliation
-    with TypeSafe. Without Jev, `GRAPHWALK_DECISION_FALLBACK=llm` makes any chat model
-    the decider (slower, and its confidence is not calibrated).
+    with TypeSafe. Without Jev, `GRAPHWALK_DECIDER=logprob` decides with any model that
+    returns token probabilities, open-weights ones included ([deciders](deciders.md)).

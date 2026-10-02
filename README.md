@@ -10,9 +10,19 @@ have.** Python library, CLI, and MCP server for agents.
 
 graphwalk answers a question by walking the graph from the entities it names. Each hop
 is a **constrained classification decision**: the current node's relations, plus
-`STOP`, are the options, and a fast decision model returns a probability for each. So
-every answer comes with a path and a **confidence**, and you can escalate the unsure
-ones to a stronger model.
+`STOP`, are the options, and a **decider** returns a probability for each. So every
+answer comes with a path and a **confidence**, and you can escalate the unsure ones to
+a stronger model.
+
+**Bring your own decider.** graphwalk is the machinery (options, walks, confidence,
+escalation, the MCP tools); the decider plugs in:
+
+- **Jev** (default), TypeSafe's classification model: the fastest we measured.
+- **Any model that returns token probabilities**, at any OpenAI-compatible endpoint
+  (OpenRouter, vLLM, llama.cpp, OpenAI). With an open-weights model it matched Jev's
+  accuracy and confidence quality, at about 10× the latency through OpenRouter.
+- **Your own**: anything implementing `DecisionBackend` (a fine-tuned classifier, a
+  cross-encoder). See [deciders](https://manvirchakal.github.io/graphwalk/deciders/).
 
 ```bash
 pip install graphwalk
@@ -38,9 +48,10 @@ answer that **knows when it might be wrong**.
 
 ## Quickstart
 
-Decisions use the Jev model, through [OpenRouter](https://openrouter.ai)
-(`OPENROUTER_API_KEY`) or TypeSafe (`TYPESAFE_API_KEY`). Without either,
-`GRAPHWALK_DECISION_FALLBACK=llm` lets any chat model decide (slower, not calibrated).
+The default decider is Jev, through [OpenRouter](https://openrouter.ai)
+(`OPENROUTER_API_KEY`) or TypeSafe (`TYPESAFE_API_KEY`). `GRAPHWALK_DECIDER=logprob`
+decides with an open-weights model's token probabilities instead (on OpenRouter by
+default, or your own server via `GRAPHWALK_DECIDER_BASE_URL`).
 
 ```python
 import asyncio
@@ -96,9 +107,9 @@ The package carries its own guide for coding agents: `graphwalk guide` (or
 ## Status
 
 Alpha (v0.1). The public API is what `graphwalk` exports; submodules may change between
-minor versions. Results are from small samples, mostly one seed. The decision model
-(Jev) is a hosted model from TypeSafe; this project has no affiliation with TypeSafe,
-and the LLM-decider fallback keeps it usable without Jev.
+minor versions. Results are from small samples, mostly one seed. Jev is a hosted model
+from TypeSafe; this project has no affiliation with TypeSafe, and does not depend on
+it: any model with token probabilities can decide.
 
 ## Development
 

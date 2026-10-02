@@ -64,20 +64,19 @@ async def _open_graph(path: Path) -> GraphStore:
 
 
 def _make_backend() -> DecisionBackend:
-    """The decision backend for CLI commands (replaced in tests): Jev, or the LLM
-    fallback if ``GRAPHWALK_DECISION_FALLBACK=llm`` and no Jev key is set."""
+    """The decision backend for CLI commands (replaced in tests), per
+    ``GRAPHWALK_DECIDER`` (default Jev) and ``GRAPHWALK_DECISION_FALLBACK``."""
     from graphwalk.providers import make_decider  # noqa: PLC0415
 
     return make_decider()
 
 
 def _make_fallback() -> DecisionBackend:
-    """The decider escalated walks use (replaced in tests): the LLM-as-decider on the
-    escalation model."""
-    from graphwalk.decisions.llm_decider import LLMDecider  # noqa: PLC0415
-    from graphwalk.providers import make_llm  # noqa: PLC0415
+    """The decider escalated walks use (replaced in tests), per
+    ``GRAPHWALK_ESCALATION_DECIDER``."""
+    from graphwalk.providers import make_escalation_decider  # noqa: PLC0415
 
-    return LLMDecider(make_llm(role="escalation"))
+    return make_escalation_decider()
 
 
 async def _run_query(
@@ -178,11 +177,11 @@ def query(  # noqa: PLR0917 - Typer maps parameters to CLI options
     ] = None,
     escalate_below: Annotated[
         float | None,
-        typer.Option(help="Re-walk with the LLM decider below this confidence (e.g. 0.9)."),
+        typer.Option(help="Re-walk with the escalation decider below this confidence (e.g. 0.9)."),
     ] = None,
 ) -> None:
-    """Answer a query by traversing the graph with Jev decisions (by default the
-    measured KG-QA setting, ``TraversalConfig.kgqa()``; flags override it)."""
+    """Answer a query by traversing the graph (decider: GRAPHWALK_DECIDER, default Jev;
+    by default the measured KG-QA setting, ``TraversalConfig.kgqa()``; flags override it)."""
     if escalate_below is not None and not 0.0 < escalate_below <= 1.0:
         typer.echo("--escalate-below must be in (0, 1]", err=True)
         raise typer.Exit(code=2)
