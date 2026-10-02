@@ -34,7 +34,9 @@ Rules of thumb:
   as accurate or better (+0.06 F1 at 3 hops). Jev is 3–4× cheaper, 7–10× faster per
   decision, and its confidence separates right from wrong answers (AUROC 0.92–0.97 on
   MetaQA 2–3 hop and WebQSP; weaker, 0.64–0.71, on MetaQA 1-hop, 2Wiki, and CWQ). The
-  LLM decider's confidence barely does (0.50–0.69).
+  LLM-decider fallback's confidence barely does (0.50–0.69): it is the model's stated
+  scores. An open-weights model's token probabilities were as informative as Jev's
+  (P1), at ~10× Jev's latency, so the confidence comes from the framing, not from Jev.
 - **Walking is fast; the model calls dominate.** graphwalk adds ~10 ms per walk on
   typical nodes and ~0.1–0.5 s at nodes with 20k neighbors (SQLite, 1.4M edges).
 
@@ -180,7 +182,8 @@ CLI: `graphwalk import`, `query`, `ingest`, `locate`, `migrate`, `mcp`, `guide`.
   retriever.
 - Expecting constraint handling ("first", "largest", "both A and B"). graphwalk doesn't
   filter, rank, or intersect answer sets; do that in your own code, or pick another tool.
-- Comparing confidence across deciders. Only Jev's confidence was found informative.
+- Comparing confidence across deciders, or trusting the LLM-decider fallback's: it is
+  the model's stated scores, not probabilities, and was found barely informative.
 - Passing a bare `TraversalConfig()` to `Index` or `Traverser` for KG-QA. Use
   `TraversalConfig.kgqa()` (the `Index` default) and override single fields.
 - Assuming the escalation threshold transfers. Check it on your own graph.

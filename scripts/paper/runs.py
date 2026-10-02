@@ -129,3 +129,16 @@ KGQA_CALIBRATION = {
             "LLM decider": ("kgqa/20261001T160324Z-cwq", "graphwalk-relation-v2-llm")},
     "WebQSP, one graph": {"Jev": ("kgqa/20261001T172038Z-webqsp-global", "graphwalk-kgqa-jev")},
 }  # fmt: skip
+
+# P1: the same walks with an open-weights model's token probabilities as the decider
+# (graphwalk.eval.logprob_decider). label -> (run, system, correctness metric).
+_LP = "graphwalk-relation-v2-logprob"
+LOGPROB_CALIBRATION = {
+    "MetaQA 1-hop": ("decider/20261002T021309Z-metaqa-1hop", _LP, "em"),
+    "MetaQA 2-hop": ("decider/20261002T021917Z-metaqa-2hop", _LP, "em"),
+    "MetaQA 3-hop": ("decider/20261002T022745Z-metaqa-3hop", _LP, "em"),
+    "2Wiki gold-evidence graph": ("decider/20261002T024030Z-2wiki-gold",
+                                  "graphwalk-greedy-v2-logprob", "em"),
+    "WebQSP": ("kgqa/20261002T024219Z-webqsp", _LP, "hits1"),
+    "CWQ": ("kgqa/20261002T024438Z-cwq", _LP, "hits1"),
+}  # fmt: skip

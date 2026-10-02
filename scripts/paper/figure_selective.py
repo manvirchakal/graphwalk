@@ -15,7 +15,7 @@ standard there). The curve points go to ``paper/figures/selective.csv`` for plot
 import csv
 
 from common import ROOT, by_system, mean, scores, table
-from runs import CALIBRATION, KGQA_CALIBRATION
+from runs import CALIBRATION, KGQA_CALIBRATION, LOGPROB_CALIBRATION
 
 from graphwalk.eval.calibration import auroc
 
@@ -49,7 +49,11 @@ def main() -> None:
         *((dataset, decider, run, system, "hits1")
           for dataset, deciders in KGQA_CALIBRATION.items()
           for decider, (run, system) in deciders.items()),
+        *((dataset, "open model, token probabilities", run, system, metric)
+          for dataset, (run, system, metric) in LOGPROB_CALIBRATION.items()),
     ]  # fmt: skip
+    order = list(dict.fromkeys(dataset for dataset, *_ in sources))
+    sources.sort(key=lambda source: order.index(source[0]))
     rows: list[list[str]] = []
     curve: list[list[str]] = []
     for dataset, decider, run, system, metric in sources:

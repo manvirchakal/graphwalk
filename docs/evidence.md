@@ -15,7 +15,7 @@ model whose versions can change.
 |---|---|---|
 | Does `walk` make an agent cheaper? | **Yes, with an expensive agent:** −25% cost (95% CI 7–45%) at equal F1, strong agent, n=30. With a cheap agent, the cost was a wash. | [A8, A8b](results-phase7.md) |
 | Does `walk` make an agent more accurate? | **No.** 0.72 vs 0.74 F1 (cheap agent, n=100); 0.75 vs 0.71 (strong agent, n=30); neither CI excludes 0. | [A8, A8b](results-phase7.md) |
-| Is the walk's confidence informative? | **Yes:** AUROC 0.92–0.97 on WebQSP and MetaQA 2–3 hop; weaker (0.64–0.71) on MetaQA 1-hop, 2Wiki, and CWQ. The LLM decider's confidence barely is (0.50–0.69). | [E3](results-phase4.md), [A2](results-phase7.md) |
+| Is the walk's confidence informative? | **Yes:** AUROC 0.92–0.97 on WebQSP and MetaQA 2–3 hop; weaker (0.64–0.71) on MetaQA 1-hop, 2Wiki, and CWQ. It comes from reading the decider's probabilities, not from Jev: an open-weights model's token probabilities did as well (0.77–0.97 except MetaQA 1-hop). An LLM that states its own scores (the shipped fallback) barely is (0.50–0.69). | [E3](results-phase4.md), [A2](results-phase7.md), [P1](results-paper.md) |
 | Can we predict before walking whether it will work? | **Barely**, within a graph (AUROC 0.55–0.68). Walk first, read the confidence. | [A7](results-phase7.md) |
 | Walk vs an LLM writing the query, curated graphs | The LLM is **more accurate**: MetaQA 3-hop 0.955 vs 0.887; Freebase (5,419 relations) 0.66 vs 0.49. Walking is ~6× cheaper and ~4× faster. | [E2](results-phase4.md), [A6](results-phase7.md) |
 | Walk vs multi-step RAG, curated graph (MetaQA) | Walking **wins**: 0.97/0.99/0.89 vs 0.89/0.81/0.41 F1 (1/2/3 hop) at 3–5× lower cost. | [M5](results-m5.md) |

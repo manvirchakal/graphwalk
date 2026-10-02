@@ -41,6 +41,7 @@ nav:
   - Text ingestion (experimental): text.md
   - Evidence:
       - Summary: evidence.md
+      - "Paper experiments (P0–P5)": results-paper.md
       - "Phase 7: KG-QA, escalation, agents": results-phase7.md
       - "Phase 4: paper experiments": results-phase4.md
       - "M7: QA over text graphs": results-m7.md
