@@ -139,10 +139,15 @@ def paired(runs: list[SystemRun]) -> str:
 async def main(args: argparse.Namespace) -> None:
     questions, graphs = rog.load("webqsp", "test")
     sample = sample_questions(questions, args.n, args.seed)
+    tag = f"webqsp-test-agent-n{args.n}-s{args.seed}"
+    if args.anonymize:
+        sample, graphs = rog.anonymize(sample, {q.id: graphs[q.id] for q in sample})
+        tag += "-anon"
+        named = sum(bool(q.meta["topic_in_question"]) for q in sample)
+        print(f"anonymized: topic name found in {named}/{len(sample)} questions", flush=True)  # noqa: T201
     subset = sample[args.start : args.pilot or None]
     root = cache_dir() / "graphs"
     root.mkdir(parents=True, exist_ok=True)
-    tag = f"webqsp-test-agent-n{args.n}-s{args.seed}"
     store = await rog.build_global_store(
         (graphs[q.id] for q in sample), root / f"{tag}.db", source_id=f"rog-{tag}"
     )
@@ -194,13 +199,13 @@ async def main(args: argparse.Namespace) -> None:
         )
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     out = write_results(
-        Path("results") / "agent" / f"{stamp}-webqsp-agent",
+        Path("results") / "agent" / f"{stamp}-webqsp-agent{'-anon' if args.anonymize else ''}",
         dataset="webqsp-agent",
         runs=runs,
         params={
             "dataset": "webqsp", "split": "test", "graph": f"subgraphs of {len(sample)} sampled q",
             "nodes": nodes, "edges": edges, "n": len(subset), "sample": len(sample),
-            "start": args.start,
+            "start": args.start, "anonymized": args.anonymize,
             "seed": args.seed, "llm": args.llm, "max_turns": args.max_turns,
             "arms": args.arms, "concurrency": args.concurrency,
         },
@@ -216,6 +221,9 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=100, help="sample size (fixes the graph)")
     parser.add_argument("--pilot", type=int, default=0, help="run the first N only (0 = all)")
     parser.add_argument("--start", type=int, default=0, help="skip the first N (extend a run)")
+    parser.add_argument(
+        "--anonymize", action="store_true", help="entity names -> aliases (P3, memorization)"
+    )
     parser.add_argument("--seed", type=int, default=0)
     arms = ["jev", "closedbook", "graph", "walk", "search"]
     parser.add_argument("--arms", nargs="+", default=arms, choices=arms)

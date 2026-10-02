@@ -199,3 +199,71 @@ def relation_signature(triples: Sequence[Triple]) -> Mapping[str, tuple[str, str
     for head, relation, tail in triples:
         out.setdefault(relation, (node_type(head), node_type(tail)))
     return out
+
+
+LITERAL = re.compile(r"^[-+]?\d[\d,.:\-TZ ]*$")
+"""Numbers and dates: kept as they are by :func:`anonymize`."""
+
+
+MIN_MENTION = 4
+"""Shortest other entity name replaced where it appears in a question."""
+
+
+def alias(name: str, salt: str = "") -> str:
+    return f"Entity {content_hash(salt + name).removeprefix('sha256:')[:6]}"
+
+
+def anonymize(
+    questions: Sequence[EvalQuestion], graphs: Mapping[str, Sequence[Triple]], salt: str = ""
+) -> tuple[list[EvalQuestion], dict[str, list[Triple]]]:
+    """Replace every entity name with a stable meaningless alias (``Entity 3fa9c1``):
+    in the triples, the gold answers, the topic entities, and the topic entities'
+    names where they appear in the question (case-insensitive substrings, so "jamaican"
+    loses "jamaica" too), plus any other name from the question's subgraph that appears
+    in the question as whole words (at least 4 characters). Relations, compound
+    value ids, numbers, and dates are kept.
+
+    A model can then not answer from memory: the answer strings no longer exist outside
+    the graph. ``meta["topic_in_question"]`` records whether every topic entity's name
+    was found in the question (when not, the question still names it some other way,
+    so the model may still know what it is about).
+    """
+
+    def rename(x: str) -> str:
+        return x if CVT.match(x) or LITERAL.match(x) else alias(x, salt)
+
+    out_graphs = {
+        qid: [(rename(h), r, rename(t)) for h, r, t in triples] for qid, triples in graphs.items()
+    }
+    out_questions: list[EvalQuestion] = []
+    for q in questions:
+        text = q.question
+        found = True
+        for name in sorted(q.start or (), key=len, reverse=True):
+            pattern = re.compile(re.escape(name), re.IGNORECASE)
+            text, count = pattern.subn(rename(name), text)
+            found = found and count > 0
+        lowered = text.lower()
+        others = {
+            x
+            for h, _, t in graphs.get(q.id, ())
+            for x in (h, t)
+            if len(x) >= MIN_MENTION and x.lower() in lowered and rename(x) != x
+        }
+        for name in sorted(others, key=len, reverse=True):
+            pattern = re.compile(rf"\b{re.escape(name)}\b", re.IGNORECASE)
+            text = pattern.sub(rename(name), text)
+        out_questions.append(
+            q.model_copy(
+                update={
+                    "question": text,
+                    "answers": tuple(rename(a) for a in q.answers),
+                    "start": None if q.start is None else tuple(rename(s) for s in q.start),
+                    "gold_start": None
+                    if q.gold_start is None
+                    else tuple(rename(s) for s in q.gold_start),
+                    "meta": {**q.meta, "topic_in_question": found},
+                }
+            )
+        )
+    return out_questions, out_graphs

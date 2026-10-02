@@ -1,6 +1,7 @@
 """Per-question KG-QA graphs (WebQSP/CWQ releases) and the per-question system wrapper.
 Offline: tiny hand-written subgraphs, no download."""
 
+import re
 from pathlib import Path
 
 from graphwalk.eval.datasets import rog
@@ -108,3 +109,55 @@ async def test_local_relations_counts_edges_within_hops(tmp_path: Path) -> None:
     assert two["language.human_language.region"] == 1
     assert two["location.country.languages_spoken"] == 2  # seen from both ends
     await store.close()
+
+
+def test_anonymize_renames_entities_everywhere_but_keeps_structure() -> None:
+    question = EvalQuestion(
+        id="q1", dataset="webqsp", question="what language does Jamaica speak since 1962?",
+        answers=("Jamaican English", "1962"), kind="set", start=("Jamaica",),
+        gold_start=("Jamaica",),
+    )  # fmt: skip
+    triples = [
+        ("Jamaica", "location.country.languages_spoken", "Jamaican English"),
+        ("Jamaica", "location.country.government", "m.0abc"),
+        ("m.0abc", "government.from", "1962"),
+    ]
+    [q], graphs = rog.anonymize([question], {"q1": triples})
+    jamaica, english = rog.alias("Jamaica"), rog.alias("Jamaican English")
+    assert jamaica != english
+    assert re.fullmatch(r"Entity [0-9a-f]{6}", jamaica)
+    assert q.question == f"what language does {jamaica} speak since 1962?"
+    assert q.answers == (english, "1962")
+    assert q.start == q.gold_start == (jamaica,)
+    assert q.meta["topic_in_question"] is True
+    assert graphs["q1"] == [
+        (jamaica, "location.country.languages_spoken", english),
+        (jamaica, "location.country.government", "m.0abc"),
+        ("m.0abc", "government.from", "1962"),
+    ]
+
+
+def test_anonymize_renames_other_entities_named_in_the_question() -> None:
+    question = EvalQuestion(
+        id="q1", dataset="webqsp", question="who plays ken barlow in coronation street?",
+        answers=("William Roache",), kind="set", start=("Coronation Street",),
+    )  # fmt: skip
+    triples = [
+        ("Coronation Street", "tv.regular_cast", "m.01"),
+        ("m.01", "tv.character", "Ken Barlow"),
+        ("m.01", "tv.actor", "William Roache"),
+        ("m.01", "tv.x", "Barlowville"),
+    ]
+    [q], _ = rog.anonymize([question], {"q1": triples})
+    show, ken = rog.alias("Coronation Street"), rog.alias("Ken Barlow")
+    assert q.question == f"who plays {ken} in {show}?"
+
+
+def test_anonymize_flags_a_topic_named_differently_in_the_question() -> None:
+    question = EvalQuestion(
+        id="q1", dataset="webqsp", question="what do people speak in the jamaican republic?",
+        answers=("Jamaican English",), kind="set", start=("Republic of Jamaica",),
+    )  # fmt: skip
+    [q], _ = rog.anonymize([question], {"q1": []})
+    assert q.question == "what do people speak in the jamaican republic?"
+    assert q.meta["topic_in_question"] is False
