@@ -162,3 +162,7 @@ CHEAP_AGENT_ANON = {
     "graph tools + walk": ("agent-walk", _A8, "agent/20261002T151303Z-webqsp-agent-anon"),
     "search (RAG)": ("agent-search", _A8, "agent/20261002T154650Z-webqsp-agent-anon"),
 }
+
+# P6: option-order control. setting -> (metric, label -> (run, system)); the first run
+# is the reference the others are compared with. Filled in when the runs finish.
+OPTION_ORDER: dict[str, tuple[str, dict[str, tuple[str, str]]]] = {}

@@ -17,6 +17,7 @@ from graphwalk.decisions.logprob import (
     LogprobDecider,
     first_token_alternatives,
     letter_distribution,
+    letter_mass,
     prompt,
 )
 
@@ -187,3 +188,29 @@ async def test_too_many_options_are_refused() -> None:
     backend, _ = decider([])
     with pytest.raises(DecisionBackendError, match="at most 20"):
         await backend.decide(DecisionRequest(state="s", questions=(question(n=21),)))
+
+
+def test_letter_mass_counts_offered_letters_only() -> None:
+    top = [
+        {"token": "The", "logprob": math.log(0.5)},
+        {"token": "A", "logprob": math.log(0.3)},
+        {"token": "Z", "logprob": math.log(0.1)},  # not offered
+    ]
+    mass, top_is_letter = letter_mass(question(), top)
+    assert mass == pytest.approx(0.3)
+    assert not top_is_letter
+
+
+async def test_diagnostics_track_the_format() -> None:
+    backend, _ = decider(
+        [
+            httpx2.Response(200, json=reply([("A", 0.9), ("B", 0.05)])),
+            httpx2.Response(200, json=reply([("Sure", 0.6), ("B", 0.4)])),
+        ]
+    )
+    request = DecisionRequest(state="s", questions=(question(key="q1"), question(key="q2")))
+    await backend.decide(request)
+    stats = backend.diagnostics()
+    assert stats["asked"] == 2
+    assert stats["mean_letter_mass"] == pytest.approx((0.95 + 0.4) / 2)
+    assert stats["top_not_letter"] == 1
