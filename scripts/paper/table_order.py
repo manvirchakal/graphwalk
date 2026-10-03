@@ -39,9 +39,7 @@ def spearman(a: list[float], b: list[float]) -> float:
     ra, rb = ranks(a), ranks(b)
     ma, mb = mean(ra), mean(rb)
     cov = math.fsum((x - ma) * (y - mb) for x, y in zip(ra, rb, strict=True))
-    var = math.sqrt(
-        math.fsum((x - ma) ** 2 for x in ra) * math.fsum((y - mb) ** 2 for y in rb)
-    )
+    var = math.sqrt(math.fsum((x - ma) ** 2 for x in ra) * math.fsum((y - mb) ** 2 for y in rb))
     return cov / var if var else math.nan
 
 
@@ -57,9 +55,7 @@ def main() -> None:
         for label, data in runs.items():
             shared = [q for q in reference if q in data]
             pairs = [(data[q]["confidence"] or 0.0, float(data[q][metric])) for q in shared]
-            same = [
-                sorted(data[q]["answers"]) == sorted(reference[q]["answers"]) for q in shared
-            ]
+            same = [sorted(data[q]["answers"]) == sorted(reference[q]["answers"]) for q in shared]
             rho = spearman(
                 [data[q]["confidence"] or 0.0 for q in shared],
                 [reference[q]["confidence"] or 0.0 for q in shared],
