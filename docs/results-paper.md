@@ -313,7 +313,7 @@ other formats parsed in all but one case.
   the most expensive: 5 samples cost 5–6× a token-probability decision and lost
   accuracy (temperature 1). On WebQSP its gap is not significant.
 - **Token probabilities are also the cheapest LLM signal:** one output token per
-  decision, against a few (top-1) or one line per option (per-option scores); 1.5–2.6×
+  decision, against a few (top-1) or one line per option (per-option scores); 1.4–2.6×
   cheaper than the stated formats per question.
 - This holds for one open model on two datasets; Tian et al. (2023) found the opposite
   for RLHF-tuned API models judged by ECE, which we did not test (their APIs mostly do
