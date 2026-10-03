@@ -197,3 +197,7 @@ LARGE_CALIBRATION = {
         "open model, token probabilities": ("kgqa/20261003T000711Z-webqsp", _P6, "hits1"),
     },
 }  # fmt: skip
+
+# P8: token probabilities vs stated confidence, same model (Qwen3.8-27B) and prompt.
+# setting -> (metric, signal -> (run, system)). Filled in when the runs finish.
+STATED: dict[str, tuple[str, dict[str, tuple[str, str]]]] = {}
