@@ -233,3 +233,46 @@ Paired bootstrap of the AUROC change against the reference (95% CI): MetaQA/Qwen
 
 Runs: `results/decider/20261003T000938Z…003738Z-metaqa-3hop`,
 `results/kgqa/20261003T000711Z…002439Z-webqsp` (cost ≈ $0.50 in all).
+
+## P7: calibration error, before and after recalibration (`scripts/paper/table_recalibration.py`)
+
+AUROC says whether confidence *ranks* answers and ignores its scale; Tian et al. (2023)
+and Kim & Kang (2026) judge confidence by calibration error instead. From the committed
+P0/P1 scores (no new runs), plus P5's 500-question and P6's 200-question WebQSP runs:
+ECE (10 bins) and Brier score of the raw confidence, and of the confidence after Platt
+scaling (a logistic fit of correctness on log-confidence), cross-fitted on half the
+questions and scored on the other half, averaged over 10 splits. Scaling is monotone,
+so AUROC is unchanged. "Skill" is 1 − Brier / Brier of always predicting the base rate
+(0 = no better than knowing the accuracy).
+
+| dataset | decider | n | accuracy | mean conf. | ECE raw → scaled | Brier raw → scaled | skill scaled |
+|---|---|---|---|---|---|---|---|
+| MetaQA 3-hop | Jev | 200 | 0.805 | 0.922 | 0.138 → 0.076 | 0.123 → 0.059 | **+0.62** |
+| | LLM, stated scores | 200 | 0.820 | 0.968 | 0.148 → 0.067 | 0.165 → 0.145 | +0.02 |
+| | open model, token probabilities | 200 | 0.800 | 0.930 | 0.130 → 0.073 | 0.131 → 0.069 | **+0.57** |
+| 2Wiki gold-evidence graph | Jev | 300 | 0.883 | 0.937 | 0.053 → 0.053 | 0.091 → 0.087 | +0.16 |
+| | LLM, stated scores | 300 | 0.927 | 0.982 | 0.056 → 0.032 | 0.055 → 0.045 | +0.33 |
+| | open model, token probabilities | 300 | 0.853 | 0.959 | 0.109 → 0.074 | 0.107 → 0.081 | +0.35 |
+| WebQSP | Jev | 500 | 0.544 | 0.801 | 0.257 → 0.099 | 0.251 → 0.177 | +0.28 |
+| | open model, token probabilities | 200 | 0.615 | 0.836 | 0.221 → 0.123 | 0.226 → 0.177 | +0.25 |
+| WebQSP, one graph | Jev | 100 | 0.500 | 0.798 | 0.304 → 0.149 | 0.275 → 0.188 | +0.25 |
+| CWQ | Jev / LLM / open model | 50 each | 0.280 | 0.67–0.72 | 0.39–0.44 → 0.18–0.21 | 0.35–0.38 → 0.21–0.24 | −0.18 to −0.02 |
+
+The script also prints MetaQA 1–2 hop, where 93–98% of answers are right, there is little
+to predict and every skill is within ±0.06; and the 50-question WebQSP pilots (skill
++0.27 Jev, +0.20 open model, −0.04 stated scores), superseded by the larger runs above.
+
+- **Raw confidence is not a probability.** Wherever accuracy is below ~90% it is
+  overconfident, badly on Freebase: mean 0.80 for 54% correct on WebQSP (ECE 0.26),
+  0.67–0.72 for 28% on CWQ. Read it as a ranking score; the docs say so.
+- **A two-parameter fit on a few hundred labeled answers fixes much of it:** WebQSP ECE
+  0.26 → 0.10 (Jev) and 0.22 → 0.12 (open model), Brier skill +0.25–0.28.
+- **After scaling, the decider ordering of P1 holds on calibration too:** on MetaQA
+  3-hop, Jev and the open model's token probabilities reach skill +0.62 and +0.57, the
+  LLM's stated scores +0.02, although raw ECE is similar for all three (0.13–0.15). Raw
+  ECE alone would have hidden the difference, which is why it is reported next to skill.
+- **Where confidence failed in P0, scaling cannot rescue it:** Jev on 2Wiki stays at
+  +0.16 (stated scores and token probabilities +0.33–0.35), and CWQ (n = 50, 28%
+  correct) shows no skill for any decider.
+- Caveat: ECE with 10 bins is noisy at n ≤ 100, and each fit sees only half the
+  questions.

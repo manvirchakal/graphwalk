@@ -188,3 +188,12 @@ OPTION_ORDER = {
         "shuffle 3": ("kgqa/20261003T002439Z-webqsp", f"{_P6}-shuf3"),
     }),
 }  # fmt: skip
+
+# P7: larger Freebase samples for calibration error (P5's 500-question Jev run, P6's
+# 200-question original-order Qwen run): dataset -> decider -> (run, system, metric).
+LARGE_CALIBRATION = {
+    "WebQSP (n = 500 / 200)": {
+        "Jev": ("kgqa/20261002T031206Z-webqsp", "graphwalk-relation-v2-jev", "hits1"),
+        "open model, token probabilities": ("kgqa/20261003T000711Z-webqsp", _P6, "hits1"),
+    },
+}  # fmt: skip

@@ -42,7 +42,8 @@ Ordered by how likely they are to sink the paper.
    offered letters, how often the top token isn't a valid letter (we count `no_letter`
    already; report it). Wang 2024 shows first-token answers can disagree with text
    answers.
-3. **Calibration, not only ranking.** ECE, Brier and reliability diagrams for every
+3. **Calibration, not only ranking.** *Done (P7, `docs/results-paper.md`): raw
+   confidence is overconfident below ~90% accuracy; Platt scaling fixes much of it.* ECE, Brier and reliability diagrams for every
    decider, plus temperature scaling fit on a held-out split, since AUROC ignores scale
    and Tian 2023 / Kim & Kang 2026 measure with ECE.
 4. **A fairer stated-confidence baseline.** One confidence for the chosen option, or
