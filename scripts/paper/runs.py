@@ -164,5 +164,27 @@ CHEAP_AGENT_ANON = {
 }
 
 # P6: option-order control. setting -> (metric, label -> (run, system)); the first run
-# is the reference the others are compared with. Filled in when the runs finish.
-OPTION_ORDER: dict[str, tuple[str, dict[str, tuple[str, str]]]] = {}
+# is the reference the others are compared with. "rerun" repeats the reference in the
+# original order (run-to-run noise); "shuffle K" shows the options in a random order.
+_P6 = "graphwalk-relation-v2-logprob"
+OPTION_ORDER = {
+    "MetaQA 3-hop, Qwen3.8-27B": ("em", {
+        "original order (P1)": ("decider/20261002T022745Z-metaqa-3hop", _LP),
+        "rerun": ("decider/20261003T000938Z-metaqa-3hop", _P6),
+        "shuffle 1": ("decider/20261003T001814Z-metaqa-3hop", f"{_P6}-shuf1"),
+        "shuffle 2": ("decider/20261003T002640Z-metaqa-3hop", f"{_P6}-shuf2"),
+        "shuffle 3": ("decider/20261003T003504Z-metaqa-3hop", f"{_P6}-shuf3"),
+    }),
+    "MetaQA 3-hop, Jev": ("em", {
+        "original order (E3)": ("decider/20260930T123821Z-metaqa-3hop", _JEV),
+        "rerun": ("decider/20261003T003738Z-metaqa-3hop", "graphwalk-relation-v2-jev"),
+        "shuffle 1": ("decider/20261003T003616Z-metaqa-3hop", "graphwalk-relation-v2-jev-shuf1"),
+    }),
+    "WebQSP, Qwen3.8-27B": ("hits1", {
+        "original order": ("kgqa/20261003T000711Z-webqsp", _P6),
+        "earlier run (P1, n=50)": ("kgqa/20261002T024219Z-webqsp", _LP),
+        "shuffle 1": ("kgqa/20261003T001302Z-webqsp", f"{_P6}-shuf1"),
+        "shuffle 2": ("kgqa/20261003T001851Z-webqsp", f"{_P6}-shuf2"),
+        "shuffle 3": ("kgqa/20261003T002439Z-webqsp", f"{_P6}-shuf3"),
+    }),
+}  # fmt: skip

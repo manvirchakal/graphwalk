@@ -30,13 +30,15 @@ and should change.
 
 Ordered by how likely they are to sink the paper.
 
-1. **Option-order control.** Our options are presented in a fixed order (sorted by
+1. **Option-order control.** *Done (P6, `docs/results-paper.md`): aggregate accuracy and
+   AUROC hold; per-question answers change on 10–27% of questions under a new order.* Our options are presented in a fixed order (sorted by
    direction and relation name, STOP in a fixed slot). Letter/position bias in
    multiple-choice LLM answers is well documented (Zheng 2024; Pezeshkpour 2024), and
    worst exactly where the model is torn, i.e. where confidence matters. Run 3–5
    random orderings per step on MetaQA 3-hop and WebQSP; report accuracy and AUROC
    spread, and optionally PriDe debiasing. Cheap (~$1).
-2. **Letter-mass diagnostics.** How much first-token probability falls outside the
+2. **Letter-mass diagnostics.** *Done (P6): 96–97% of first-token mass on offered
+   letters; top token not a letter in ≤1.2% of decisions.* How much first-token probability falls outside the
    offered letters, how often the top token isn't a valid letter (we count `no_letter`
    already; report it). Wang 2024 shows first-token answers can disagree with text
    answers.

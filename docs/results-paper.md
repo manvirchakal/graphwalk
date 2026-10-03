@@ -159,7 +159,7 @@ Paired on the aliased graph:
 - Agents explore about twice as much on aliases (15–18k vs 6–9k input tokens per
   question), so every agent arm costs roughly twice as much.
 
-, 500 questions (MetaQA)
+## P5: walk vs the LLM path writer, 500 questions (MetaQA)
 
 Same seed-0 samples at n = 500 (`results/decider/20261002T021023Z-metaqa-2hop`,
 `…021310Z-metaqa-3hop`, `results/20261002T023850Z-metaqa-2hop-llmpath`,
@@ -187,3 +187,49 @@ WebQSP, 500 test questions, per-question subgraphs (`results/kgqa/20261002T03120
   shorter tail (p95 3 s vs 16 s), and 15 F1 points less accurate, as in A2.
 - Its confidence stays informative at 10× the A2 sample (AUROC 0.86 with EM, vs 0.92
   on the 50-question pilot).
+
+## P6: does the order of the options matter? (`scripts/paper/table_order.py`)
+
+Letter-reading deciders are known to prefer some letters or positions regardless of
+content (Zheng et al., ICLR 2024; Pezeshkpour & Hruschka, 2024), and the walk always
+shows options in the same order (by direction and relation name, STOP last). So the
+same questions were rerun with each question's options in a random order
+(`--shuffle K`, `graphwalk.eval.shuffle`), three orders per setting, next to a plain
+rerun in the original order to measure run-to-run noise at temperature 0.
+
+| setting | run | accuracy | AUROC | same answer as reference | confidence rank corr. |
+|---|---|---|---|---|---|
+| MetaQA 3-hop, Qwen3.8-27B (EM) | original order (P1) | 0.800 | 0.955 | – | – |
+| | rerun, same order | 0.795 | 0.963 | 0.955 | 0.90 |
+| | 3 shuffled orders | 0.775–0.810 | 0.890–0.947 | 0.840–0.895 | 0.61–0.73 |
+| MetaQA 3-hop, Jev (EM) | original order (E3) | 0.805 | 0.965 | – | – |
+| | rerun, same order | 0.805 | 0.968 | 0.985 | 0.98 |
+| | shuffled order | 0.805 | 0.955 | 0.940 | 0.92 |
+| WebQSP, Qwen3.8-27B (hits@1, n = 200) | original order | 0.615 | 0.821 | – | – |
+| | earlier run, same order (P1's 50) | 0.620 | 0.839 | 0.900 | 0.96 |
+| | 3 shuffled orders | 0.600–0.625 | 0.798–0.817 | 0.735–0.780 | 0.79 |
+
+Paired bootstrap of the AUROC change against the reference (95% CI): MetaQA/Qwen
+−0.008 [−0.048, +0.032], **−0.064 [−0.132, −0.000]**, −0.022 [−0.071, +0.022]; Jev
+−0.011 [−0.032, +0.006]; WebQSP/Qwen −0.023, −0.004, −0.008, every CI spanning 0.
+
+- **In aggregate, order barely matters:** accuracy moves within ±2.5 points and AUROC
+  stays 0.80–0.95, so the P1 conclusion (an open model's letter probabilities are as
+  informative as Jev's) survives. One of the three MetaQA orders lowered Qwen's AUROC
+  by 0.06, at the edge of significance.
+- **Per question, it matters for the LLM:** a different order changes Qwen's answer on
+  10–16% of MetaQA questions and 22–27% of WebQSP questions, against 4.5% (MetaQA) and
+  10% (WebQSP) for a plain rerun; the rank correlation of confidence across orders drops
+  from 0.90 to 0.61–0.73 on MetaQA. Jev is far more stable (6% vs 1.5%). Individual
+  decisions of a letter-reading LLM partly follow the presentation; the confidence is
+  informative about *which* answers are right on average, not a stable property of each
+  question.
+- **The format holds:** 96–97% of the first token's probability falls on offered
+  letters; the top token was not a letter in 0–1.2% of decisions, and no decision
+  lacked a letter entirely. Renormalizing drops little.
+- **Agreement across orders is a worse confidence than the path probability** (AUROC
+  0.91 vs 0.955 on MetaQA, 0.76 vs 0.82 on WebQSP), so averaging orders is not an
+  obvious fix; it costs one walk per order anyway.
+
+Runs: `results/decider/20261003T000938Z…003738Z-metaqa-3hop`,
+`results/kgqa/20261003T000711Z…002439Z-webqsp` (cost ≈ $0.50 in all).
