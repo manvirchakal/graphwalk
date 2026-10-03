@@ -40,6 +40,7 @@ from graphwalk.eval.per_question import PerQuestionSystem
 from graphwalk.eval.query_writer import PathQuerySystem
 from graphwalk.eval.runner import SystemRun, run_system, sample_questions, write_results
 from graphwalk.eval.shuffle import ShuffledDecider
+from graphwalk.eval.stated_decider import StatedDecider
 from graphwalk.eval.suite import preset_config
 from graphwalk.eval.systems import GraphwalkSystem
 from graphwalk.eval.types import EvalQuestion, QASystem
@@ -116,6 +117,14 @@ async def main(args: argparse.Namespace) -> None:
         ),
         "path": path_writer,
     }
+    for mode in ("scores", "top1", "vote"):
+        label = "vote" if mode == "vote" else f"stated-{mode}"
+        builders[label] = lambda mode=mode, label=label: walker(
+            StatedDecider(
+                args.logprob_model, mode, api_key=api_key or "", max_rpm=args.logprob_rpm
+            ),
+            f"graphwalk-{PRESET}-{label}",
+        )
     runs: list[SystemRun] = []
     for label in args.systems:
         system = builders[label]()
@@ -140,7 +149,9 @@ async def main(args: argparse.Namespace) -> None:
             "concurrency": args.concurrency,
         },
     )  # fmt: skip
-    stats = {d.model_id: d.diagnostics() for d in made if isinstance(d, LogprobDecider)}
+    stats = {
+        d.model_id: d.diagnostics() for d in made if isinstance(d, LogprobDecider | StatedDecider)
+    }
     if stats:
         (out / "diagnostics.json").write_text(json.dumps(stats, indent=2) + "\n")
         print(stats, flush=True)  # noqa: T201
@@ -161,7 +172,8 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=50)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--systems", nargs="+", default=["jev", "llm", "path"],
-                        choices=["jev", "llm", "logprob", "path"])  # fmt: skip
+                        choices=["jev", "llm", "logprob", "path", "stated-scores",
+                                 "stated-top1", "vote"])  # fmt: skip
     parser.add_argument("--llm", default="openrouter/openai/gpt-6-luna")
     parser.add_argument("--max-tokens", type=int, default=1024)
     parser.add_argument("--logprob-model", default="qwen/qwen3.8-27b", help="open weights")
