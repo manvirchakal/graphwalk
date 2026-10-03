@@ -199,5 +199,26 @@ LARGE_CALIBRATION = {
 }  # fmt: skip
 
 # P8: token probabilities vs stated confidence, same model (Qwen3.8-27B) and prompt.
-# setting -> (metric, signal -> (run, system)). Filled in when the runs finish.
-STATED: dict[str, tuple[str, dict[str, tuple[str, str]]]] = {}
+# setting -> (metric, signal -> (run, system)). Jev and E3's LLM decider (another model)
+# are context rows.
+_P8 = "graphwalk-relation-v2"
+STATED = {
+    "MetaQA 3-hop": ("em", {
+        "token probabilities (P1)": ("decider/20261002T022745Z-metaqa-3hop", _LP),
+        "token probabilities (rerun)": ("decider/20261003T000938Z-metaqa-3hop", _P6),
+        "stated, 0-100 per option": ("decider/20261003T223212Z-metaqa-3hop",
+                                     f"{_P8}-stated-scores"),
+        "stated, top-1 + confidence": ("decider/20261003T223632Z-metaqa-3hop",
+                                       f"{_P8}-stated-top1"),
+        "vote share, 5 samples": ("decider/20261003T225324Z-metaqa-3hop", f"{_P8}-vote"),
+        "context: Jev": ("decider/20260930T123821Z-metaqa-3hop", _JEV),
+        "context: other LLM, 0-100 per option (E3)": ("decider/20260930T155339Z-metaqa-3hop",
+                                                      f"{_P8}-llm"),
+    }),
+    "WebQSP": ("hits1", {
+        "token probabilities (P6)": ("kgqa/20261003T000711Z-webqsp", _P6),
+        "stated, 0-100 per option": ("kgqa/20261003T223244Z-webqsp", f"{_P8}-stated-scores"),
+        "stated, top-1 + confidence": ("kgqa/20261003T223632Z-webqsp", f"{_P8}-stated-top1"),
+        "vote share, 5 samples": ("kgqa/20261003T224757Z-webqsp", f"{_P8}-vote"),
+    }),
+}  # fmt: skip

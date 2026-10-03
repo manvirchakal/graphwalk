@@ -276,3 +276,48 @@ to predict and every skill is within ±0.06; and the 50-question WebQSP pilots (
   correct) shows no skill for any decider.
 - Caveat: ECE with 10 bins is noisy at n ≤ 100, and each fit sees only half the
   questions.
+
+## P8: token probabilities vs stated confidence, same model and prompt (`scripts/paper/table_stated.py`)
+
+E3/P1 compared token probabilities from one model with stated 0–100 scores from
+another, which leaves open whether the gap is the signal or the model. Here the model
+(Qwen3.8-27B), the endpoint and the lettered prompt are fixed
+(`graphwalk.eval.stated_decider`) and only the confidence signal changes: token
+probabilities, a 0–100 score per option, one letter with a 0–100 confidence in it (the
+verbalized top-1 format of Tian et al., 2023), or the vote share of 5 samples at
+temperature 1 (sampling consistency). n = 200 each, same questions.
+
+| setting | confidence signal | accuracy | AUROC | ΔAUROC vs token probs [95% CI] | AURC | Brier skill (scaled) | $ / 1k q |
+|---|---|---|---|---|---|---|---|
+| MetaQA 3-hop (EM) | **token probabilities** | 0.800 | **0.955** | – | **0.032** | **+0.57** | 0.26 |
+| | stated, 0–100 per option | 0.740 | 0.719 | −0.23 [−0.33, −0.14] | 0.167 | +0.23 | 0.63 |
+| | stated, top-1 + confidence | 0.795 | 0.748 | −0.21 [−0.30, −0.12] | 0.111 | +0.01 | 0.38 |
+| | vote share, 5 samples | 0.785 | 0.894 | −0.06 [−0.11, −0.02] | 0.056 | +0.41 | 1.49 |
+| | *context: Jev* | 0.805 | 0.965 | +0.01 [−0.02, +0.05] | 0.028 | +0.62 | 0.15 |
+| | *context: E3's LLM, 0–100 per option* | 0.820 | 0.640 | −0.31 [−0.42, −0.20] | 0.149 | +0.02 | 0.55 |
+| WebQSP (hits@1) | **token probabilities** | 0.615 | **0.821** | – | **0.173** | **+0.25** | 0.29 |
+| | stated, 0–100 per option | 0.560 | 0.736 | −0.09 [−0.17, −0.01] | 0.284 | +0.17 | 0.76 |
+| | stated, top-1 + confidence | 0.600 | 0.695 | −0.13 [−0.20, −0.06] | 0.253 | +0.12 | 0.40 |
+| | vote share, 5 samples | 0.565 | 0.767 | −0.06 [−0.12, +0.01] | 0.281 | +0.21 | 1.67 |
+
+A plain rerun of the token-probability walk moves AUROC by +0.009 [−0.005, +0.025]
+(P6), so the differences above are not run-to-run noise. 1.6% (MetaQA) and 3.4%
+(WebQSP) of per-option score replies could not be parsed and were scored uniformly; the
+other formats parsed in all but one case.
+
+- **With the model held fixed, the signal is what matters.** Both stated formats lose
+  0.09–0.23 AUROC to token probabilities, the same direction as E3's cross-model
+  comparison. The stronger stated baseline a reviewer would ask for (top-1 with a stated
+  confidence) is no better than per-option scores here.
+- **Sampling consistency is the best of the alternatives but still worse,** and it is
+  the most expensive: 5 samples cost 5–6× a token-probability decision and lost
+  accuracy (temperature 1). On WebQSP its gap is not significant.
+- **Token probabilities are also the cheapest LLM signal:** one output token per
+  decision, against a few (top-1) or one line per option (per-option scores); 1.5–2.6×
+  cheaper than the stated formats per question.
+- This holds for one open model on two datasets; Tian et al. (2023) found the opposite
+  for RLHF-tuned API models judged by ECE, which we did not test (their APIs mostly do
+  not expose log-probabilities).
+
+Runs: `results/decider/20261003T223212Z…225324Z-metaqa-3hop`,
+`results/kgqa/20261003T223244Z…224757Z-webqsp` (cost ≈ $1.10).

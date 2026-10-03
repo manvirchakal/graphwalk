@@ -46,7 +46,8 @@ Ordered by how likely they are to sink the paper.
    confidence is overconfident below ~90% accuracy; Platt scaling fixes much of it.* ECE, Brier and reliability diagrams for every
    decider, plus temperature scaling fit on a held-out split, since AUROC ignores scale
    and Tian 2023 / Kim & Kang 2026 measure with ECE.
-4. **A fairer stated-confidence baseline.** One confidence for the chosen option, or
+4. **A fairer stated-confidence baseline.** *Done (P8): same model and prompt; top-1
+   stated confidence and vote share both rank answers worse than token probabilities.* One confidence for the chosen option, or
    verbal confidence, or sampling consistency, not only 0–100 per option. Otherwise the
    log-prob vs stated gap looks like a strawman.
 5. **Ca2KG-style baseline** on MetaQA/WebQSP selective accuracy, or at least their
