@@ -1,6 +1,7 @@
 # Paper plan
 
-Status: draft plan, 2026-10-02. Nothing here has been run yet.
+Status: draft plan, 2026-10-02. P0–P8 have been run (`docs/results-paper.md`); the LaTeX
+draft is in `paper/latex/` (2026-10-04).
 
 > **Update after the literature search ([RELATED_WORK.md](RELATED_WORK.md)):** the hop
 > framing and path probability are prior art (SR 2022, MINERVA 2018), and the working

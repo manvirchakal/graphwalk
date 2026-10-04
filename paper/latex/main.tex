@@ -1,0 +1,756 @@
+% Draft. Every number below is transcribed from docs/results-paper.md,
+% docs/results-phase4.md and docs/results-phase7.md, which the scripts in scripts/paper/
+% regenerate from committed runs. Each table names its script in a comment.
+\documentclass[11pt]{article}
+
+\usepackage[review]{acl}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{groupplots}
+
+\newcommand{\sys}{\textsc{graphwalk}}
+\newcommand{\stopop}{\textsc{stop}}
+\newcommand{\ci}[2]{{\scriptsize[#1,\,#2]}}
+
+\title{When to Trust a Knowledge-Graph Walk:\\
+An Empirical Study of Per-Hop Decision Confidence}
+
+\author{Anonymous}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Question answering over knowledge graphs with large language models is accurate but
+expensive, and it rarely says when an answer is likely wrong. We study an old design,
+in which each hop of a walk is a classification over the current node's relations plus
+\stopop{} \citep{zhang2022sr,das2018minerva}, with a zero-shot, swappable decider, and
+ask what the walk's path confidence is worth. On MetaQA, WebQSP, CWQ and a
+2WikiMultiHopQA evidence graph, we compare a hosted classifier, three open LLMs read
+through their option-letter token probabilities, and LLM-stated confidence. Where walks
+fail often enough to matter (MetaQA 3-hop, WebQSP), path confidence ranks right above
+wrong answers well (AUROC 0.82--0.97): answering the most confident half of MetaQA
+3-hop questions is 99\% accurate, against 81\% overall. With the model and prompt held
+fixed, token probabilities beat stated per-option scores, stated top-1 confidence and
+5-sample voting by 0.06--0.23 AUROC. The raw confidence is not a probability (ECE 0.26
+on WebQSP), but a two-parameter Platt fit repairs much of that. Shuffling the options
+changes an LLM decider's answer on 10--27\% of questions without moving aggregate
+accuracy or AUROC. The walk is \emph{less} accurate than an LLM writing the relation
+path in one call ($-0.08$ F1 on MetaQA 3-hop, $-0.15$ on WebQSP), cheaper only on
+Freebase, and its confidence fails on 2Wiki and CWQ. As a tool for a strong agent it
+cuts cost by 17\% at equal accuracy. We release the library, every run and the scripts
+that produce every table.
+\end{abstract}
+
+% ======================================================================================
+\section{Introduction}
+
+LLM-based question answering over knowledge graphs (KGQA) now reaches high accuracy on
+the standard Freebase benchmarks, by prompting a model to explore the graph
+\citep{sun2024tog,jiang2025kgagent}, to generate relation paths \citep{luo2024rog}, or
+to read retrieved subgraphs \citep{mavromatis2024gnnrag}. These systems make many LLM
+calls per question, and none of them tells the caller, cheaply, which of its answers to
+trust. A deployment that could answer the easy questions cheaply and confidently, and
+pass the rest to an expensive system or a person, needs exactly that signal.
+
+A KG walk offers one for free. If every hop is a choice among the relations leaving the
+current node, plus \stopop{}, each choice comes with a probability distribution, and the
+path's probability is a confidence for the answer it reaches. The design itself is old:
+SR \citep{zhang2022sr} scores relations against an END relation and ranks paths by the
+product of step probabilities, and MINERVA \citep{das2018minerva} walks with a policy
+over outgoing edges. Both are trained per dataset. What has changed is that any LLM, or
+a hosted classifier, can now make the per-hop choice zero-shot, which makes the decider
+a component one can swap, and its confidence something one can compare across deciders.
+
+This paper is an empirical study of that confidence, not a new method. We ask:
+\begin{enumerate}
+\setlength\itemsep{0pt}
+\item Does path confidence separate right from wrong answers well enough for selective
+  answering, and on which graphs? (\S\ref{sec:selective})
+\item Is the signal a property of one decider, or of reading probabilities? With the
+  model fixed, how does it compare with stated confidence and sampling consistency?
+  (\S\ref{sec:signal})
+\item Is it robust to the order the options are shown in, and is it calibrated?
+  (\S\ref{sec:robust})
+\item What does it buy in practice: against an LLM writing the query, in a cascade, and
+  as an agent's tool? (\S\ref{sec:accuracy}, \S\ref{sec:use})
+\end{enumerate}
+
+Our findings are mixed, and we report them as such. Path confidence is informative
+where walks fail often enough to need it (AUROC 0.82--0.97 on MetaQA 3-hop and WebQSP),
+and the signal comes from reading token probabilities, not from a particular decider: an
+open 27B model matches a dedicated classifier, and the same model's stated confidence is
+clearly worse. But the walk is less accurate than one LLM call that writes the whole
+relation path, it is cheaper only on Freebase's larger schemas, its raw confidence is
+overconfident, and on two of five graphs (2Wiki, CWQ) the confidence does little. Our
+contributions are:
+\begin{itemize}
+\setlength\itemsep{0pt}
+\item To our knowledge, among the first evaluations of per-hop path probability as a
+  selective-prediction signal for KGQA, across four decider types and five graphs, with
+  the controls a reviewer of letter-reading LLMs would ask for: option order, format
+  adherence, calibration, and a same-model stated-confidence baseline.
+\item A measured cost and accuracy comparison against an LLM path writer and against
+  multi-step RAG, including the settings where walking loses.
+\item An agent-tool ablation with a memorization control: replacing entity names with
+  aliases drops closed-book F1 from 0.42 to 0.01 and separates graph tools from text
+  search by 0.25 F1, where with real names they tie.
+\item An open-source library (\sys{}) and every run, so each table can be regenerated
+  without new model calls.
+\end{itemize}
+
+% ======================================================================================
+\section{Related Work}
+
+\paragraph{Stepwise walkers and LLM traversal.} Relation-path walkers predate LLMs:
+DeepPath \citep{xiong2017deeppath} and MINERVA \citep{das2018minerva} learn edge
+policies, NSM \citep{he2021nsm} propagates over subgraphs, and SR \citep{zhang2022sr}
+retrieves subgraphs by expanding relation paths with an END relation and ranks them by
+path probability. Our walk is SR's in structure; the difference is that the decider is
+zero-shot and replaceable. With LLMs, Think-on-Graph \citep{sun2024tog} prompts the
+model at every hop (WebQSP/CWQ hits@1 76.2/58.9 with ChatGPT, 82.6/69.5 with GPT-4), RoG
+\citep{luo2024rog} generates relation paths (85.7/62.6), StructGPT
+\citep{jiang2023structgpt} and KG-Agent \citep{jiang2025kgagent} use tool interfaces,
+and GNN-RAG \citep{mavromatis2024gnnrag} retrieves with a GNN; Pangu
+\citep{gu2023pangu} argues for discriminating among candidates rather than generating.
+Replacing the per-hop LLM with something cheaper is also known: EffiQA
+\citep{dong2025effiqa}, KG-CoT \citep{zhao2024kgcot}, embedding-guided search
+\citep{shrestha2025efficient} and RouterKGQA \citep{yuan2026routerkgqa}. We do not
+compete with these systems on accuracy; our walker is greedy, single-entity and has no
+constraint handling, and it scores far below them on WebQSP and CWQ.
+
+\paragraph{Confidence in KGQA.} Ca2KG \citep{ren2026ca2kg} reports selective accuracy
+against coverage on MetaQA and WebQSP with LLM-prompted confidence; CPR
+\citep{lin2026cpr} learns path-level scores for conformal answer sets; UAG
+\citep{ni2025uag} and DoublyCal \citep{lu2026doublycal} calibrate KG reasoning; SkewRoute
+\citep{wang2025skewroute} routes between small and large LLMs on retrieval-score skew,
+a special case of cascading \citep{dekoninck2025cascade}. Selective prediction and its
+risk--coverage evaluation follow \citet{geifman2017selective} and, for QA,
+\citet{kamath2020selective}. We differ in the signal (the decider's own per-hop
+probabilities, no training) and in comparing it across deciders.
+
+\paragraph{LLM confidence and multiple-choice bias.} Token probabilities are often
+better calibrated than verbalized confidence \citep{kadavath2022know,xiong2024express,kapoor2024taught},
+but \citet{tian2023just} find the opposite for RLHF-tuned API models judged by ECE, and
+\citet{kim2026same} find the ranking flips with the protocol. Letter-choice LLMs prefer
+some letters and positions regardless of content \citep{zheng2024mcq,pezeshkpour2024order},
+and first-token probabilities can disagree with the text answer \citep{wang2024answerc};
+\citet{zhuang2024beyond} read label probabilities for ranking. Our P6--P8 experiments
+are designed around these results.
+
+\paragraph{Memorization and agents.} WebQSP-style answers are partly memorized and
+partly wrong \citep{zhang2025kgqagen}. ARoG \citep{ning2026arog} anonymizes WebQSP/CWQ
+entities for privacy and finds that it breaks prompting methods; KG-LLM-Bench
+\citep{markowitz2025kgllmbench} finds pseudonyms barely matter when the subgraph is in
+context; \citet{longpre2021entity} substitute entities to study knowledge conflicts.
+Tool-using agents over KGs \citep{gu2024middleware} and composite tools that save agent
+calls \citep{abuzakuk2026awo} are the closest work to our agent ablation.
+
+% ======================================================================================
+\section{Method}
+\label{sec:method}
+
+\paragraph{The walk.} Given a question $q$ and a topic entity, the walk keeps a
+\emph{frontier}, a set of nodes, starting from the topic entity. At each step the
+options are the relations incident to the frontier, each with its direction, up to
+five example target names, their types and a count, plus \stopop{} (``the current
+nodes are what the query asks for; return them''). The decider returns a distribution
+$p(\cdot \mid q, \text{path}, \text{options})$; the walk follows the chosen relation to
+all of its targets (visited nodes excluded) and stops on \stopop{}, at a dead end, or at
+depth 4 (three hops plus \stopop{}). The answer is the frontier at \stopop{}. All
+results use the greedy setting (the argmax at each step); beam search is implemented
+but not evaluated here. When the graph has node types, the decider also classifies the
+expected answer type, which is shown at every step. Prompts are in
+Appendix~\ref{app:prompts}.
+
+\paragraph{Confidence.} A walk that made decisions with chosen-option probabilities
+$p_1, \dots, p_L$ (the final \stopop{} included; forced moves with one legal option are
+not decisions) gets the confidence
+\begin{equation}
+  c = \exp\Big(\frac{1}{L}\sum_{i=1}^{L} \log \max(p_i, 10^{-3})\Big),
+\end{equation}
+the geometric mean of the step probabilities. This is the length-normalized path
+probability used to rank beams, not the raw product; the two order walks of equal
+length identically. A walk with no answer gets $c = 0$.
+
+\paragraph{Deciders.} We use four.
+\textbf{Jev} is a hosted classification model (\citealp{jev}; version 1.13 through
+OpenRouter) that takes a state, instructions and labeled options and returns a
+probability per option; it is closed, and the main reason we test the others.
+\textbf{Token probabilities} (\texttt{logprob}): a chat LLM sees the options lettered
+A--T, answers with one token at temperature 0 with reasoning disabled, and the
+distribution is read from that token's top log-probabilities, summed over each
+letter's token variants and renormalized over the offered letters. Options beyond 20 are
+ranked down by embedding similarity to the question (bge-small). We use Qwen3.8-27B
+unless stated, and Gemma~4 31B and DeepSeek V4 Flash in one comparison.
+\textbf{Stated scores} (\texttt{llm}): an LLM gives every option a 0--100 score, which
+is normalized. In E3/P0 this is a different model (\texttt{gpt-6-luna}); in P8 the same
+Qwen model and lettered prompt are used, and the reply format is the only change
+(\S\ref{sec:signal}).
+
+\paragraph{Escalation.} When $c$ falls below a threshold $t$, the question is passed to
+a stronger, costlier system (the LLM decider, or the LLM path writer below), and the
+escalated question pays for both.
+
+% ======================================================================================
+\section{Experimental Setup}
+\label{sec:setup}
+
+\paragraph{Data.} \textbf{MetaQA} \citep{zhang2018metaqa} 1-, 2- and 3-hop over the
+WikiMovies graph (9 relations; answers are entity sets). \textbf{WebQSP}
+\citep{yih2016webqsp} and \textbf{CWQ} \citep{talmor2018cwq} over the per-question
+Freebase subgraphs released with RoG (median $\sim$4,400 triples), and, for WebQSP, one
+graph merging all 1,628 test subgraphs (781k nodes, 2.28M edges, 5,419 relations).
+\textbf{2Wiki}: the gold evidence triples of 2WikiMultiHopQA \citep{ho2020twowiki} dev
+questions pooled into one graph, so that a question's own chain is not the whole graph.
+Topic entities are given everywhere. Samples are seeded (seed 0): 200 questions per
+MetaQA hop count (500 for P5), 300 for 2Wiki, 50--500 for WebQSP and 50 for CWQ, as
+stated per table.
+
+\paragraph{Baselines.} The \textbf{LLM path writer} sees the schema around the topic
+entity (relations with endpoint types; for MetaQA, the 9 relations with one-line
+glosses), writes a relation path in one call, which is executed like a walk, and may
+retry twice when the path returns nothing. \textbf{Multi-step RAG} retrieves over a
+textualized graph for up to 5 rounds. Both use \texttt{gpt-6-luna}.
+
+\paragraph{Metrics.} Correctness is exact match of the answer set (EM) on MetaQA and
+2Wiki and hits@1 on WebQSP/CWQ, as is standard there; we also report token-level F1 over
+answer sets. Confidence is evaluated by AUROC (the chance that a right answer outranks a
+wrong one), AURC (area under the risk--coverage curve; lower is better; ``random'' is
+the error rate), expected calibration error (ECE, 10 equal-width bins) and Brier score.
+Intervals are 95\% percentile bootstraps over questions (2,000 resamples); differences
+between systems are paired. Cost is the provider-reported charge per 1,000 questions;
+latency is wall time per question.
+
+% ======================================================================================
+\section{Accuracy and Cost Against an LLM Path Writer}
+\label{sec:accuracy}
+
+% Source: docs/results-paper.md (P5), docs/results-phase7.md (A2, A6),
+% docs/results-phase4.md (E2b); scripts/paper/table_curated.py and scripts/eval/*.
+\begin{table}[t]
+\centering\small
+\setlength\tabcolsep{3pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lrcccc}
+\toprule
+& & \multicolumn{2}{c}{F1} & \multicolumn{2}{c}{\$ / 1k q} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+Graph & $n$ & walk & path & walk & path \\
+\midrule
+MetaQA 2-hop & 500 & 0.985 & \textbf{0.999} & 0.096 & \textbf{0.061} \\
+MetaQA 3-hop & 500 & 0.884 & \textbf{0.964} & 0.152 & \textbf{0.092} \\
+WebQSP & 500 & 0.54 & \textbf{0.69} & \textbf{0.22} & 0.78 \\
+WebQSP, one graph & 100 & 0.49 & \textbf{0.66} & \textbf{0.24} & 1.48 \\
+CWQ & 50 & 0.32 & 0.29 & \textbf{0.22} & 1.23 \\
+\midrule
+2Wiki, text-extracted & 120 & \textbf{0.254} & 0.079 & \textbf{0.18} & 3.63 \\
+HotpotQA, text-extracted & 120 & \textbf{0.182} & 0.040 & \textbf{0.17} & 6.09 \\
+\bottomrule
+\end{tabular}}
+\caption{Jev walk vs.\ an LLM writing the relation path (2 retries). On curated graphs
+the path writer is more accurate; the walk is cheaper only on Freebase. On graphs
+extracted from text by an LLM (bottom), the written path rarely matches an existing
+relation, but every graph method there is far below multi-step RAG over the text
+(0.75--0.82 F1).}
+\label{tab:accuracy}
+\end{table}
+
+Table~\ref{tab:accuracy} sets the stakes for the rest of the paper: as a question
+answerer, the walk is not the better system. On MetaQA's 9-relation schema, one LLM call
+that writes the path is more accurate (+0.08 F1 at 3 hops) and \emph{cheaper}; the walk
+is only faster (p50 1.1\,s vs.\ 2.2\,s). On WebQSP the path writer is 15 F1 points
+better and the walk 3.6$\times$ cheaper, with a much shorter tail (p95 3.1\,s vs.\
+15.8\,s). A schema too large to read does not rescue walking on a curated graph: on the
+merged 5,419-relation WebQSP graph, giving the path writer only the relations within two
+hops of the topic entity keeps it 16 F1 points ahead (+0.16 \ci{+0.07}{+0.25}). On CWQ
+every system is weak (0.29--0.33 F1, against hits@1 of 0.59--0.72 reported by
+recent LLM methods), because
+none handles CWQ's constraints and a fifth of the sampled questions have no answer in
+their subgraph; parity there shows nothing. Walking wins only on noisy graphs extracted
+from text, where an LLM's plausible relation names usually do not exist (81\% of its
+2Wiki paths returned nothing), but there multi-step RAG over the source text is far
+better than either.
+
+The case for the walk is therefore not accuracy. It is that each answer arrives with a
+confidence, cheaply. The rest of the paper asks how good that confidence is.
+
+% ======================================================================================
+\section{Path Confidence as a Selective-Prediction Signal}
+\label{sec:selective}
+
+% Source: scripts/paper/figure_selective.py (P0/P1), docs/results-paper.md.
+\begin{table*}[t]
+\centering\small
+\begin{tabular}{lr ccc ccc ccc}
+\toprule
+& & \multicolumn{3}{c}{Accuracy} & \multicolumn{3}{c}{AUROC} & \multicolumn{3}{c}{AURC (random order)} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}
+Graph & $n$ & Jev & stated & token & Jev & stated & token & Jev & stated & token \\
+\midrule
+MetaQA 1-hop & 200 & 0.93 & 0.95 & 0.94 & 0.64 & 0.66 & 0.58 & .040 (.070) & .030 (.055) & .043 (.065) \\
+MetaQA 2-hop & 200 & 0.98 & 0.99 & 0.97 & \textbf{0.94} & 0.54 & \textbf{0.97} & .002 (.020) & .008 (.015) & .001 (.030) \\
+MetaQA 3-hop & 200 & 0.81 & 0.82 & 0.80 & \textbf{0.97} & 0.64 & \textbf{0.96} & .028 (.195) & .149 (.180) & .032 (.200) \\
+2Wiki evidence graph & 300 & 0.88 & 0.93 & 0.85 & 0.67 & 0.69 & \textbf{0.77} & .141 (.117) & .037 (.073) & .139 (.147) \\
+WebQSP & 50 & 0.54 & 0.66 & 0.62 & \textbf{0.87} & 0.64 & \textbf{0.84} & .189 (.460) & .238 (.340) & .154 (.380) \\
+CWQ & 50 & 0.28 & 0.28 & 0.28 & 0.59 & 0.54 & \textbf{0.73} & .611 (.720) & .750 (.720) & .607 (.720) \\
+\bottomrule
+\end{tabular}
+\caption{Path confidence as a selective-prediction signal, for the same walks with three
+deciders: Jev, an LLM's stated 0--100 scores (\texttt{gpt-6-luna}), and an open LLM's
+token probabilities (Qwen3.8-27B). Accuracy is EM on MetaQA and 2Wiki, hits@1 on
+WebQSP/CWQ. AURC: lower is better; in parentheses, the AURC of a random order (the error
+rate). Bold: AUROC $\geq 0.70$.}
+\label{tab:selective}
+\end{table*}
+
+Table~\ref{tab:selective} compares three deciders on the same walks. Three patterns
+stand out.
+
+\paragraph{Where walks fail often enough to matter, probability-based confidence is
+strongly informative.} On MetaQA 3-hop (about one walk in five is wrong), Jev and the
+open model's token probabilities reach AUROC 0.97 and 0.96, and AURC 0.028--0.032
+against 0.20 for a random order: answering the most confident half is 99\% accurate,
+against 81\% overall. On WebQSP, the confidence stays informative at ten times the
+pilot's sample (Jev, $n=500$: AUROC 0.86 with EM). On MetaQA 1--2 hop, 93--98\% of walks
+are right and there is little to rank; AUROC is noisy there (0.54--0.97, from 2--14 wrong
+answers).
+
+\paragraph{The signal is not Jev's.} The open model's letter probabilities match Jev
+on MetaQA 2--3 hop and WebQSP and are better on 2Wiki and CWQ, at similar accuracy. Jev
+is about $10\times$ faster per walk (p50 1.1\,s vs.\ 9.9\,s on MetaQA 3-hop through
+OpenRouter) and cheaper (\$0.15 vs.\ \$0.26 per 1k questions). The model does matter: on
+MetaQA 3-hop, Gemma~4 31B is as accurate (0.82 EM) but overconfident (mean confidence
+0.995; AUROC 0.82), and DeepSeek V4 Flash rarely chooses \stopop{} and collapses to 0.44
+EM, although its confidence still ranks (AUROC 0.84; Appendix~\ref{app:models}).
+
+\paragraph{Stated scores are weak, and the confidence fails on some graphs.} The
+stated-score LLM decider is as accurate or more, but its confidence barely ranks
+answers (AUROC 0.54--0.69). On 2Wiki, sorting by Jev's confidence is \emph{worse} than a
+random order (AURC 0.141 vs.\ 0.117) despite AUROC 0.67: a few confidently wrong walks
+sit at the top. On CWQ ($n=50$, 28\% correct) the best AUROC is 0.73 and no decider's
+confidence is useful after recalibration (\S\ref{sec:robust}). Path confidence measures
+whether the decider was sure of each relation choice; it cannot see a constraint the
+walk ignored, or a graph that lacks the fact.
+
+% ======================================================================================
+\section{Is It the Signal or the Model?}
+\label{sec:signal}
+
+% Source: scripts/paper/table_stated.py (P8); deltas: paired bootstrap, docs/results-paper.md.
+\begin{table}[t]
+\centering\small
+\setlength\tabcolsep{2.5pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+Confidence signal & Acc. & AUROC & $\Delta$ AUROC & \$/1k \\
+\midrule
+\multicolumn{5}{l}{\emph{MetaQA 3-hop (EM), $n=200$}} \\
+token probabilities & 0.800 & \textbf{0.955} & -- & 0.26 \\
+stated, per option & 0.740 & 0.719 & $-0.23$ \ci{$-0.33$}{$-0.14$} & 0.63 \\
+stated, top-1 & 0.795 & 0.748 & $-0.21$ \ci{$-0.30$}{$-0.12$} & 0.38 \\
+vote, 5 samples & 0.785 & 0.894 & $-0.06$ \ci{$-0.11$}{$-0.02$} & 1.49 \\
+\midrule
+\multicolumn{5}{l}{\emph{WebQSP (hits@1), $n=200$}} \\
+token probabilities & 0.615 & \textbf{0.821} & -- & 0.29 \\
+stated, per option & 0.560 & 0.736 & $-0.09$ \ci{$-0.17$}{$-0.01$} & 0.76 \\
+stated, top-1 & 0.600 & 0.695 & $-0.13$ \ci{$-0.20$}{$-0.06$} & 0.40 \\
+vote, 5 samples & 0.565 & 0.767 & $-0.06$ \ci{$-0.12$}{$+0.01$} & 1.67 \\
+\bottomrule
+\end{tabular}}
+\caption{Same model (Qwen3.8-27B), endpoint and lettered prompt; only the confidence
+signal changes. $\Delta$: paired bootstrap against token probabilities. A plain rerun of
+the token-probability walk moves AUROC by $+0.009$ \ci{$-0.005$}{$+0.025$}.}
+\label{tab:stated}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=0.9cm, y descriptions at=edge left},
+  width=4.6cm, height=4.4cm, xmin=0, xmax=1, ymin=0,
+  xlabel={coverage}, tick label style={font=\scriptsize}, label style={font=\scriptsize},
+  title style={font=\scriptsize, yshift=-1ex}, no markers, every axis plot/.append style={thick},
+  legend style={font=\tiny, draw=none, at={(1.05,-0.42)}, anchor=north, legend columns=4},
+  legend cell align=left,
+]
+\nextgroupplot[title={MetaQA 3-hop}, ylabel={risk (1 $-$ accuracy)}, ymax=0.3]
+\addplot[black] table[x=coverage, y=risk] {figures/selective-metaqa3hop-token.dat};
+\addplot[blue, dashed] table[x=coverage, y=risk] {figures/selective-metaqa3hop-scores.dat};
+\addplot[red, dotted] table[x=coverage, y=risk] {figures/selective-metaqa3hop-top1.dat};
+\addplot[teal, dashdotted] table[x=coverage, y=risk] {figures/selective-metaqa3hop-vote.dat};
+\legend{token probs, stated/option, stated top-1, vote}
+\nextgroupplot[title={WebQSP}]
+\addplot[black] table[x=coverage, y=risk] {figures/selective-webqsp-token.dat};
+\addplot[blue, dashed] table[x=coverage, y=risk] {figures/selective-webqsp-scores.dat};
+\addplot[red, dotted] table[x=coverage, y=risk] {figures/selective-webqsp-top1.dat};
+\addplot[teal, dashdotted] table[x=coverage, y=risk] {figures/selective-webqsp-vote.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Risk--coverage curves for the signals of Table~\ref{tab:stated}: the walk
+answers only its most confident questions, down to each coverage. Lower is better.}
+\label{fig:riskcov}
+\end{figure}
+
+The comparison in Table~\ref{tab:selective} confounds two things: the stated scores came
+from a different model. We therefore fix the model (Qwen3.8-27B), the endpoint and the
+lettered prompt, and change only the confidence signal: token probabilities; a 0--100
+score per option; one letter with a 0--100 confidence in it, the verbalized top-1
+format of \citet{tian2023just} (the remaining mass spread evenly); and the vote share of
+5 samples at temperature 1 (sampling consistency, with 0.1 pseudo-votes per option).
+Table~\ref{tab:stated} and Figure~\ref{fig:riskcov} give the result.
+
+\paragraph{With the model fixed, the signal is what matters.} Both stated formats lose
+0.09--0.23 AUROC to token probabilities, every interval excluding zero. Asking for one
+confidence in the chosen answer, the stronger stated baseline, is no better than scores
+per option. Sampling consistency is the best alternative but still worse ($-0.06$; on
+WebQSP the interval touches zero), it costs 5--6$\times$ as much per decision, and
+sampling at temperature 1 costs some accuracy. Token probabilities are also the cheapest
+LLM signal: one output token per decision, 1.4--2.6$\times$ cheaper per question than
+the stated formats. Parsing was not the cause: 1.6\% (MetaQA) and 3.4\% (WebQSP) of
+per-option replies could not be parsed and were scored uniformly; the other formats
+parsed in all but one case.
+
+This agrees with \citet{kadavath2022know} and \citet{xiong2024express}, and differs from
+\citet{tian2023just}, who found verbalized confidence better calibrated for RLHF-tuned
+API models judged by ECE. We tested one open model on two datasets and judge mainly by
+ranking; we cannot test their API models, most of which do not expose log-probabilities.
+
+% ======================================================================================
+\section{Robustness and Calibration}
+\label{sec:robust}
+
+\paragraph{Option order.} The walk shows options in a fixed order (by direction and
+relation name, \stopop{} last), and letter-reading LLMs are known to prefer letters and
+positions \citep{zheng2024mcq,pezeshkpour2024order}. We reran MetaQA 3-hop and WebQSP
+($n=200$) with each question's options in three random orders, next to a plain rerun in
+the original order to measure noise at temperature 0 (Appendix~\ref{app:order}).
+\emph{In aggregate, order barely matters}: accuracy moves within 2.5 points and AUROC
+stays at 0.89--0.95 (MetaQA) and 0.80--0.82 (WebQSP). Of six paired AUROC changes for
+Qwen, one is borderline ($-0.064$ \ci{$-0.132$}{$-0.000$}) and the rest include zero.
+\emph{Per question, it matters}: a new order changes Qwen's answer on 10--16\% of MetaQA
+and 22--27\% of WebQSP questions, against 4.5\% and 10\% for a plain rerun, and the rank
+correlation of confidence across orders falls from 0.90 to 0.61--0.73 on MetaQA. Jev is
+far more stable (6\% vs.\ 1.5\%). The confidence says which answers are right on
+average; it is not a stable property of each question. Agreement across orders is a
+worse confidence than the path probability (AUROC 0.91 vs.\ 0.955 on MetaQA, 0.76 vs.\
+0.82 on WebQSP), so averaging over orders is not an obvious fix.
+
+\paragraph{Format adherence.} 96--97\% of the first token's probability falls on
+offered letters, the top token was not a letter in at most 1.2\% of decisions, and no
+decision lacked a letter entirely, so renormalizing over letters discards little.
+
+% Source: scripts/paper/table_recalibration.py (P7).
+\begin{table}[t]
+\centering\small
+\setlength\tabcolsep{3pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llcccc}
+\toprule
+Graph & Decider & Acc. & Conf. & ECE raw$\to$Platt & Skill \\
+\midrule
+\multirow{3}{*}{MetaQA 3-hop} & Jev & 0.81 & 0.92 & 0.14 $\to$ 0.08 & \textbf{+0.62} \\
+& stated & 0.82 & 0.97 & 0.15 $\to$ 0.07 & +0.02 \\
+& token & 0.80 & 0.93 & 0.13 $\to$ 0.07 & \textbf{+0.57} \\
+\midrule
+\multirow{3}{*}{2Wiki} & Jev & 0.88 & 0.94 & 0.05 $\to$ 0.05 & +0.16 \\
+& stated & 0.93 & 0.98 & 0.06 $\to$ 0.03 & +0.33 \\
+& token & 0.85 & 0.96 & 0.11 $\to$ 0.07 & +0.35 \\
+\midrule
+\multirow{2}{*}{WebQSP} & Jev (500) & 0.54 & 0.80 & 0.26 $\to$ 0.10 & +0.28 \\
+& token (200) & 0.62 & 0.84 & 0.22 $\to$ 0.12 & +0.25 \\
+\midrule
+CWQ (50) & all three & 0.28 & 0.67--0.72 & 0.39--0.44 $\to$ 0.18--0.21 & $\leq -0.02$ \\
+\bottomrule
+\end{tabular}}
+\caption{Calibration before and after Platt scaling (logistic fit of correctness on
+$\log c$), cross-fitted on halves, 10 splits. Conf.: mean raw confidence. Skill:
+$1 - \text{Brier}/\text{Brier}_{\text{base rate}}$ after scaling (0 = no better than
+knowing the accuracy).}
+\label{tab:calibration}
+\end{table}
+
+\paragraph{Calibration.} AUROC ignores scale, and \citet{tian2023just} and
+\citet{kim2026same} judge confidence by calibration error instead.
+Table~\ref{tab:calibration} reports ECE and Brier skill before and after Platt scaling
+\citep{platt1999,guo2017calibration}, fit on half the questions and scored on the other
+half. \emph{Raw confidence is not a probability}: wherever accuracy is below about 90\%
+it is overconfident, badly on Freebase (mean 0.80 for 54\% correct on WebQSP). \emph{A
+two-parameter fit on a few hundred labeled answers repairs much of it} (WebQSP ECE 0.26
+$\to$ 0.10, skill +0.25--0.28). After scaling, the decider ordering of
+\S\ref{sec:selective} holds for calibration too: on MetaQA 3-hop, Jev and token
+probabilities reach skill +0.62 and +0.57 and the stated scores +0.02, although their
+raw ECE is similar (0.13--0.15). Raw ECE alone would have hidden the difference. Where
+the confidence failed to rank (2Wiki, CWQ), scaling cannot rescue it. ECE with 10 bins
+is noisy at these sample sizes, and each fit sees only half the questions.
+
+% ======================================================================================
+\section{What the Confidence Buys}
+\label{sec:use}
+
+\paragraph{Escalation.} Simulated offline from runs in which both systems answered the
+same questions (Appendix~\ref{app:escalation}): on MetaQA 3-hop, passing walks with
+$c < 0.9$ (25\% of questions) to the LLM decider recovers all of its +0.06 F1 lead at
+\$0.30 instead of \$0.55 per 1k questions. On 2Wiki, where the confidence is weaker,
+closing the gap takes $t=0.95$ (34\% escalated, \$0.13 vs.\ \$0.16). On Freebase,
+escalation saves little, because the questions the walk answers confidently are the easy
+ones that the path writer also answers: on WebQSP ($n=50$), matching the path writer
+means escalating two thirds of the questions at 96\% of its cost, and on the merged
+graph a cascade reaches its accuracy for 19\% less. Escalation pays on small curated
+schemas, where the expensive system is a per-hop LLM, not where a single LLM call writes
+the path.
+
+\paragraph{Can one tell before walking?} A logistic regression on pre-walk features
+(question length and cues, entity degree, relation counts) predicts walk success with
+AUROC 0.41--0.68 within a graph, against 0.70--0.96 for the walk's confidence; adding the
+features to the confidence does not help. A walk costs about \$0.0002 and a second, so
+the routing rule is to walk first and read the confidence.
+
+% Source: scripts/paper/table_agent.py (P4), scripts/paper/table_anon.py (P3).
+\begin{table}[t]
+\centering\small
+\setlength\tabcolsep{3pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcc}
+\toprule
+\multicolumn{3}{l}{\emph{(a) Strong agent (Gemini 3.1 Pro), WebQSP, $n=100$}} \\
+Arm & F1 & \$/q \\
+\midrule
+graph tools & 0.747 \ci{0.672}{0.823} & 0.0376 \\
+graph tools + walk & 0.755 \ci{0.683}{0.824} & 0.0311 \\
+$\Delta$ & $+0.008$ \ci{$-0.038$}{$+0.057$} & $-17\%$ \ci{$-27\%$}{$-8\%$} \\
+\midrule
+\multicolumn{3}{l}{\emph{(b) Cheap agent, F1 with real names $\to$ aliases, $n=100$}} \\
+Arm & real & aliases \\
+\midrule
+closed book & 0.42 & 0.01 \\
+walk alone (no agent) & 0.51 & 0.36 \\
+agent + graph tools & 0.74 & 0.45 \\
+agent + graph tools + walk & 0.72 & \textbf{0.52} \\
+agent + text search & 0.68 & 0.20 \\
+\bottomrule
+\end{tabular}}
+\caption{The walk as an agent's tool. (a) Paired difference of the walk arm. (b) Entity
+names replaced by meaningless aliases in graph, gold answers and questions. With aliases,
+graph tools beat search by $+0.25$ \ci{$+0.16$}{$+0.35$} F1, graph tools + walk by
+$+0.32$ \ci{$+0.23$}{$+0.42$}.}
+\label{tab:agent}
+\end{table}
+
+\paragraph{As an agent's tool.} One tool-calling loop, the same prompt and a 10-turn
+budget for every arm; only the tools differ: graph exploration (\texttt{relations},
+\texttt{neighbors}), the same plus \texttt{walk} (which returns answers with their
+confidence), or dense search over the same facts as text. With a strong agent
+(Table~\ref{tab:agent}a), adding \texttt{walk} cuts cost by 17\% at equal F1. The
+saving is smaller than in our first 30 questions ($-25\%$), and its mechanism is not the
+one we expected: the agent does not stop at a confident walk but verifies it, spending
+fewer exploration calls and, in the first 30 questions, about 40\% less reasoning
+output. With a cheap agent, the
+walk's own decision cost cancels the token savings.
+
+\paragraph{A memorization control.} The cheap agent answers 42\% of WebQSP F1 closed
+book, so any tool comparison partly measures memory. We replaced every entity name with
+a stable alias (``Entity 3fa9c1'') in the graph, the gold answers and the question text,
+keeping relations, numbers and dates (Table~\ref{tab:agent}b). Closed book falls to
+0.01, so the control works. Every arm leaned on names, text search the most ($-0.48$
+F1): without them, an agent exploring the graph beats one searching the same facts by
+0.25--0.32 F1, while with real names they were within 0.06. Part of this is dense
+retrieval losing meaningful names to embed, so the aliased graph is a lower bound for
+search rather than a model of a private KG. The walk alone loses 0.15 F1, because its
+decider also read what the names mean. Unlike KG-LLM-Bench
+\citep{markowitz2025kgllmbench}, which finds pseudonyms barely matter with the subgraph
+in context, the questions here are ones the model may have memorized.
+
+% ======================================================================================
+\section{Negative Results}
+\label{sec:negative}
+
+We report the settings where walking did not help, since each was a plausible use.
+\textbf{QA over text}: on 2Wiki and HotpotQA paragraphs ingested into a graph by LLM
+extraction, walking loses to multi-step RAG over the same text by 10--19 F1 points, and
+a 20$\times$ pricier extraction model does not close the gap. \textbf{As a RAG add-on},
+the graph's first retrieval cut multi-step RAG's LLM rounds by 16--21\% but gave no
+reliable accuracy gain, and the classifier calls cost more than the saved LLM calls.
+\textbf{Large curated schemas} do not favor walking (\S\ref{sec:accuracy}).
+\textbf{Constraints}: CWQ needs filters and superlatives that a relation walk cannot
+express. \textbf{Pre-walk routing}: question features do not predict success
+(\S\ref{sec:use}).
+
+% ======================================================================================
+\section{Conclusion}
+
+Reading a decider's probabilities at each hop of a KG walk gives a confidence that,
+where walks fail often enough to need one, separates right from wrong answers well; it
+does not depend on a particular classifier; and, with the model fixed, it beats asking
+the model how sure it is. It is not a probability until recalibrated, it is unstable per
+question under option reordering, and it fails on graphs where errors come from missing
+facts or ignored constraints. The walk it comes from is cheaper but less accurate than
+an LLM writing the query. We see its use as a cheap first pass whose confidence decides
+what to escalate, and as a tool that makes strong agents cheaper, not as a competitor
+to LLM-based KGQA on accuracy.
+
+\section*{Limitations}
+
+\textbf{Samples.} 200--500 questions per curated setting, but 50 on the WebQSP and CWQ
+pilots of Table~\ref{tab:selective} and 100 for the agent experiments; one seed for
+most runs (three for the MetaQA headline comparisons). \textbf{Models.} Hosted models
+whose versions can change behind the same name; Jev is closed. The open-model results
+come from one provider's serving of each model. \textbf{Scope.} Topic entities are
+given; the walker is greedy over relations from one entity, with no beam search,
+constraint handling or multi-entity questions, which caps accuracy on WebQSP and CWQ.
+Freebase is the only large curated graph. \textbf{Calibration protocol.} We judge
+confidence mostly by ranking; Platt scaling needs labeled answers from the target graph.
+\textbf{Data quality.} A large share of WebQSP/CWQ-style gold answers may be wrong or
+incomplete \citep{zhang2025kgqagen}, which bounds every accuracy number.
+
+\section*{Ethics and Disclosure}
+
+The code, the experiments and a first draft of this paper were produced with an AI
+assistant; the author reviewed the results and the text and is responsible for the
+claims. The datasets are public. The
+memorization control replaces entity names with aliases and introduces no personal data.
+
+\bibliography{refs}
+
+% ======================================================================================
+\appendix
+
+\section{Prompts}
+\label{app:prompts}
+
+\paragraph{Token-probability decider.} System: ``You answer one multiple-choice
+question about the state given. Read the instructions, then reply with the letter of the
+single best option and nothing else.'' User message:
+\begin{small}
+\begin{verbatim}
+State:
+{"query": "<question>"}
+
+Instructions:
+{"task": "You are walking a knowledge graph to
+  answer the query in the state. If the current
+  nodes are the things the query asks for, choose
+  STOP. Otherwise choose the relation to follow
+  from the current nodes that moves one step
+  closer to the answer.",
+ "current": {"nodes": [...], "count": N,
+             "types": [...]},
+ "path_so_far": [...],
+ "the_query_asks_for_a": "<type>"}
+
+Options:
+A. o1: {"relation": "directed_by",
+        "direction": "incoming",
+        "leads_to": [...], "count": N,
+        "leads_to_types": [...]}
+...
+F. STOP: "The current nodes are what the
+          query asks for. Return them as the
+          answer."
+
+Answer with one letter.
+\end{verbatim}
+\end{small}
+Jev receives the same state, instructions and options as a labeled choice question.
+The stated-confidence variants (P8) replace only the last line, with ``Score every
+option from 0 (certainly wrong) to 100 (certainly right), one per line as LETTER=SCORE
+(for example A=80), and nothing else.'' or ``Reply with the letter of the single best
+option, a space, and how confident you are that it is right, from 0 to 100 (for example:
+B 85). Nothing else.'', and their system prompt asks for ``exactly the format asked
+for''.
+
+\section{More Open Models}
+\label{app:models}
+
+% Source: docs/results-paper.md (P1b).
+\begin{table}[h]
+\centering\small
+\setlength\tabcolsep{3pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lrcccc}
+\toprule
+Decider & $n$ & EM & AUROC & ECE & \$/1k \\
+\midrule
+Jev & 500 & 0.80 & 0.95 & 0.11 & 0.15 \\
+Qwen3.8-27B & 200 & 0.80 & 0.96 & 0.13 & 0.26 \\
+Gemma 4 31B & 200 & 0.82 & 0.82 & 0.18 & 0.30 \\
+DeepSeek V4 Flash & 200 & 0.44 & 0.84 & 0.36 & 0.09 \\
+\bottomrule
+\end{tabular}}
+\caption{MetaQA 3-hop with three open models as token-probability deciders.}
+\end{table}
+
+\section{Option Order}
+\label{app:order}
+
+% Source: scripts/paper/table_order.py (P6).
+\begin{table}[h]
+\centering\small
+\setlength\tabcolsep{2.5pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llccc}
+\toprule
+Setting & Run & Acc. & AUROC & Same ans. \\
+\midrule
+MetaQA 3-hop & original & 0.800 & 0.955 & -- \\
+\quad Qwen & rerun & 0.795 & 0.963 & 0.955 \\
+& 3 shuffles & .775--.810 & .890--.947 & .840--.895 \\
+MetaQA 3-hop & original & 0.805 & 0.965 & -- \\
+\quad Jev & rerun & 0.805 & 0.968 & 0.985 \\
+& 1 shuffle & 0.805 & 0.955 & 0.940 \\
+WebQSP & original & 0.615 & 0.821 & -- \\
+\quad Qwen & earlier run & 0.620 & 0.839 & 0.900 \\
+& 3 shuffles & .600--.625 & .798--.817 & .735--.780 \\
+\bottomrule
+\end{tabular}}
+\caption{Accuracy and AUROC under shuffled option orders; ``same ans.'': share of
+questions with the same answer set as the original run.}
+\end{table}
+
+\section{Escalation}
+\label{app:escalation}
+
+% Source: scripts/paper/table_escalation.py (A1), docs/results-phase7.md (A2, A6).
+\begin{table}[h]
+\centering\small
+\setlength\tabcolsep{3pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llccc}
+\toprule
+Graph & System & Esc. & F1 & \$/1k \\
+\midrule
+MetaQA 3-hop & Jev only & 0\% & 0.897 & 0.154 \\
+& LLM decider only & 100\% & 0.956 & 0.548 \\
+& escalate $c<0.9$ & 25\% & 0.956 & 0.303 \\
+2Wiki & Jev only & 0\% & 0.915 & 0.048 \\
+& LLM decider only & 100\% & 0.941 & 0.164 \\
+& escalate $c<0.95$ & 34\% & 0.942 & 0.126 \\
+WebQSP (50) & path writer only & 100\% & 0.76 & 0.72 \\
+& Jev $\to$ path, $c<0.95$ & 66\% & 0.76 & 0.70 \\
+WebQSP, one graph & path writer only & 100\% & 0.66 & 1.48 \\
+& Jev $\to$ path, $c<0.95$ & 68\% & 0.66 & 1.20 \\
+\bottomrule
+\end{tabular}}
+\caption{Escalation simulated offline; an escalated question pays for both systems.}
+\end{table}
+
+\section{Reproducibility}
+
+Every run is committed with its per-question scores, and each table is printed by a
+script in \texttt{scripts/paper/} from those scores, without model calls. Re-running an
+experiment needs an OpenRouter key and costs the amounts stated in the repository's
+results pages (under \$2 per experiment except the strong-agent runs, about \$8 in
+total).
+
+\end{document}
