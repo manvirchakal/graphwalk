@@ -1,6 +1,12 @@
 # Related work and novelty check
 
-Status: literature search, 2026-10-02. Every entry was located at the URL given; entries
+Status: literature search, 2026-10-02; re-checked 2026-10-25 (arXiv search for KGQA
+confidence, calibration, selective prediction and routing since mid-September: nothing
+that changes the verdicts below). On re-checking against the abstracts, two notes were
+wrong: Ca2KG calibrates KG-RAG confidence with counterfactual prompting (its abstract
+does not mention selective accuracy on MetaQA/WebQSP), and Shrestha & Kim already show
+that one LLM call predicting the relation sequence reaches micro-F1 > 0.90 on MetaQA,
+which the paper now cites next to our path-writer result. Every entry was located at the URL given; entries
 marked *(abstract)* were checked from the abstract only, *(unverified)* not checked.
 Re-check OpenReview and recent workshop papers just before submission: the area moves
 fast (several of the closest papers are from 2026).

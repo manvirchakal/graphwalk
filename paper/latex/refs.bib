@@ -1,328 +1,391 @@
-% Sources: paper/RELATED_WORK.md (URLs there). Entries preceded by VERIFY were written from
-% notes, not copied from the paper: check title and authors. Entries with "and others" list only the
-% first author as found; complete every author list from the paper itself before
-% submission. Entries marked "unverified" in RELATED_WORK.md are marked here too.
+% Generated on 2026-10-25 from arXiv metadata (export.arxiv.org) and ACL Anthology BibTeX.
+% A venue is given only where arXiv or the Anthology confirms it; otherwise the arXiv preprint.
 
-% ---- Datasets --------------------------------------------------------------------
-@inproceedings{zhang2018metaqa,
-  title     = {Variational Reasoning for Question Answering with Knowledge Graph},
-  author    = {Zhang, Yuyu and Dai, Hanjun and Kozareva, Zornitsa and Smola, Alexander J. and Song, Le},
-  booktitle = {Proceedings of AAAI},
-  year      = {2018}
-}
-@inproceedings{yih2016webqsp,
-  title     = {The Value of Semantic Parse Labeling for Knowledge Base Question Answering},
-  author    = {Yih, Wen-tau and Richardson, Matthew and Meek, Chris and Chang, Ming-Wei and Suh, Jina},
-  booktitle = {Proceedings of ACL},
-  year      = {2016}
-}
-@inproceedings{talmor2018cwq,
-  title     = {The Web as a Knowledge-Base for Answering Complex Questions},
-  author    = {Talmor, Alon and Berant, Jonathan},
-  booktitle = {Proceedings of NAACL},
-  year      = {2018}
-}
-@inproceedings{ho2020twowiki,
-  title     = {Constructing A Multi-hop {QA} Dataset for Comprehensive Evaluation of Reasoning Steps},
-  author    = {Ho, Xanh and Duong Nguyen, Anh-Khoa and Sugawara, Saku and Aizawa, Akiko},
-  booktitle = {Proceedings of COLING},
-  year      = {2020}
-}
-
-% ---- Stepwise relation walkers (pre-LLM) -----------------------------------------
-@inproceedings{zhang2022sr,
-  title     = {Subgraph Retrieval Enhanced Model for Multi-hop Knowledge Base Question Answering},
-  author    = {Zhang, Jing and others},
-  booktitle = {Proceedings of ACL},
-  year      = {2022},
-  url       = {https://aclanthology.org/2022.acl-long.396/}
-}
 @inproceedings{das2018minerva,
-  title     = {Go for a Walk and Arrive at the Answer: Reasoning Over Paths in Knowledge Bases using Reinforcement Learning},
-  author    = {Das, Rajarshi and others},
+  title = {{Go for a Walk and Arrive at the Answer: Reasoning Over Paths in Knowledge Bases using Reinforcement Learning}},
+  author = {Das, Rajarshi and Dhuliawala, Shehzaad and Zaheer, Manzil and Vilnis, Luke and Durugkar, Ishan and Krishnamurthy, Akshay and Smola, Alex and McCallum, Andrew},
   booktitle = {Proceedings of ICLR},
-  year      = {2018},
-  url       = {https://arxiv.org/abs/1711.05851}
+  year = {2018},
+  url = {https://arxiv.org/abs/1711.05851}
 }
+
 @inproceedings{xiong2017deeppath,
-  title     = {{DeepPath}: A Reinforcement Learning Method for Knowledge Graph Reasoning},
-  author    = {Xiong, Wenhan and others},
+  title = {{DeepPath: A Reinforcement Learning Method for Knowledge Graph Reasoning}},
+  author = {Xiong, Wenhan and Hoang, Thien and Wang, William Yang},
   booktitle = {Proceedings of EMNLP},
-  year      = {2017},
-  url       = {https://arxiv.org/abs/1707.06690}
+  year = {2017},
+  url = {https://arxiv.org/abs/1707.06690}
 }
+
 @inproceedings{he2021nsm,
-  title     = {Improving Multi-hop Knowledge Base Question Answering by Learning Intermediate Supervision Signals},
-  author    = {He, Gaole and others},
+  title = {{Improving Multi-hop Knowledge Base Question Answering by Learning Intermediate Supervision Signals}},
+  author = {He, Gaole and Lan, Yunshi and Jiang, Jing and Zhao, Wayne Xin and Wen, Ji-Rong},
   booktitle = {Proceedings of WSDM},
-  year      = {2021},
-  url       = {https://arxiv.org/abs/2101.03737}
+  year = {2021},
+  url = {https://arxiv.org/abs/2101.03737}
 }
 
-% ---- LLM-era traversal, path generation, agents ----------------------------------
 @inproceedings{sun2024tog,
-  title     = {Think-on-Graph: Deep and Responsible Reasoning of Large Language Model on Knowledge Graph},
-  author    = {Sun, Jiashuo and others},
+  title = {{Think-on-Graph: Deep and Responsible Reasoning of Large Language Model on Knowledge Graph}},
+  author = {Sun, Jiashuo and Xu, Chengjin and Tang, Lumingyuan and Wang, Saizhuo and Lin, Chen and Gong, Yeyun and Ni, Lionel M. and Shum, Heung-Yeung and Guo, Jian},
   booktitle = {Proceedings of ICLR},
-  year      = {2024},
-  url       = {https://arxiv.org/abs/2307.07697}
+  year = {2024},
+  url = {https://arxiv.org/abs/2307.07697}
 }
+
 @inproceedings{luo2024rog,
-  title     = {Reasoning on Graphs: Faithful and Interpretable Large Language Model Reasoning},
-  author    = {Luo, Linhao and others},
+  title = {{Reasoning on Graphs: Faithful and Interpretable Large Language Model Reasoning}},
+  author = {Luo, Linhao and Li, Yuan-Fang and Haffari, Gholamreza and Pan, Shirui},
   booktitle = {Proceedings of ICLR},
-  year      = {2024},
-  url       = {https://arxiv.org/abs/2310.01061}
+  year = {2024},
+  url = {https://arxiv.org/abs/2310.01061}
 }
+
 @inproceedings{jiang2023structgpt,
-  title     = {{StructGPT}: A General Framework for Large Language Model to Reason over Structured Data},
-  author    = {Jiang, Jinhao and others},
+  title = {{StructGPT: A General Framework for Large Language Model to Reason over Structured Data}},
+  author = {Jiang, Jinhao and Zhou, Kun and Dong, Zican and Ye, Keming and Zhao, Wayne Xin and Wen, Ji-Rong},
   booktitle = {Proceedings of EMNLP},
-  year      = {2023},
-  url       = {https://arxiv.org/abs/2305.09645}
+  year = {2023},
+  url = {https://arxiv.org/abs/2305.09645}
 }
-@inproceedings{jiang2025kgagent,
-  title     = {{KG-Agent}: An Efficient Autonomous Agent Framework for Complex Reasoning over Knowledge Graph},
-  author    = {Jiang, Jinhao and others},
-  booktitle = {Proceedings of ACL},
-  year      = {2025},
-  url       = {https://aclanthology.org/2025.acl-long.468/}
-}
+
 @misc{mavromatis2024gnnrag,
-  title     = {{GNN-RAG}: Graph Neural Retrieval for Large Language Model Reasoning},
-  author    = {Mavromatis, Costas and Karypis, George},
-  year      = {2024},
-  howpublished = {arXiv:2405.20139}
+  title = {{GNN-RAG: Graph Neural Retrieval for Large Language Model Reasoning}},
+  author = {Mavromatis, Costas and Karypis, George},
+  year = {2024},
+  howpublished = {arXiv:2405.20139},
+  url = {https://arxiv.org/abs/2405.20139}
 }
-@inproceedings{gu2023pangu,
-  title     = {Don't Generate, Discriminate: A Proposal for Grounding Language Models to Real-World Environments},
-  author    = {Gu, Yu and others},
-  booktitle = {Proceedings of ACL},
-  year      = {2023},
-  url       = {https://aclanthology.org/2023.acl-long.270}
+
+@misc{dong2025effiqa,
+  title = {{EffiQA: Efficient Question-Answering with Strategic Multi-Model Collaboration on Knowledge Graphs}},
+  author = {Dong, Zixuan and Peng, Baoyun and Wang, Yufei and Fu, Jia and Wang, Xiaodong and Shan, Yongxue and Zhou, Xin},
+  year = {2024},
+  howpublished = {arXiv:2406.01238},
+  url = {https://arxiv.org/abs/2406.01238}
 }
-% VERIFY title and authors against the URL
-@inproceedings{dong2025effiqa,
-  title     = {{EffiQA}: Efficient Question-Answering with Strategic Multi-Model Collaboration on Knowledge Graphs},
-  author    = {Dong, Zixuan and others},
-  booktitle = {Proceedings of COLING},
-  year      = {2025},
-  url       = {https://arxiv.org/abs/2406.01238}
-}
-% VERIFY title and authors against the URL
-@inproceedings{zhao2024kgcot,
-  title     = {{KG-CoT}: Chain-of-Thought Prompting of Large Language Models over Knowledge Graphs for Knowledge-Aware Question Answering},
-  author    = {Zhao, Ruilin and others},
-  booktitle = {Proceedings of IJCAI},
-  year      = {2024},
-  url       = {https://ijcai.org/proceedings/2024/734}
-}
-% VERIFY title and authors against the URL
+
 @misc{shrestha2025efficient,
-  title     = {Efficient Multi-Hop Question Answering over Knowledge Graphs via {LLM} Planning and Embedding-Guided Search},
-  author    = {Shrestha and Kim},
-  year      = {2025},
-  howpublished = {arXiv:2511.19648}
+  title = {{Efficient Multi-Hop Question Answering over Knowledge Graphs via LLM Planning and Embedding-Guided Search}},
+  author = {Shrestha, Manil and Kim, Edward},
+  year = {2025},
+  howpublished = {arXiv:2511.19648},
+  url = {https://arxiv.org/abs/2511.19648}
 }
-% VERIFY title and authors against the URL
+
 @misc{yuan2026routerkgqa,
-  title     = {{RouterKGQA}},
-  author    = {Yuan and others},
-  year      = {2026},
-  howpublished = {arXiv:2603.20017}
+  title = {{RouterKGQA: Specialized--General Model Routing for Constraint-Aware Knowledge Graph Question Answering}},
+  author = {Yuan, Bo and Deng, Hexuan and Liu, Xuebo and Zhang, Min},
+  year = {2026},
+  howpublished = {arXiv:2603.20017},
+  url = {https://arxiv.org/abs/2603.20017}
 }
+
 @inproceedings{gu2024middleware,
-  title     = {Middleware for {LLMs}: Tools Are Instrumental for Language Agents in Complex Environments},
-  author    = {Gu, Yu and others},
+  title = {{Middleware for LLMs: Tools Are Instrumental for Language Agents in Complex Environments}},
+  author = {Gu, Yu and Shu, Yiheng and Yu, Hao and Liu, Xiao and Dong, Yuxiao and Tang, Jie and Srinivasa, Jayanth and Latapie, Hugo and Su, Yu},
   booktitle = {Proceedings of EMNLP},
-  year      = {2024},
-  url       = {https://arxiv.org/abs/2402.14672}
+  year = {2024},
+  url = {https://arxiv.org/abs/2402.14672}
 }
-% VERIFY title and authors against the URL
+
 @misc{abuzakuk2026awo,
-  title     = {Optimizing Agentic Workflows using Meta-tools},
-  author    = {Abuzakuk and others},
-  year      = {2026},
-  howpublished = {arXiv:2601.22037}
+  title = {{Optimizing Agentic Workflows using Meta-tools}},
+  author = {Abuzakuk, Sami and Kermarrec, Anne-Marie and Sharma, Rishi and Veski, Rasmus Moorits and Vos, Martijn de},
+  year = {2026},
+  howpublished = {arXiv:2601.22037},
+  url = {https://arxiv.org/abs/2601.22037}
 }
 
-% ---- Confidence, selective prediction, routing in KGQA ---------------------------
-% VERIFY title and authors against the URL
 @inproceedings{ren2026ca2kg,
-  title     = {When to Trust: Confidence-Aware Knowledge Graph Question Answering},
-  author    = {Ren and others},
+  title = {{When to Trust: A Causality-Aware Calibration Framework for Accurate Knowledge Graph Retrieval-Augmented Generation}},
+  author = {Ren, Jing and Li, Bowen and Xu, Ziqi and Zhang, Xikun and Fayek, Haytham and Li, Xiaodong},
   booktitle = {Proceedings of the ACM Web Conference (WWW)},
-  year      = {2026},
-  url       = {https://arxiv.org/abs/2601.09241}
-}
-% VERIFY title and authors against the URL
-@inproceedings{lin2026cpr,
-  title     = {Conformal Path Reasoning},
-  author    = {Lin and others},
-  booktitle = {Proceedings of ICML},
-  year      = {2026},
-  url       = {https://arxiv.org/abs/2605.08077}
-}
-% VERIFY title and authors against the URL
-@inproceedings{ni2025uag,
-  title     = {Towards Trustworthy Knowledge Graph Reasoning: An Uncertainty Aware Perspective},
-  author    = {Ni and others},
-  booktitle = {Proceedings of AAAI},
-  year      = {2025},
-  url       = {https://arxiv.org/abs/2410.08985}
-}
-% VERIFY title and authors against the URL
-@inproceedings{lu2026doublycal,
-  title     = {Double-Calibration for Knowledge Graph Question Answering},
-  author    = {Lu and others},
-  booktitle = {Proceedings of IJCAI},
-  year      = {2026},
-  url       = {https://arxiv.org/abs/2601.11956}
-}
-% VERIFY title and authors against the URL
-@inproceedings{wang2025skewroute,
-  title     = {{SkewRoute}: Training-Free {LLM} Routing for Knowledge Graph Retrieval-Augmented Generation via Score Skewness of Retrieved Context},
-  author    = {Wang and others},
-  booktitle = {Findings of EMNLP},
-  year      = {2025},
-  url       = {https://aclanthology.org/2025.findings-emnlp.606}
-}
-% VERIFY title and authors against the URL
-@inproceedings{dekoninck2025cascade,
-  title     = {A Unified Approach to Routing and Cascading for {LLMs}},
-  author    = {Dekoninck and others},
-  booktitle = {Proceedings of ICML},
-  year      = {2025},
-  url       = {https://arxiv.org/abs/2410.10347}
-}
-@inproceedings{kamath2020selective,
-  title     = {Selective Question Answering under Domain Shift},
-  author    = {Kamath, Amita and Jia, Robin and Liang, Percy},
-  booktitle = {Proceedings of ACL},
-  year      = {2020},
-  url       = {https://aclanthology.org/2020.acl-main.503}
-}
-@inproceedings{geifman2017selective,
-  title     = {Selective Classification for Deep Neural Networks},
-  author    = {Geifman, Yonatan and El-Yaniv, Ran},
-  booktitle = {Advances in NeurIPS},
-  year      = {2017},
-  url       = {https://arxiv.org/abs/1705.08500}
+  year = {2026},
+  url = {https://arxiv.org/abs/2601.09241}
 }
 
-% ---- LLM confidence ---------------------------------------------------------------
-@misc{kadavath2022know,
-  title     = {Language Models (Mostly) Know What They Know},
-  author    = {Kadavath, Saurav and others},
-  year      = {2022},
-  howpublished = {arXiv:2207.05221}
+@misc{lin2026cpr,
+  title = {{Conformal Path Reasoning: Trustworthy Knowledge Graph Question Answering via Path-Level Calibration}},
+  author = {Lin, Shuhang and Zhou, Chuhao and Lin, Xiao and Dong, Zihan and Lu, Kuan and Peng, Zhencan and Yin, Jie and Metaxas, Dimitris N.},
+  year = {2026},
+  howpublished = {arXiv:2605.08077},
+  url = {https://arxiv.org/abs/2605.08077}
 }
-@inproceedings{tian2023just,
-  title     = {Just Ask for Calibration: Strategies for Eliciting Calibrated Confidence Scores from Language Models Fine-Tuned with Human Feedback},
-  author    = {Tian, Katherine and others},
-  booktitle = {Proceedings of EMNLP},
-  year      = {2023},
-  url       = {https://arxiv.org/abs/2305.14975}
+
+@misc{ni2025uag,
+  title = {{Towards Trustworthy Knowledge Graph Reasoning: An Uncertainty Aware Perspective}},
+  author = {Ni, Bo and Wang, Yu and Cheng, Lu and Blasch, Erik and Derr, Tyler},
+  year = {2024},
+  howpublished = {arXiv:2410.08985},
+  url = {https://arxiv.org/abs/2410.08985}
 }
-@inproceedings{xiong2024express,
-  title     = {Can {LLMs} Express Their Uncertainty? An Empirical Evaluation of Confidence Elicitation in {LLMs}},
-  author    = {Xiong, Miao and others},
-  booktitle = {Proceedings of ICLR},
-  year      = {2024},
-  url       = {https://arxiv.org/abs/2306.13063}
+
+@inproceedings{lu2026doublycal,
+  title = {{Double-Calibration: Towards Reliable LLMs via Calibrating Knowledge and Reasoning Confidence}},
+  author = {Lu, Yuyin and Liang, Ziran and Rao, Yanghui and Fan, Wenqi and Wang, Fu Lee and Li, Qing},
+  booktitle = {Proceedings of IJCAI},
+  year = {2026},
+  url = {https://arxiv.org/abs/2601.11956}
 }
-@inproceedings{kapoor2024taught,
-  title     = {Large Language Models Must Be Taught to Know What They Don't Know},
-  author    = {Kapoor, Sanyam and others},
+
+@misc{dekoninck2025cascade,
+  title = {{A Unified Approach to Routing and Cascading for LLMs}},
+  author = {Dekoninck, Jasper and Baader, Maximilian and Vechev, Martin},
+  year = {2024},
+  howpublished = {arXiv:2410.10347},
+  url = {https://arxiv.org/abs/2410.10347}
+}
+
+@inproceedings{geifman2017selective,
+  title = {{Selective Classification for Deep Neural Networks}},
+  author = {Geifman, Yonatan and El-Yaniv, Ran},
   booktitle = {Advances in NeurIPS},
-  year      = {2024},
-  url       = {https://arxiv.org/abs/2406.08391}
+  year = {2017},
+  url = {https://arxiv.org/abs/1705.08500}
 }
-% VERIFY title and authors against the URL
-@misc{kim2026same,
-  title     = {Same Answer, Different Confidence},
-  author    = {Kim and Kang},
-  year      = {2026},
-  howpublished = {arXiv:2605.27752}
+
+@misc{kadavath2022know,
+  title = {{Language Models (Mostly) Know What They Know}},
+  author = {Kadavath, Saurav and Conerly, Tom and Askell, Amanda and Henighan, Tom and Drain, Dawn and Perez, Ethan and Schiefer, Nicholas and Hatfield-Dodds, Zac and DasSarma, Nova and Tran-Johnson, Eli and Johnston, Scott and El-Showk, Sheer and Jones, Andy and Elhage, Nelson and Hume, Tristan and Chen, Anna and Bai, Yuntao and Bowman, Sam and Fort, Stanislav and Ganguli, Deep and Hernandez, Danny and Jacobson, Josh and Kernion, Jackson and Kravec, Shauna and Lovitt, Liane and Ndousse, Kamal and Olsson, Catherine and Ringer, Sam and Amodei, Dario and Brown, Tom and Clark, Jack and Joseph, Nicholas and Mann, Ben and McCandlish, Sam and Olah, Chris and Kaplan, Jared},
+  year = {2022},
+  howpublished = {arXiv:2207.05221},
+  url = {https://arxiv.org/abs/2207.05221}
 }
-@inproceedings{zheng2024mcq,
-  title     = {Large Language Models Are Not Robust Multiple Choice Selectors},
-  author    = {Zheng, Chujie and others},
+
+@inproceedings{tian2023just,
+  title = {{Just Ask for Calibration: Strategies for Eliciting Calibrated Confidence Scores from Language Models Fine-Tuned with Human Feedback}},
+  author = {Tian, Katherine and Mitchell, Eric and Zhou, Allan and Sharma, Archit and Rafailov, Rafael and Yao, Huaxiu and Finn, Chelsea and Manning, Christopher D.},
+  booktitle = {Proceedings of EMNLP},
+  year = {2023},
+  url = {https://arxiv.org/abs/2305.14975}
+}
+
+@inproceedings{xiong2024express,
+  title = {{Can LLMs Express Their Uncertainty? An Empirical Evaluation of Confidence Elicitation in LLMs}},
+  author = {Xiong, Miao and Hu, Zhiyuan and Lu, Xinyang and Li, Yifei and Fu, Jie and He, Junxian and Hooi, Bryan},
   booktitle = {Proceedings of ICLR},
-  year      = {2024},
-  url       = {https://arxiv.org/abs/2309.03882}
+  year = {2024},
+  url = {https://arxiv.org/abs/2306.13063}
 }
-@inproceedings{pezeshkpour2024order,
-  title     = {Large Language Models Sensitivity to The Order of Options in Multiple-Choice Questions},
-  author    = {Pezeshkpour, Pouya and Hruschka, Estevam},
-  booktitle = {Findings of NAACL},
-  year      = {2024},
-  url       = {https://arxiv.org/abs/2308.11483}
+
+@inproceedings{kapoor2024taught,
+  title = {{Large Language Models Must Be Taught to Know What They Don't Know}},
+  author = {Kapoor, Sanyam and Gruver, Nate and Roberts, Manley and Collins, Katherine and Pal, Arka and Bhatt, Umang and Weller, Adrian and Dooley, Samuel and Goldblum, Micah and Wilson, Andrew Gordon},
+  booktitle = {Advances in NeurIPS},
+  year = {2024},
+  url = {https://arxiv.org/abs/2406.08391}
 }
+
+@misc{kim2026same,
+  title = {{Same Answer, Different Confidence: Protocol Sensitivity in LLM Confidence Calibration}},
+  author = {Kim, Hankyeol and Kang, Pilsung},
+  year = {2026},
+  howpublished = {arXiv:2605.27752},
+  url = {https://arxiv.org/abs/2605.27752}
+}
+
+@inproceedings{zheng2024mcq,
+  title = {{Large Language Models Are Not Robust Multiple Choice Selectors}},
+  author = {Zheng, Chujie and Zhou, Hao and Meng, Fandong and Zhou, Jie and Huang, Minlie},
+  booktitle = {Proceedings of ICLR},
+  year = {2024},
+  url = {https://arxiv.org/abs/2309.03882}
+}
+
+@misc{pezeshkpour2024order,
+  title = {{Large Language Models Sensitivity to The Order of Options in Multiple-Choice Questions}},
+  author = {Pezeshkpour, Pouya and Hruschka, Estevam},
+  year = {2023},
+  howpublished = {arXiv:2308.11483},
+  url = {https://arxiv.org/abs/2308.11483}
+}
+
 @inproceedings{wang2024answerc,
-  title     = {``{My} Answer is {C}'': First-Token Probabilities Do Not Match Text Answers in Instruction-Tuned Language Models},
-  author    = {Wang, Xinpeng and others},
+  title = {{''My Answer is C'': First-Token Probabilities Do Not Match Text Answers in Instruction-Tuned Language Models}},
+  author = {Wang, Xinpeng and Ma, Bolei and Hu, Chengzhi and Weber-Genzel, Leon and Röttger, Paul and Kreuter, Frauke and Hovy, Dirk and Plank, Barbara},
   booktitle = {Findings of ACL},
-  year      = {2024},
-  url       = {https://arxiv.org/abs/2402.14499}
+  year = {2024},
+  url = {https://arxiv.org/abs/2402.14499}
 }
+
 @inproceedings{zhuang2024beyond,
-  title     = {Beyond Yes and No: Improving Zero-Shot {LLM} Rankers via Scoring Fine-Grained Relevance Labels},
-  author    = {Zhuang, Honglei and others},
+  title = {{Beyond Yes and No: Improving Zero-Shot LLM Rankers via Scoring Fine-Grained Relevance Labels}},
+  author = {Zhuang, Honglei and Qin, Zhen and Hui, Kai and Wu, Junru and Yan, Le and Wang, Xuanhui and Bendersky, Michael},
   booktitle = {Proceedings of NAACL},
-  year      = {2024},
-  url       = {https://arxiv.org/abs/2310.14122}
+  year = {2024},
+  url = {https://arxiv.org/abs/2310.14122}
+}
+
+@inproceedings{ning2026arog,
+  title = {{Privacy-protected Retrieval-Augmented Generation for Knowledge Graph Question Answering}},
+  author = {Ning, Yunfeng and Xu, Mayi and Wen, Jintao and Pi, Qiankun and Zhu, Yuanyuan and Zhong, Ming and Jiang, Jiawei and Qian, Tieyun},
+  booktitle = {Proceedings of AAAI},
+  year = {2026},
+  url = {https://arxiv.org/abs/2508.08785}
+}
+
+@inproceedings{markowitz2025kgllmbench,
+  title = {{KG-LLM-Bench: A Scalable Benchmark for Evaluating LLM Reasoning on Textualized Knowledge Graphs}},
+  author = {Markowitz, Elan and Galiya, Krupa and Steeg, Greg Ver and Galstyan, Aram},
+  booktitle = {Proceedings of the KnowledgeNLP Workshop at NAACL},
+  year = {2025},
+  url = {https://arxiv.org/abs/2504.07087}
+}
+
+@inproceedings{zhang2025kgqagen,
+  title = {{Diagnosing and Addressing Pitfalls in KG-RAG Datasets: Toward More Reliable Benchmarking}},
+  author = {Zhang, Liangliang and Jiang, Zhuorui and Chi, Hongliang and Chen, Haoyang and Elkoumy, Mohammed and Wang, Fali and Wu, Qiong and Zhou, Zhengyi and Pan, Shirui and Wang, Suhang and Ma, Yao},
+  booktitle = {NeurIPS Datasets and Benchmarks Track},
+  year = {2025},
+  url = {https://arxiv.org/abs/2505.23495}
+}
+
+@inproceedings{gu2023pangu,
+    title = "Don{'}t Generate, Discriminate: A Proposal for Grounding Language Models to Real-World Environments",
+    author = "Gu, Yu  and
+      Deng, Xiang  and
+      Su, Yu",
+    booktitle = "Proceedings of the 61st Annual Meeting of the {A}ssociation for {C}omputational {L}inguistics (Volume 1: Long Papers)",
+    month = jul,
+    year = "2023",
+    url = "https://aclanthology.org/2023.acl-long.270/",
+}
+
+@inproceedings{ho2020twowiki,
+    title = "Constructing A Multi-hop {QA} Dataset for Comprehensive Evaluation of Reasoning Steps",
+    author = "Ho, Xanh  and
+      Duong Nguyen, Anh-Khoa  and
+      Sugawara, Saku  and
+      Aizawa, Akiko",
+    booktitle = "Proceedings of the 28th International Conference on Computational Linguistics",
+    month = dec,
+    year = "2020",
+    url = "https://aclanthology.org/2020.coling-main.580/",
+}
+
+@inproceedings{jiang2025kgagent,
+    title = "{KG}-Agent: An Efficient Autonomous Agent Framework for Complex Reasoning over Knowledge Graph",
+    author = "Jiang, Jinhao  and
+      Zhou, Kun  and
+      Zhao, Wayne Xin  and
+      Song, Yang  and
+      Zhu, Chen  and
+      Zhu, Hengshu  and
+      Wen, Ji-Rong",
+    booktitle = "Proceedings of the 63rd Annual Meeting of the {A}ssociation for {C}omputational {L}inguistics (Volume 1: Long Papers)",
+    month = jul,
+    year = "2025",
+    url = "https://aclanthology.org/2025.acl-long.468/",
+    ISBN = "979-8-89176-251-0"
+}
+
+@inproceedings{kamath2020selective,
+    title = "Selective Question Answering under Domain Shift",
+    author = "Kamath, Amita  and
+      Jia, Robin  and
+      Liang, Percy",
+    booktitle = "Proceedings of the 58th Annual Meeting of the {A}ssociation for {C}omputational {L}inguistics",
+    month = jul,
+    year = "2020",
+    url = "https://aclanthology.org/2020.acl-main.503/",
+}
+
+@inproceedings{longpre2021entity,
+    title = "Entity-Based Knowledge Conflicts in Question Answering",
+    author = "Longpre, Shayne  and
+      Perisetla, Kartik  and
+      Chen, Anthony  and
+      Ramesh, Nikhil  and
+      DuBois, Chris  and
+      Singh, Sameer",
+    booktitle = "Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing",
+    month = nov,
+    year = "2021",
+    url = "https://aclanthology.org/2021.emnlp-main.565/",
+}
+
+@inproceedings{talmor2018cwq,
+    title = "The Web as a Knowledge-Base for Answering Complex Questions",
+    author = "Talmor, Alon  and
+      Berant, Jonathan",
+    booktitle = "Proceedings of the 2018 Conference of the {N}orth {A}merican Chapter of the {A}ssociation for {C}omputational {L}inguistics: Human Language Technologies, Volume 1 (Long Papers)",
+    month = jun,
+    year = "2018",
+    url = "https://aclanthology.org/N18-1059/",
+}
+
+@inproceedings{wang2025skewroute,
+    title = "{S}kew{R}oute: Training-Free {LLM} Routing for Knowledge Graph Retrieval-Augmented Generation via Score Skewness of Retrieved Context",
+    author = "Wang, Hairu  and
+      Feng, Yuan  and
+      Cao, Yukun  and
+      Xie, Xike  and
+      Zhou, S Kevin",
+    booktitle = "Findings of the {A}ssociation for {C}omputational {L}inguistics: {EMNLP} 2025",
+    month = nov,
+    year = "2025",
+    url = "https://aclanthology.org/2025.findings-emnlp.606/",
+    ISBN = "979-8-89176-335-7"
+}
+
+@inproceedings{yih2016webqsp,
+    title = "The Value of Semantic Parse Labeling for Knowledge Base Question Answering",
+    author = "Yih, Wen-tau  and
+      Richardson, Matthew  and
+      Meek, Chris  and
+      Chang, Ming-Wei  and
+      Suh, Jina",
+    booktitle = "Proceedings of the 54th Annual Meeting of the {A}ssociation for {C}omputational {L}inguistics (Volume 2: Short Papers)",
+    month = aug,
+    year = "2016",
+    url = "https://aclanthology.org/P16-2033/",
+}
+
+@inproceedings{zhang2022sr,
+    title = "Subgraph Retrieval Enhanced Model for Multi-hop Knowledge Base Question Answering",
+    author = "Zhang, Jing  and
+      Zhang, Xiaokang  and
+      Yu, Jifan  and
+      Tang, Jian  and
+      Tang, Jie  and
+      Li, Cuiping  and
+      Chen, Hong",
+    booktitle = "Proceedings of the 60th Annual Meeting of the {A}ssociation for {C}omputational {L}inguistics (Volume 1: Long Papers)",
+    month = may,
+    year = "2022",
+    url = "https://aclanthology.org/2022.acl-long.396/",
+}
+
+@inproceedings{zhang2018metaqa,
+  title = {Variational Reasoning for Question Answering with Knowledge Graph},
+  author = {Zhang, Yuyu and Dai, Hanjun and Kozareva, Zornitsa and Smola, Alexander J. and Song, Le},
+  booktitle = {Proceedings of AAAI},
+  year = {2018}
+}
+@inproceedings{zhao2024kgcot,
+  title = {{KG-CoT}: Chain-of-Thought Prompting of Large Language Models over Knowledge Graphs for Knowledge-Aware Question Answering},
+  author = {Zhao, Ruilin and Zhao, Feng and Wang, Long and Wang, Xianzhi and Xu, Guandong},
+  booktitle = {Proceedings of IJCAI},
+  year = {2024},
+  url = {https://www.ijcai.org/proceedings/2024/734}
 }
 @inproceedings{platt1999,
-  title     = {Probabilistic Outputs for Support Vector Machines and Comparisons to Regularized Likelihood Methods},
-  author    = {Platt, John},
+  title = {Probabilistic Outputs for Support Vector Machines and Comparisons to Regularized Likelihood Methods},
+  author = {Platt, John},
   booktitle = {Advances in Large Margin Classifiers},
-  year      = {1999}
+  publisher = {MIT Press},
+  year = {1999}
 }
 @inproceedings{guo2017calibration,
-  title     = {On Calibration of Modern Neural Networks},
-  author    = {Guo, Chuan and Pleiss, Geoff and Sun, Yu and Weinberger, Kilian Q.},
+  title = {On Calibration of Modern Neural Networks},
+  author = {Guo, Chuan and Pleiss, Geoff and Sun, Yu and Weinberger, Kilian Q.},
   booktitle = {Proceedings of ICML},
-  year      = {2017}
+  year = {2017}
 }
-
-% ---- Memorization and anonymized KGs ---------------------------------------------
-% VERIFY title and authors against the URL
-@inproceedings{ning2026arog,
-  title     = {Privacy-protected Retrieval-Augmented Generation for Knowledge Graph Question Answering},
-  author    = {Ning and others},
-  booktitle = {Proceedings of AAAI},
-  year      = {2026},
-  url       = {https://arxiv.org/abs/2508.08785}
-}
-% VERIFY title and authors against the URL
-@inproceedings{markowitz2025kgllmbench,
-  title     = {{KG-LLM-Bench}: A Scalable Benchmark for Evaluating {LLM} Reasoning on Textualized Knowledge Graphs},
-  author    = {Markowitz and others},
-  booktitle = {Proceedings of the KnowledgeNLP Workshop at NAACL},
-  year      = {2025},
-  url       = {https://arxiv.org/abs/2504.07087}
-}
-@inproceedings{longpre2021entity,
-  title     = {Entity-Based Knowledge Conflicts in Question Answering},
-  author    = {Longpre, Shayne and others},
-  booktitle = {Proceedings of EMNLP},
-  year      = {2021},
-  url       = {https://aclanthology.org/2021.emnlp-main.565}
-}
-% VERIFY title and authors against the URL
-@inproceedings{zhang2025kgqagen,
-  title     = {Diagnosing and Addressing Pitfalls in {KG-RAG} Datasets: Toward More Reliable Benchmarking},
-  author    = {Zhang and others},
-  booktitle = {NeurIPS Datasets and Benchmarks Track},
-  year      = {2025},
-  url       = {https://arxiv.org/abs/2505.23495}
-}
-
-% ---- Systems used -----------------------------------------------------------------
 @misc{jev,
-  title     = {Jev classification model},
-  author    = {{TypeSafe}},
-  year      = {2026},
+  title = {Jev classification model},
+  author = {{TypeSafe}},
+  year = {2026},
   howpublished = {Hosted API, version jev-1.13, accessed through OpenRouter}
 }

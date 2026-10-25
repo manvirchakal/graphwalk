@@ -11,9 +11,15 @@ Every number in the tables was transcribed from `docs/results-paper.md`,
 table's source comment regenerate from committed runs. If a run in
 `scripts/paper/runs.py` changes, update the table by hand.
 
+`refs.bib` was generated on 2026-10-25 from arXiv metadata and ACL Anthology BibTeX
+(author lists and titles as published). A venue is given only where arXiv or the
+Anthology confirms it; the others are cited as arXiv preprints. Upgrade them if the
+final versions have appeared.
+
 Before submission:
 
-- Fill in the author block and switch `[review]` to `[final]` or `[preprint]`.
-- `refs.bib`: entries marked `VERIFY` were written from notes; check titles and author
-  lists against the URLs. Re-run the related-work search (`paper/RELATED_WORK.md`).
-- Check the venue's page limit; the main text is 7 pages.
+- Choose the venue and check its page limit; the main text is 7 pages.
+- Fill in the author block and switch `[review]` to `[final]` or `[preprint]` when the
+  venue allows it (keep `[review]` for anonymous submission).
+- Re-run the related-work search if more than a few weeks have passed (last run
+  2026-10-25; see `paper/RELATED_WORK.md`).
