@@ -108,7 +108,9 @@ asyncio.run(main())
   targets). `result.best.path` is the list of hops taken; show it to users as the
   justification.
 - `result.confidence` is `exp(score)`, the length-normalized path probability. Treat it
-  as a ranking signal. 0.9 was the best default threshold on MetaQA; on a graph with a
+  as a ranking signal, not the probability of being right: it is overconfident where
+  accuracy is low (WebQSP: mean 0.80, 54% correct). A logistic fit on log-confidence
+  over 100+ labeled answers turns it into one (P7). 0.9 was the best default threshold on MetaQA; on a graph with a
   different shape, check it on 50–100 labeled questions before relying on it.
 - `escalate_below` re-walks unsure queries with the LLM decider (needs the `llm` extra
   and an LLM key), or with `fallback_decider=` if you pass one. `result.cost_usd`

@@ -12,6 +12,10 @@ Systems, all starting from the release's topic entities:
 * ``path``: the LLM writes the relation path from the subgraph's schema and code runs
   it (two retries when it returns nothing), as in E2.
 
+``--shuffle K`` presents each question's options in a random order (permutation seed K;
+the option-order control, graphwalk.eval.shuffle); ``logprob`` runs also write the
+decider's format diagnostics to ``diagnostics.json``.
+
 Escalation (Jev, re-walked with the LLM decider below a confidence threshold) is
 computed offline from ``jev`` and ``llm`` by ``scripts/paper/table_escalation.py``.
 Wide steps (Freebase entities have hundreds of relations) are cut to the 30 most
@@ -20,6 +24,7 @@ query-similar options by a local embedder, as in every earlier experiment.
 
 import argparse
 import asyncio
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -34,6 +39,8 @@ from graphwalk.eval.datasets import rog
 from graphwalk.eval.per_question import PerQuestionSystem
 from graphwalk.eval.query_writer import PathQuerySystem
 from graphwalk.eval.runner import SystemRun, run_system, sample_questions, write_results
+from graphwalk.eval.shuffle import ShuffledDecider
+from graphwalk.eval.stated_decider import StatedDecider
 from graphwalk.eval.suite import preset_config
 from graphwalk.eval.systems import GraphwalkSystem
 from graphwalk.eval.types import EvalQuestion, QASystem
@@ -62,7 +69,14 @@ async def main(args: argparse.Namespace) -> None:
     async def graph(question: EvalQuestion) -> GraphStore:
         return await rog.build_store(graphs[question.id], f"{args.dataset}:{question.id}")
 
-    def walker(decider: DecisionBackend, name: str) -> PerQuestionSystem:
+    made: list[DecisionBackend] = []
+    suffix = f"-shuf{args.shuffle}" if args.shuffle else ""
+
+    def walker(inner: DecisionBackend, name: str) -> PerQuestionSystem:
+        made.append(inner)
+        decider = ShuffledDecider(inner, args.shuffle) if args.shuffle else inner
+        name += suffix
+
         def build(store: GraphStore, question: EvalQuestion) -> QASystem:
             del question
             traverser = Traverser(
@@ -73,7 +87,7 @@ async def main(args: argparse.Namespace) -> None:
         return PerQuestionSystem(
             name, graph, build,
             {"system": "graphwalk", "decision_model": decider.model_id, "embedder": EMBED,
-             "traversal": config.model_dump(mode="json")},
+             "traversal": config.model_dump(mode="json"), "shuffle": args.shuffle},
         )  # fmt: skip
 
     def path_writer() -> PerQuestionSystem:
@@ -103,6 +117,14 @@ async def main(args: argparse.Namespace) -> None:
         ),
         "path": path_writer,
     }
+    for mode in ("scores", "top1", "vote"):
+        label = "vote" if mode == "vote" else f"stated-{mode}"
+        builders[label] = lambda mode=mode, label=label: walker(
+            StatedDecider(
+                args.logprob_model, mode, api_key=api_key or "", max_rpm=args.logprob_rpm
+            ),
+            f"graphwalk-{PRESET}-{label}",
+        )
     runs: list[SystemRun] = []
     for label in args.systems:
         system = builders[label]()
@@ -127,6 +149,12 @@ async def main(args: argparse.Namespace) -> None:
             "concurrency": args.concurrency,
         },
     )  # fmt: skip
+    stats = {
+        d.model_id: d.diagnostics() for d in made if isinstance(d, LogprobDecider | StatedDecider)
+    }
+    if stats:
+        (out / "diagnostics.json").write_text(json.dumps(stats, indent=2) + "\n")
+        print(stats, flush=True)  # noqa: T201
     walks = [r for r in runs if r.system.startswith("graphwalk")]
     if walks:
         table = "\n".join(
@@ -144,7 +172,8 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=50)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--systems", nargs="+", default=["jev", "llm", "path"],
-                        choices=["jev", "llm", "logprob", "path"])  # fmt: skip
+                        choices=["jev", "llm", "logprob", "path", "stated-scores",
+                                 "stated-top1", "vote"])  # fmt: skip
     parser.add_argument("--llm", default="openrouter/openai/gpt-6-luna")
     parser.add_argument("--max-tokens", type=int, default=1024)
     parser.add_argument("--logprob-model", default="qwen/qwen3.8-27b", help="open weights")
@@ -152,4 +181,5 @@ if __name__ == "__main__":
     parser.add_argument("--max-depth", type=int, default=4)
     parser.add_argument("--rpm", type=float, default=18.0)
     parser.add_argument("--concurrency", type=int, default=4)
+    parser.add_argument("--shuffle", type=int, default=0, help="option-order seed (0 = off)")
     asyncio.run(main(parser.parse_args()))

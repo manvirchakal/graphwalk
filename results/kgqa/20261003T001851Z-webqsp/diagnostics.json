@@ -1,0 +1,8 @@
+{
+  "logprob:qwen/qwen3.8-27b": {
+    "asked": 646,
+    "mean_letter_mass": 0.9722291376871538,
+    "top_not_letter": 3,
+    "no_letter": 0
+  }
+}

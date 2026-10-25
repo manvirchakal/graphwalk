@@ -159,7 +159,7 @@ Paired on the aliased graph:
 - Agents explore about twice as much on aliases (15–18k vs 6–9k input tokens per
   question), so every agent arm costs roughly twice as much.
 
-, 500 questions (MetaQA)
+## P5: walk vs the LLM path writer, 500 questions (MetaQA)
 
 Same seed-0 samples at n = 500 (`results/decider/20261002T021023Z-metaqa-2hop`,
 `…021310Z-metaqa-3hop`, `results/20261002T023850Z-metaqa-2hop-llmpath`,
@@ -187,3 +187,137 @@ WebQSP, 500 test questions, per-question subgraphs (`results/kgqa/20261002T03120
   shorter tail (p95 3 s vs 16 s), and 15 F1 points less accurate, as in A2.
 - Its confidence stays informative at 10× the A2 sample (AUROC 0.86 with EM, vs 0.92
   on the 50-question pilot).
+
+## P6: does the order of the options matter? (`scripts/paper/table_order.py`)
+
+Letter-reading deciders are known to prefer some letters or positions regardless of
+content (Zheng et al., ICLR 2024; Pezeshkpour & Hruschka, 2024), and the walk always
+shows options in the same order (by direction and relation name, STOP last). So the
+same questions were rerun with each question's options in a random order
+(`--shuffle K`, `graphwalk.eval.shuffle`), three orders per setting, next to a plain
+rerun in the original order to measure run-to-run noise at temperature 0.
+
+| setting | run | accuracy | AUROC | same answer as reference | confidence rank corr. |
+|---|---|---|---|---|---|
+| MetaQA 3-hop, Qwen3.8-27B (EM) | original order (P1) | 0.800 | 0.955 | – | – |
+| | rerun, same order | 0.795 | 0.963 | 0.955 | 0.90 |
+| | 3 shuffled orders | 0.775–0.810 | 0.890–0.947 | 0.840–0.895 | 0.61–0.73 |
+| MetaQA 3-hop, Jev (EM) | original order (E3) | 0.805 | 0.965 | – | – |
+| | rerun, same order | 0.805 | 0.968 | 0.985 | 0.98 |
+| | shuffled order | 0.805 | 0.955 | 0.940 | 0.92 |
+| WebQSP, Qwen3.8-27B (hits@1, n = 200) | original order | 0.615 | 0.821 | – | – |
+| | earlier run, same order (P1's 50) | 0.620 | 0.839 | 0.900 | 0.96 |
+| | 3 shuffled orders | 0.600–0.625 | 0.798–0.817 | 0.735–0.780 | 0.79 |
+
+Paired bootstrap of the AUROC change against the reference (95% CI): MetaQA/Qwen
+−0.008 [−0.048, +0.032], **−0.064 [−0.132, −0.000]**, −0.022 [−0.071, +0.022]; Jev
+−0.011 [−0.032, +0.006]; WebQSP/Qwen −0.023, −0.004, −0.008, every CI spanning 0.
+
+- **In aggregate, order barely matters:** accuracy moves within ±2.5 points and AUROC
+  stays 0.80–0.95, so the P1 conclusion (an open model's letter probabilities are as
+  informative as Jev's) survives. One of the three MetaQA orders lowered Qwen's AUROC
+  by 0.06, at the edge of significance.
+- **Per question, it matters for the LLM:** a different order changes Qwen's answer on
+  10–16% of MetaQA questions and 22–27% of WebQSP questions, against 4.5% (MetaQA) and
+  10% (WebQSP) for a plain rerun; the rank correlation of confidence across orders drops
+  from 0.90 to 0.61–0.73 on MetaQA. Jev is far more stable (6% vs 1.5%). Individual
+  decisions of a letter-reading LLM partly follow the presentation; the confidence is
+  informative about *which* answers are right on average, not a stable property of each
+  question.
+- **The format holds:** 96–97% of the first token's probability falls on offered
+  letters; the top token was not a letter in 0–1.2% of decisions, and no decision
+  lacked a letter entirely. Renormalizing drops little.
+- **Agreement across orders is a worse confidence than the path probability** (AUROC
+  0.91 vs 0.955 on MetaQA, 0.76 vs 0.82 on WebQSP), so averaging orders is not an
+  obvious fix; it costs one walk per order anyway.
+
+Runs: `results/decider/20261003T000938Z…003738Z-metaqa-3hop`,
+`results/kgqa/20261003T000711Z…002439Z-webqsp` (cost ≈ $0.50 in all).
+
+## P7: calibration error, before and after recalibration (`scripts/paper/table_recalibration.py`)
+
+AUROC says whether confidence *ranks* answers and ignores its scale; Tian et al. (2023)
+and Kim & Kang (2026) judge confidence by calibration error instead. From the committed
+P0/P1 scores (no new runs), plus P5's 500-question and P6's 200-question WebQSP runs:
+ECE (10 bins) and Brier score of the raw confidence, and of the confidence after Platt
+scaling (a logistic fit of correctness on log-confidence), cross-fitted on half the
+questions and scored on the other half, averaged over 10 splits. Scaling is monotone,
+so AUROC is unchanged. "Skill" is 1 − Brier / Brier of always predicting the base rate
+(0 = no better than knowing the accuracy).
+
+| dataset | decider | n | accuracy | mean conf. | ECE raw → scaled | Brier raw → scaled | skill scaled |
+|---|---|---|---|---|---|---|---|
+| MetaQA 3-hop | Jev | 200 | 0.805 | 0.922 | 0.138 → 0.076 | 0.123 → 0.059 | **+0.62** |
+| | LLM, stated scores | 200 | 0.820 | 0.968 | 0.148 → 0.067 | 0.165 → 0.145 | +0.02 |
+| | open model, token probabilities | 200 | 0.800 | 0.930 | 0.130 → 0.073 | 0.131 → 0.069 | **+0.57** |
+| 2Wiki gold-evidence graph | Jev | 300 | 0.883 | 0.937 | 0.053 → 0.053 | 0.091 → 0.087 | +0.16 |
+| | LLM, stated scores | 300 | 0.927 | 0.982 | 0.056 → 0.032 | 0.055 → 0.045 | +0.33 |
+| | open model, token probabilities | 300 | 0.853 | 0.959 | 0.109 → 0.074 | 0.107 → 0.081 | +0.35 |
+| WebQSP | Jev | 500 | 0.544 | 0.801 | 0.257 → 0.099 | 0.251 → 0.177 | +0.28 |
+| | open model, token probabilities | 200 | 0.615 | 0.836 | 0.221 → 0.123 | 0.226 → 0.177 | +0.25 |
+| WebQSP, one graph | Jev | 100 | 0.500 | 0.798 | 0.304 → 0.149 | 0.275 → 0.188 | +0.25 |
+| CWQ | Jev / LLM / open model | 50 each | 0.280 | 0.67–0.72 | 0.39–0.44 → 0.18–0.21 | 0.35–0.38 → 0.21–0.24 | −0.18 to −0.02 |
+
+The script also prints MetaQA 1–2 hop, where 93–98% of answers are right, there is little
+to predict and every skill is within ±0.06; and the 50-question WebQSP pilots (skill
++0.27 Jev, +0.20 open model, −0.04 stated scores), superseded by the larger runs above.
+
+- **Raw confidence is not a probability.** Wherever accuracy is below ~90% it is
+  overconfident, badly on Freebase: mean 0.80 for 54% correct on WebQSP (ECE 0.26),
+  0.67–0.72 for 28% on CWQ. Read it as a ranking score; the docs say so.
+- **A two-parameter fit on a few hundred labeled answers fixes much of it:** WebQSP ECE
+  0.26 → 0.10 (Jev) and 0.22 → 0.12 (open model), Brier skill +0.25–0.28.
+- **After scaling, the decider ordering of P1 holds on calibration too:** on MetaQA
+  3-hop, Jev and the open model's token probabilities reach skill +0.62 and +0.57, the
+  LLM's stated scores +0.02, although raw ECE is similar for all three (0.13–0.15). Raw
+  ECE alone would have hidden the difference, which is why it is reported next to skill.
+- **Where confidence failed in P0, scaling cannot rescue it:** Jev on 2Wiki stays at
+  +0.16 (stated scores and token probabilities +0.33–0.35), and CWQ (n = 50, 28%
+  correct) shows no skill for any decider.
+- Caveat: ECE with 10 bins is noisy at n ≤ 100, and each fit sees only half the
+  questions.
+
+## P8: token probabilities vs stated confidence, same model and prompt (`scripts/paper/table_stated.py`)
+
+E3/P1 compared token probabilities from one model with stated 0–100 scores from
+another, which leaves open whether the gap is the signal or the model. Here the model
+(Qwen3.8-27B), the endpoint and the lettered prompt are fixed
+(`graphwalk.eval.stated_decider`) and only the confidence signal changes: token
+probabilities, a 0–100 score per option, one letter with a 0–100 confidence in it (the
+verbalized top-1 format of Tian et al., 2023), or the vote share of 5 samples at
+temperature 1 (sampling consistency). n = 200 each, same questions.
+
+| setting | confidence signal | accuracy | AUROC | ΔAUROC vs token probs [95% CI] | AURC | Brier skill (scaled) | $ / 1k q |
+|---|---|---|---|---|---|---|---|
+| MetaQA 3-hop (EM) | **token probabilities** | 0.800 | **0.955** | – | **0.032** | **+0.57** | 0.26 |
+| | stated, 0–100 per option | 0.740 | 0.719 | −0.23 [−0.33, −0.14] | 0.167 | +0.23 | 0.63 |
+| | stated, top-1 + confidence | 0.795 | 0.748 | −0.21 [−0.30, −0.12] | 0.111 | +0.01 | 0.38 |
+| | vote share, 5 samples | 0.785 | 0.894 | −0.06 [−0.11, −0.02] | 0.056 | +0.41 | 1.49 |
+| | *context: Jev* | 0.805 | 0.965 | +0.01 [−0.02, +0.05] | 0.028 | +0.62 | 0.15 |
+| | *context: E3's LLM, 0–100 per option* | 0.820 | 0.640 | −0.31 [−0.42, −0.20] | 0.149 | +0.02 | 0.55 |
+| WebQSP (hits@1) | **token probabilities** | 0.615 | **0.821** | – | **0.173** | **+0.25** | 0.29 |
+| | stated, 0–100 per option | 0.560 | 0.736 | −0.09 [−0.17, −0.01] | 0.284 | +0.17 | 0.76 |
+| | stated, top-1 + confidence | 0.600 | 0.695 | −0.13 [−0.20, −0.06] | 0.253 | +0.12 | 0.40 |
+| | vote share, 5 samples | 0.565 | 0.767 | −0.06 [−0.12, +0.01] | 0.281 | +0.21 | 1.67 |
+
+A plain rerun of the token-probability walk moves AUROC by +0.009 [−0.005, +0.025]
+(P6), so the differences above are not run-to-run noise. 1.6% (MetaQA) and 3.4%
+(WebQSP) of per-option score replies could not be parsed and were scored uniformly; the
+other formats parsed in all but one case.
+
+- **With the model held fixed, the signal is what matters.** Both stated formats lose
+  0.09–0.23 AUROC to token probabilities, the same direction as E3's cross-model
+  comparison. The stronger stated baseline a reviewer would ask for (top-1 with a stated
+  confidence) is no better than per-option scores here.
+- **Sampling consistency is the best of the alternatives but still worse,** and it is
+  the most expensive: 5 samples cost 5–6× a token-probability decision and lost
+  accuracy (temperature 1). On WebQSP its gap is not significant.
+- **Token probabilities are also the cheapest LLM signal:** one output token per
+  decision, against a few (top-1) or one line per option (per-option scores); 1.4–2.6×
+  cheaper than the stated formats per question.
+- This holds for one open model on two datasets; Tian et al. (2023) found the opposite
+  for RLHF-tuned API models judged by ECE, which we did not test (their APIs mostly do
+  not expose log-probabilities).
+
+Runs: `results/decider/20261003T223212Z…225324Z-metaqa-3hop`,
+`results/kgqa/20261003T223244Z…224757Z-webqsp` (cost ≈ $1.10).

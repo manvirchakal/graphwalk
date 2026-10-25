@@ -92,7 +92,11 @@ A runnable version over a small movie graph:
 On the benchmarks it ranks answers well (AUROC 0.92 on WebQSP, 0.97 on MetaQA 2–3 hop),
 and **0.9** was a good escalation threshold. On your own graph, check it against
 50–100 labeled questions before relying on it: the threshold does not transfer
-automatically. The LLM-decider fallback's confidence barely is informative: it is the
+automatically. It ranks answers; it is **not** the probability of being right (on
+WebQSP the mean confidence was 0.80 for 54% correct). If you need a probability, fit a
+logistic curve on log-confidence over 100+ labeled answers: that cut the calibration
+error from 0.26 to 0.10 there ([P7](results-paper.md#p7-calibration-error-before-and-after-recalibration-scriptspapertable_recalibrationpy)).
+The LLM-decider fallback's confidence barely is informative: it is the
 model's stated scores, not probabilities.
 
 ## What it can't do

@@ -11,19 +11,26 @@ chat model to score every option 0-100 and normalizes the scores into a distribu
 (graphwalk.decisions.logprob).
 
 Also reports the calibration of each walk's confidence (graphwalk.eval.calibration).
-Other seeds (--seed 1, 2) are E4's re-samples of the same test sets.
+Other seeds (--seed 1, 2) are E4's re-samples of the same test sets. ``--shuffle K``
+presents each question's options in a random order (permutation seed K; the option-order
+control, graphwalk.eval.shuffle); ``logprob`` runs also write the decider's format
+diagnostics to ``diagnostics.json``.
 """
 
 import argparse
 import asyncio
+import json
 from pathlib import Path
 
 from graphwalk.cli import _make_backend  # pyright: ignore[reportPrivateUsage]
 from graphwalk.config import GraphwalkSettings
+from graphwalk.decisions.base import DecisionBackend
 from graphwalk.decisions.llm_decider import LLMDecider
 from graphwalk.decisions.logprob import LogprobDecider
 from graphwalk.embeddings.fastembed_embedder import FastEmbedEmbedder
 from graphwalk.eval.calibration import CALIBRATION_HEADER, calibration_row
+from graphwalk.eval.shuffle import ShuffledDecider
+from graphwalk.eval.stated_decider import StatedDecider
 from graphwalk.eval.suite import Factories, run_dataset
 from graphwalk.llm.litellm_backend import LiteLLMBackend
 
@@ -55,10 +62,32 @@ async def main(args: argparse.Namespace) -> None:
             llm=lambda: llm(512),
         ),
     }
+    made: list[DecisionBackend] = []
+
+    def shuffle(factories: Factories) -> Factories:
+        """The same factories, with every decider made wrapped (when --shuffle) and kept."""
+
+        def decider() -> DecisionBackend:
+            inner = factories.decider()
+            made.append(inner)
+            return ShuffledDecider(inner, args.shuffle) if args.shuffle else inner
+
+        return Factories(decider=decider, embedder=factories.embedder, llm=factories.llm)
+
+    suffix = f"-shuf{args.shuffle}" if args.shuffle else ""
+    for mode in ("scores", "top1", "vote"):
+        deciders["vote" if mode == "vote" else f"stated-{mode}"] = Factories(
+            decider=lambda mode=mode: StatedDecider(
+                args.logprob_model, mode, api_key=api_key or "", max_rpm=args.logprob_rpm
+            ),
+            embedder=lambda: embedder,
+            llm=lambda: llm(512),
+        )
     selected = [r for r in RUNS if f"{r[0]}-{r[1]}" in args.only or not args.only]
     for dataset, hops, preset, n in selected:
         for label in args.deciders:
-            factories = deciders[label]
+            factories = shuffle(deciders[label])
+            made.clear()
 
             def progress(name: str, done: int, total: int) -> None:
                 if done == total or done % 50 == 0:
@@ -74,8 +103,16 @@ async def main(args: argparse.Namespace) -> None:
                 concurrency=args.concurrency,
                 out_root=Path("results") / "decider",
                 on_progress=progress,
-                variants=((f"-{label}", {}),),
+                variants=((f"-{label}{suffix}", {}),),
             )
+            stats = {
+                d.model_id: d.diagnostics()
+                for d in made
+                if isinstance(d, LogprobDecider | StatedDecider)
+            }
+            if stats:
+                (out / "diagnostics.json").write_text(json.dumps(stats, indent=2) + "\n")
+                print(stats, flush=True)  # noqa: T201
             table = "\n".join(
                 [CALIBRATION_HEADER, *(calibration_row(r.system, r.records) for r in runs)]
             )
@@ -89,7 +126,10 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--n", type=int, default=0, help="questions per dataset (0 = default)")
     parser.add_argument(
-        "--deciders", nargs="+", default=["jev", "llm"], choices=["jev", "llm", "logprob"]
+        "--deciders",
+        nargs="+",
+        default=["jev", "llm"],
+        choices=["jev", "llm", "logprob", "stated-scores", "stated-top1", "vote"],
     )
     parser.add_argument("--only", nargs="*", default=[], help="e.g. metaqa-3 2wiki-0")
     parser.add_argument("--llm", default="openrouter/openai/gpt-6-luna")
@@ -98,4 +138,5 @@ if __name__ == "__main__":
     parser.add_argument("--logprob-rpm", type=float, default=120.0)
     parser.add_argument("--rpm", type=float, default=18.0)
     parser.add_argument("--concurrency", type=int, default=4)
+    parser.add_argument("--shuffle", type=int, default=0, help="option-order seed (0 = off)")
     asyncio.run(main(parser.parse_args()))

@@ -99,6 +99,24 @@ def letter_distribution(question: ChoiceQuestion, top: list[dict[str, Any]]) -> 
     return normalize_distribution(question, probabilities)
 
 
+def letter_mass(question: ChoiceQuestion, top: list[dict[str, Any]]) -> tuple[float, bool]:
+    """The probability the alternatives put on the offered letters, and whether the most
+    likely token is one of them: how well the model kept to the format."""
+    letters = set(LETTERS[: len(question.options)])
+    mass = 0.0
+    best: tuple[float, str] | None = None
+    for alt in top:
+        token = str(alt.get("token", "")).strip().upper()
+        logprob = alt.get("logprob")
+        if not isinstance(logprob, int | float):
+            continue
+        if token in letters:
+            mass += math.exp(float(logprob))
+        if best is None or logprob > best[0]:
+            best = (float(logprob), token)
+    return min(mass, 1.0), best is not None and best[1] in letters
+
+
 def first_token_alternatives(data: Mapping[str, Any]) -> list[dict[str, Any]] | None:
     """The first generated token's ``top_logprobs``, or ``None`` if the reply has none."""
     choices = cast("list[dict[str, Any]]", data.get("choices") or [])
@@ -159,6 +177,12 @@ class LogprobDecider:
         self.no_letter = 0
         """Questions answered uniformly because no option letter was among the
         alternatives (rare; a sign the model ignores the format)."""
+        self.asked = 0
+        """Questions answered."""
+        self.letter_mass_total = 0.0
+        """Summed probability on the offered letters (see :meth:`diagnostics`)."""
+        self.top_not_letter = 0
+        """Questions whose most likely first token was not an offered letter."""
 
     @property
     def model_id(self) -> str:
@@ -244,6 +268,10 @@ class LogprobDecider:
                     continue
                 raise self._error(msg)
             result = letter_distribution(question, top)
+            mass, top_is_letter = letter_mass(question, top)
+            self.asked += 1
+            self.letter_mass_total += mass
+            self.top_not_letter += not top_is_letter
             if len(set(result.probabilities.values())) == 1:
                 self.no_letter += 1
                 logger.debug("question %r: no option letter among the alternatives", question.key)
@@ -257,6 +285,17 @@ class LogprobDecider:
             return result, usage, time.monotonic() - start, str(data.get("model") or self._model)
         msg = f"logprob decider failed after {self._attempts} attempts: {error}"
         raise self._error(msg)
+
+    def diagnostics(self) -> dict[str, float | int]:
+        """How well the model kept to the one-letter format so far: questions asked, the
+        mean probability on offered letters (the rest went to other tokens and is
+        dropped by renormalizing), and how often the top token was not a letter."""
+        return {
+            "asked": self.asked,
+            "mean_letter_mass": self.letter_mass_total / self.asked if self.asked else 0.0,
+            "top_not_letter": self.top_not_letter,
+            "no_letter": self.no_letter,
+        }
 
     async def decide(self, request: DecisionRequest) -> DecisionResponse:
         for question in request.questions:

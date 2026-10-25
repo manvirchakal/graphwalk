@@ -162,3 +162,63 @@ CHEAP_AGENT_ANON = {
     "graph tools + walk": ("agent-walk", _A8, "agent/20261002T151303Z-webqsp-agent-anon"),
     "search (RAG)": ("agent-search", _A8, "agent/20261002T154650Z-webqsp-agent-anon"),
 }
+
+# P6: option-order control. setting -> (metric, label -> (run, system)); the first run
+# is the reference the others are compared with. "rerun" repeats the reference in the
+# original order (run-to-run noise); "shuffle K" shows the options in a random order.
+_P6 = "graphwalk-relation-v2-logprob"
+OPTION_ORDER = {
+    "MetaQA 3-hop, Qwen3.8-27B": ("em", {
+        "original order (P1)": ("decider/20261002T022745Z-metaqa-3hop", _LP),
+        "rerun": ("decider/20261003T000938Z-metaqa-3hop", _P6),
+        "shuffle 1": ("decider/20261003T001814Z-metaqa-3hop", f"{_P6}-shuf1"),
+        "shuffle 2": ("decider/20261003T002640Z-metaqa-3hop", f"{_P6}-shuf2"),
+        "shuffle 3": ("decider/20261003T003504Z-metaqa-3hop", f"{_P6}-shuf3"),
+    }),
+    "MetaQA 3-hop, Jev": ("em", {
+        "original order (E3)": ("decider/20260930T123821Z-metaqa-3hop", _JEV),
+        "rerun": ("decider/20261003T003738Z-metaqa-3hop", "graphwalk-relation-v2-jev"),
+        "shuffle 1": ("decider/20261003T003616Z-metaqa-3hop", "graphwalk-relation-v2-jev-shuf1"),
+    }),
+    "WebQSP, Qwen3.8-27B": ("hits1", {
+        "original order": ("kgqa/20261003T000711Z-webqsp", _P6),
+        "earlier run (P1, n=50)": ("kgqa/20261002T024219Z-webqsp", _LP),
+        "shuffle 1": ("kgqa/20261003T001302Z-webqsp", f"{_P6}-shuf1"),
+        "shuffle 2": ("kgqa/20261003T001851Z-webqsp", f"{_P6}-shuf2"),
+        "shuffle 3": ("kgqa/20261003T002439Z-webqsp", f"{_P6}-shuf3"),
+    }),
+}  # fmt: skip
+
+# P7: larger Freebase samples for calibration error (P5's 500-question Jev run, P6's
+# 200-question original-order Qwen run): dataset -> decider -> (run, system, metric).
+LARGE_CALIBRATION = {
+    "WebQSP (n = 500 / 200)": {
+        "Jev": ("kgqa/20261002T031206Z-webqsp", "graphwalk-relation-v2-jev", "hits1"),
+        "open model, token probabilities": ("kgqa/20261003T000711Z-webqsp", _P6, "hits1"),
+    },
+}  # fmt: skip
+
+# P8: token probabilities vs stated confidence, same model (Qwen3.8-27B) and prompt.
+# setting -> (metric, signal -> (run, system)). Jev and E3's LLM decider (another model)
+# are context rows.
+_P8 = "graphwalk-relation-v2"
+STATED = {
+    "MetaQA 3-hop": ("em", {
+        "token probabilities (P1)": ("decider/20261002T022745Z-metaqa-3hop", _LP),
+        "token probabilities (rerun)": ("decider/20261003T000938Z-metaqa-3hop", _P6),
+        "stated, 0-100 per option": ("decider/20261003T223212Z-metaqa-3hop",
+                                     f"{_P8}-stated-scores"),
+        "stated, top-1 + confidence": ("decider/20261003T223632Z-metaqa-3hop",
+                                       f"{_P8}-stated-top1"),
+        "vote share, 5 samples": ("decider/20261003T225324Z-metaqa-3hop", f"{_P8}-vote"),
+        "context: Jev": ("decider/20260930T123821Z-metaqa-3hop", _JEV),
+        "context: other LLM, 0-100 per option (E3)": ("decider/20260930T155339Z-metaqa-3hop",
+                                                      f"{_P8}-llm"),
+    }),
+    "WebQSP": ("hits1", {
+        "token probabilities (P6)": ("kgqa/20261003T000711Z-webqsp", _P6),
+        "stated, 0-100 per option": ("kgqa/20261003T223244Z-webqsp", f"{_P8}-stated-scores"),
+        "stated, top-1 + confidence": ("kgqa/20261003T223632Z-webqsp", f"{_P8}-stated-top1"),
+        "vote share, 5 samples": ("kgqa/20261003T224757Z-webqsp", f"{_P8}-vote"),
+    }),
+}  # fmt: skip
