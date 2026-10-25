@@ -19,7 +19,7 @@ final versions have appeared.
 Before submission:
 
 - Choose the venue and check its page limit; the main text is 7 pages.
-- Fill in the author block and switch `[review]` to `[final]` or `[preprint]` when the
-  venue allows it (keep `[review]` for anonymous submission).
+- The author block is filled in, but `[review]` hides it (anonymous submission). For
+  arXiv or a camera-ready, switch to `[preprint]` or `[final]`.
 - Re-run the related-work search if more than a few weeks have passed (last run
   2026-10-25; see `paper/RELATED_WORK.md`).
