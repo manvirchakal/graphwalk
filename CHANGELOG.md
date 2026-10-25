@@ -7,6 +7,31 @@ API; the changelog says when.
 
 ## [Unreleased]
 
+Paper experiments P6–P8 and a draft of the paper. No API changes for existing users.
+
+### Added
+
+- `LogprobDecider.diagnostics()`: how well the model kept to the one-letter format
+  (questions asked, mean probability on the offered letters, how often the top token
+  was not a letter).
+- Evaluation: `graphwalk.eval.shuffle.ShuffledDecider` (presents each question's
+  options in a seeded random order, for the option-order control, P6) and
+  `graphwalk.eval.stated_decider` (stated-confidence baselines on the `logprob`
+  decider's model and prompt: a 0–100 score per option, a top-1 choice with a stated
+  confidence, and the vote share of 5 samples, P8).
+- Paper scripts: `table_order.py` (P6), `table_recalibration.py` (P7),
+  `table_stated.py` (P8), `figure_tex.py` (the LaTeX figure's data). Results in `docs/results-paper.md`.
+- `paper/latex/`: a draft of the paper in ACL format, with a verified bibliography.
+
+### Changed
+
+- Docs and the packaged agent guide: the walk's confidence ranks answers but is not
+  the probability of being right (WebQSP: mean 0.80, 54% correct); a logistic fit on
+  log-confidence over 100+ labeled answers cut the calibration error from 0.26 to 0.10
+  there (P7). With the same model, stated confidence ranks answers 0.09–0.23 AUROC
+  worse than token probabilities (P8). Shuffling the options leaves Qwen3.8-27B's
+  accuracy and AUROC about the same but changes 10–27% of its answers (P6).
+
 ## [0.2.0] - 2026-10-02
 
 Bring your own decider: graphwalk is the machinery (options, walks, confidence,
