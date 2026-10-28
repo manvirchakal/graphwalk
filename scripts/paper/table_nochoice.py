@@ -10,19 +10,19 @@ confidence of the zero-choice ones changes (1.0 before, 10^-3 after).
 
 Seeds 0-2 are the 2Wiki runs where the problem was found. Seed 3 was run after the rule
 was committed; its last row keeps only questions absent from seeds 0-2. Zero-choice
-walks are read from each run's results.json (``n_choices`` = 0, or for runs before the
-field existed, no decider confidence along the path; runs that recorded neither count
-none). The check at the end counts them in every other run behind the confidence tables.
+walks are the rows with ``no_decision`` set (``graphwalk.eval.runner.no_decision``;
+re-export older runs with export_scores.py). This includes walks that aborted before
+any decision, as the engine now scores them. The check at the end counts them in every
+other run behind the confidence tables.
 
 AURC: mean risk over coverages (lower is better), against a random order (the error
 rate). ECE after Platt scaling is cross-fitted as in P7. Delta AUROC: paired bootstrap
 over questions, 95% percentile interval.
 """
 
-import json
 import random
 
-from common import RESULTS, Row, by_system, mean, scores, table
+from common import Row, by_system, mean, scores, table
 from figure_selective import risks
 from runs import CALIBRATION, KGQA_CALIBRATION, LOGPROB_CALIBRATION, NOCHOICE
 from table_recalibration import cross_fit
@@ -36,24 +36,8 @@ HELD_OUT = "Jev, seed 3 (held out)"
 
 def zero_choice(run: str, system: str) -> set[str]:
     """Question ids whose walk (of ``system``) finished without a decision the decider
-    answered."""
-    data = json.loads((RESULTS / run / "results.json").read_text(encoding="utf-8"))
-    ids: set[str] = set()
-    for system_run in data["runs"]:
-        if system_run["system"] != system:
-            continue
-        for record in system_run["records"]:
-            answer = record["answer"]
-            detail = answer.get("detail") or {}
-            if answer.get("status") != "ok" or detail.get("score") is None:
-                continue
-            if "n_choices" in detail:
-                zero = detail["n_choices"] == 0
-            else:  # older runs: no decider confidence along the path, if it was recorded
-                zero = "min_confidence" in detail and detail["min_confidence"] is None
-            if zero:
-                ids.add(record["question"]["id"])
-    return ids
+    answered: the ``no_decision`` flag of the committed scores."""
+    return {r["question_id"] for r in by_system(scores(run))[system] if r.get("no_decision")}
 
 
 def aurc(pairs: list[tuple[float, float]]) -> float:

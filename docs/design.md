@@ -458,8 +458,9 @@ these choices. Deviations from the plan above:
   - A walk the decider never answered (only forced moves, then a dead end) would score
     0, the best possible, with no evidence behind it. It scores `log(prob_floor)`
     instead, the lowest (`Answer.n_choices == 0`). On 2Wiki's gold-evidence graph these
-    walks were 3% of questions and 37 of 39 were wrong (Jev, four samples); no other
-    graph in the confidence experiments had any ([P9](results-paper.md)).
+    walks were 3% of questions and 37 of 39 were wrong (Jev, four samples); elsewhere
+    in the confidence experiments only two CWQ walks that aborted before their first
+    decision qualify ([P9](results-paper.md)).
 - **Known quirk of `alpha = 1`.** Mean log-prob rewards appending near-certain decisions:
   a path gains score by adding a p ≈ 1 STOP. `length_alpha` is configurable, and evals
   should compare 1.0 against smaller values.

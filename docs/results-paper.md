@@ -354,10 +354,12 @@ held-out test; its last row keeps only questions absent from seeds 0–2.
   runs where it was found and by 0.53 on the held-out sample, every interval excluding
   zero; AURC goes from worse than random to well below it. The deciders agree because
   these walks never reach the decider.
-- **It touches nothing else.** No other run behind the confidence tables has a
-  zero-choice walk (MetaQA 1–3 hop, WebQSP, CWQ, WebQSP one-graph, every decider; the
-  script prints the check). On the LLM-extracted text graphs (2Wiki, HotpotQA) they
-  were 1–3 of 120 walks.
+- **It barely touches anything else.** The only other zero-choice walks behind the
+  confidence tables are 2 of 50 on CWQ with the stated-score decider, which aborted
+  before any decision because its replies could not be parsed (that row's AUROC: 0.54
+  → 0.59). MetaQA 1–3 hop, WebQSP and WebQSP one-graph have none, for every decider; the
+  script prints the check. On the LLM-extracted text graphs (2Wiki, HotpotQA) they were
+  1–3 of 120 walks. The flag is `no_decision` in each run's `scores.jsonl`.
 - **Calibration after Platt scaling holds or improves.** (The fit in
   `table_recalibration.py` now halves Newton steps until the loss falls: the 10⁻³
   outlier sent full steps off to infinity. P7 and P8 are unchanged to the digit.)

@@ -369,8 +369,9 @@ decider was never asked about scored $c = 1$. Such walks are 3\% of questions an
 39 are wrong over four samples. Scoring them at the floor raises AUROC by 0.20--0.35 on
 the three samples where we found this, for every decider, and by 0.53 \ci{0.30}{0.76}
 on a fourth sample run after the rule was committed (AURC 0.170 $\to$ 0.044, against
-0.063 for a random order; Appendix~\ref{app:nochoice}). No other graph in the
-confidence experiments has such walks. The rule flags walks with no evidence; it does not repair the graph.
+0.063 for a random order; Appendix~\ref{app:nochoice}). Elsewhere only two CWQ walks
+qualify, which aborted before any decision when the stated-score decider's replies
+could not be parsed. The rule flags walks with no evidence; it does not repair the graph.
 
 % ======================================================================================
 \section{Is It the Signal or the Model?}

@@ -14,13 +14,15 @@ API; the changelog says when.
   certain STOP, so such a walk ranked as the most confident answer with no decision
   behind it; with `escalate_below` it now escalates. On 2Wiki's gold-evidence graph these
   walks were 3% of questions and almost all wrong; scoring them lowest raised AUROC by
-  0.20–0.53, including on a sample run after the change (P9). No other experiment graph
-  had any. If you tuned a threshold on a graph with dead ends, recheck it.
+  0.20–0.53, including on a sample run after the change (P9). Elsewhere only walks that
+  aborted before their first decision are affected. If you tuned a threshold on a graph
+  with dead ends, recheck it.
 
 ### Added
 
 - `Answer.n_choices`: the decisions the decider answered (`n_decisions` also counts a
-  dead end's STOP). Eval records keep it.
+  dead end's STOP). Eval records keep it, and `scores.jsonl` rows have `no_decision`
+  (`graphwalk.eval.runner.no_decision`; the confidence runs are re-exported with it).
 - `scripts/paper/table_nochoice.py` (P9).
 
 ### Fixed
