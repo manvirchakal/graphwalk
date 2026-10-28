@@ -15,6 +15,10 @@ re-export older runs with export_scores.py). This includes walks that aborted be
 any decision, as the engine now scores them. The check at the end counts them in every
 other run behind the confidence tables.
 
+AUROC, decided only: the walks that made a decision, whose confidence the rule leaves
+alone; it separates the path probability from the no-decision flag (bootstrap 95%
+interval, number wrong in parentheses).
+
 AURC: mean risk over coverages (lower is better), against a random order (the error
 rate). ECE after Platt scaling is cross-fitted as in P7. Delta AUROC: paired bootstrap
 over questions, 95% percentile interval.
@@ -59,6 +63,19 @@ def delta_auroc(before: list[tuple[float, float]], after: list[tuple[float, floa
     return f"{auroc(after) - auroc(before):+.2f} [{lo:+.2f}, {hi:+.2f}]"
 
 
+def auroc_ci(pairs: list[tuple[float, float]]) -> str:
+    rng = random.Random(0)  # noqa: S311
+    n = len(pairs)
+    values: list[float] = []
+    for _ in range(RESAMPLES):
+        sample = [pairs[rng.randrange(n)] for _ in range(n)]
+        if 0 < sum(y for _, y in sample) < n:
+            values.append(auroc(sample))
+    values.sort()
+    lo, hi = values[int(0.025 * len(values))], values[int(0.975 * len(values)) - 1]
+    return f"{auroc(pairs):.2f} [{lo:.2f}, {hi:.2f}]"
+
+
 def row(label: str, records: list[Row], zero: set[str]) -> list[str]:
     flagged = [r["question_id"] in zero for r in records]
     em = [float(r["em"]) for r in records]
@@ -66,9 +83,11 @@ def row(label: str, records: list[Row], zero: set[str]) -> list[str]:
     before = [(1.0 if z else c, y) for z, c, y in zip(flagged, raw, em, strict=True)]
     after = [(FLOOR if z else c, y) for z, c, y in zip(flagged, raw, em, strict=True)]
     wrong = sum(z and not y for z, y in zip(flagged, em, strict=True))
+    decided = [p for z, p in zip(flagged, before, strict=True) if not z]
     return [
         label, str(len(records)), f"{mean(em):.3f}", f"{sum(flagged)} ({wrong})",
         f"{auroc(before):.2f} → {auroc(after):.2f}", delta_auroc(before, after),
+        f"{auroc_ci(decided)} ({sum(1 - y for _, y in decided):.0f})",
         f"{aurc(before):.3f} → {aurc(after):.3f}", f"{1.0 - mean(em):.3f}",
         f"{cross_fit(before)[0]:.3f} → {cross_fit(after)[0]:.3f}",
     ]  # fmt: skip
@@ -86,8 +105,9 @@ def main() -> None:
             rows.append(row(f"{label}, unseen questions", unseen, zero))
         elif label.startswith("Jev"):
             seen |= {r["question_id"] for r in records}
-    print(table(["2Wiki walks", "n", "EM", "zero-choice (wrong)", "AUROC",  # noqa: T201
-                 "Δ AUROC", "AURC", "AURC random", "ECE after Platt"], rows))  # fmt: skip
+    header = ["2Wiki walks", "n", "EM", "zero-choice (wrong)", "AUROC", "Δ AUROC",
+              "AUROC, decided only (wrong)", "AURC", "AURC random", "ECE after Platt"]  # fmt: skip
+    print(table(header, rows))  # noqa: T201
 
     others = {
         f"{dataset} ({decider})": source

@@ -371,7 +371,9 @@ the three samples where we found this, for every decider, and by 0.53 \ci{0.30}{
 on a fourth sample run after the rule was committed (AURC 0.170 $\to$ 0.044, against
 0.063 for a random order; Appendix~\ref{app:nochoice}). Elsewhere only two CWQ walks
 qualify, which aborted before any decision when the stated-score decider's replies
-could not be parsed. The rule flags walks with no evidence; it does not repair the graph.
+could not be parsed. On the walks with a decision, the probability alone ranks well in
+the first three samples (AUROC 0.80--0.97) but not clearly in the held-out one (0.68
+\ci{0.42}{0.93}), where most of the gain is the flag. The rule does not repair the graph.
 
 % ======================================================================================
 \section{Is It the Signal or the Model?}
@@ -534,8 +536,9 @@ is noisy at these sample sizes, and each fit sees only half the questions.
 \paragraph{Escalation.} Simulated offline from runs in which both systems answered the
 same questions (Appendix~\ref{app:escalation}): on MetaQA 3-hop, passing walks with
 $c < 0.9$ (25\% of questions) to the LLM decider recovers all of its +0.06 F1 lead at
-\$0.30 instead of \$0.55 per 1k questions. On 2Wiki, where the confidence is weaker under the original scoring,
-closing the gap takes $t=0.95$ (34\% escalated, \$0.13 vs.\ \$0.16). On Freebase,
+\$0.30 instead of \$0.55 per 1k questions. On 2Wiki closing the gap takes $t=0.95$ (34\% escalated, \$0.13
+vs.\ \$0.16), with or without the no-decision rule: re-walked, those walks take the
+same forced moves to the same answer. On Freebase,
 escalation saves little, because the questions the walk answers confidently are the easy
 ones that the path writer also answers: on WebQSP ($n=50$), matching the path writer
 means escalating two thirds of the questions at 96\% of its cost, and on the merged
@@ -645,7 +648,8 @@ constraint handling or multi-entity questions, which caps accuracy on WebQSP and
 Freebase is the only large curated graph. \textbf{Calibration protocol.} We judge
 confidence mostly by ranking; Platt scaling needs labeled answers from the target graph.
 \textbf{Post-hoc rule.} The no-decision rule was found on 2Wiki and tested on one
-held-out sample of the same graph, not on another graph with broken links.
+held-out sample of the same graph, not on another graph with broken links; on that
+sample the path probability of the remaining walks ranks only weakly.
 \textbf{Data quality.} A large share of WebQSP/CWQ-style gold answers may be wrong or
 incomplete \citep{zhang2025kgqagen}, which bounds every accuracy number.
 
@@ -753,11 +757,12 @@ WebQSP & original & 0.615 & 0.821 & -- \\
 questions with the same answer set as the original run.}
 \end{table}
 
+\clearpage
 \section{Escalation}
 \label{app:escalation}
 
 % Source: scripts/paper/table_escalation.py (A1), docs/results-phase7.md (A2, A6).
-\begin{table}[h]
+\begin{table}[!h]
 \centering\small
 \setlength\tabcolsep{3pt}
 \resizebox{\columnwidth}{!}{%
@@ -771,6 +776,7 @@ MetaQA 3-hop & Jev only & 0\% & 0.897 & 0.154 \\
 2Wiki & Jev only & 0\% & 0.915 & 0.048 \\
 & LLM decider only & 100\% & 0.941 & 0.164 \\
 & escalate $c<0.95$ & 34\% & 0.942 & 0.126 \\
+& \quad no-decision rule & 38\% & 0.942 & 0.126 \\
 WebQSP (50) & path writer only & 100\% & 0.76 & 0.72 \\
 & Jev $\to$ path, $c<0.95$ & 66\% & 0.76 & 0.70 \\
 WebQSP, one graph & path writer only & 100\% & 0.66 & 1.48 \\
@@ -792,24 +798,26 @@ committed before the seed-3 sample was run.
 \centering\small
 \setlength\tabcolsep{2.5pt}
 \resizebox{\columnwidth}{!}{%
-\begin{tabular}{lccccc}
+\begin{tabular}{lcccccc}
 \toprule
-2Wiki sample & No dec. (wrong) & AUROC & $\Delta$ AUROC & AURC & Rand. \\
+2Wiki sample & No dec. (wrong) & AUROC & $\Delta$ AUROC & Decided & AURC & Rand. \\
 \midrule
-Jev, seed 0 & 10 (9) & 0.67 $\to$ 0.92 & $+0.25$ \ci{$+0.12$}{$+0.40$} & .141 $\to$ .018 & .117 \\
-Jev, seed 1 & 11 (11) & 0.54 $\to$ 0.89 & $+0.35$ \ci{$+0.18$}{$+0.53$} & .171 $\to$ .020 & .103 \\
-Jev, seed 2 & 8 (7) & 0.63 $\to$ 0.84 & $+0.21$ \ci{$+0.07$}{$+0.35$} & .151 $\to$ .064 & .110 \\
-stated, seed 0 & 10 (9) & 0.69 $\to$ 0.92 & $+0.23$ \ci{$+0.11$}{$+0.35$} & .037 $\to$ .013 & .073 \\
-token, seed 0 & 10 (9) & 0.77 $\to$ 0.97 & $+0.20$ \ci{$+0.09$}{$+0.32$} & .139 $\to$ .016 & .147 \\
+Jev, seed 0 & 10 (9) & 0.67 $\to$ 0.92 & $+0.25$ \ci{$+0.12$}{$+0.40$} & 0.90 (26) & .141 $\to$ .018 & .117 \\
+Jev, seed 1 & 11 (11) & 0.54 $\to$ 0.89 & $+0.35$ \ci{$+0.18$}{$+0.53$} & 0.83 (20) & .171 $\to$ .020 & .103 \\
+Jev, seed 2 & 8 (7) & 0.63 $\to$ 0.84 & $+0.21$ \ci{$+0.07$}{$+0.35$} & 0.80 (26) & .151 $\to$ .064 & .110 \\
+stated, seed 0 & 10 (9) & 0.69 $\to$ 0.92 & $+0.23$ \ci{$+0.11$}{$+0.35$} & 0.87 (13) & .037 $\to$ .013 & .073 \\
+token, seed 0 & 10 (9) & 0.77 $\to$ 0.97 & $+0.20$ \ci{$+0.09$}{$+0.32$} & 0.97 (35) & .139 $\to$ .016 & .147 \\
 \midrule
-Jev, seed 3 (held out) & 10 (10) & 0.32 $\to$ 0.85 & $+0.53$ \ci{$+0.30$}{$+0.76$} & .170 $\to$ .044 & .063 \\
-\quad unseen questions & 9 (9) & 0.31 $\to$ 0.83 & $+0.53$ \ci{$+0.29$}{$+0.77$} & .174 $\to$ .048 & .064 \\
+Jev, seed 3 (held out) & 10 (10) & 0.32 $\to$ 0.85 & $+0.53$ \ci{$+0.30$}{$+0.76$} & 0.68 (9) & .170 $\to$ .044 & .063 \\
+\quad unseen questions & 9 (9) & 0.31 $\to$ 0.83 & $+0.53$ \ci{$+0.29$}{$+0.77$} & 0.65 (8) & .174 $\to$ .048 & .064 \\
 \bottomrule
 \end{tabular}}
 \caption{2Wiki walks rescored with walks that made no decision at $c = 10^{-3}$ instead of
 1 ($n = 300$ per sample, 267 unseen). Seed 3 was run after the rule was committed; its
 last row drops questions that occur in seeds 0--2. $\Delta$: paired bootstrap. Rand.:
-AURC of a random order. ECE after Platt scaling holds or falls in every row.}
+AURC of a random order. Decided: AUROC over the walks that made a decision (unchanged by
+the rule; wrong answers in parentheses); held out: \ci{0.42}{0.93}. ECE after Platt
+scaling holds or falls in every row.}
 \label{tab:nochoice}
 \end{table}
 

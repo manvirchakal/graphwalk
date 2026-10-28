@@ -35,14 +35,19 @@ questions, and an escalated question pays for both walks. No new API calls.
 | 2Wiki gold-evidence graph | escalate below 0.9 | 300 | 18% | 0.934 [0.908, 0.959] | -0.007 [-0.019, +0.002] | 0.917 [0.883, 0.947] | -0.010 [-0.027, +0.003] | 0.098 |
 | 2Wiki gold-evidence graph | escalate below 0.95 | 300 | 34% | 0.942 [0.918, 0.966] | +0.001 [-0.003, +0.007] | 0.927 [0.897, 0.957] | +0.000 [-0.010, +0.010] | 0.126 |
 | 2Wiki gold-evidence graph | escalate below 0.99 | 300 | 93% | 0.941 [0.916, 0.965] | +0.000 [+0.000, +0.000] | 0.927 [0.897, 0.953] | +0.000 [+0.000, +0.000] | 0.209 |
+| 2Wiki gold-evidence graph | escalate below 0.8, no-decision rule | 300 | 10% | 0.927 [0.900, 0.953] | -0.015 [-0.029, -0.002] | 0.897 [0.863, 0.930] | -0.030 [-0.057, -0.007] | 0.069 |
+| 2Wiki gold-evidence graph | escalate below 0.9, no-decision rule | 300 | 22% | 0.934 [0.908, 0.959] | -0.007 [-0.019, +0.002] | 0.917 [0.883, 0.947] | -0.010 [-0.027, +0.003] | 0.098 |
+| 2Wiki gold-evidence graph | escalate below 0.95, no-decision rule | 300 | 38% | 0.942 [0.918, 0.966] | +0.001 [-0.003, +0.007] | 0.927 [0.897, 0.957] | +0.000 [-0.010, +0.010] | 0.126 |
+| 2Wiki gold-evidence graph | escalate below 0.99, no-decision rule | 300 | 97% | 0.941 [0.916, 0.965] | +0.000 [+0.000, +0.000] | 0.927 [0.897, 0.953] | +0.000 [+0.000, +0.000] | 0.209 |
 
 - **Escalating below 0.9 recovers all of the LLM decider's accuracy on MetaQA at
   47–61% of its cost.** On 3 hops, where the LLM decider's F1 lead is real (+0.060
   [+0.024, +0.097]), escalating 25% of queries closes it completely, at $0.30 vs $0.55
   per 1k queries.
 - **On the 2Wiki gold graph it takes 0.95** (34% escalated, $0.13 vs $0.16) to close
-  the gap: Jev's confidence is less informative there (AUROC 0.67 in E3, vs 0.94–0.97
-  on MetaQA 2/3-hop).
+  the gap. Scoring walks without a decision lowest (P9, the rows marked "no-decision
+  rule") escalates them as well but changes nothing else: the LLM decider takes the
+  same forced moves to the same answer, at no cost.
 - **0.9 is the recommended default**, and should be checked, not assumed, on each new
   graph: the A2 pilot measures it on Freebase.
 - **Caveats.** One seed and 200–300 questions per dataset. The threshold grid was chosen

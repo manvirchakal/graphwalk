@@ -340,20 +340,25 @@ the confidence of zero-choice walks changes, from 1.0 to 10⁻³). Seeds 0–2 a
 where the problem was found. **Seed 3 was run after the rule was committed** and is the
 held-out test; its last row keeps only questions absent from seeds 0–2.
 
-| 2Wiki walks | n | EM | zero-choice (wrong) | AUROC | Δ AUROC | AURC | AURC random | ECE after Platt |
-|---|---|---|---|---|---|---|---|---|
-| Jev, seed 0 | 300 | 0.883 | 10 (9) | 0.67 → 0.92 | +0.25 [+0.12, +0.40] | 0.141 → 0.018 | 0.117 | 0.053 → 0.051 |
-| Jev, seed 1 | 300 | 0.897 | 11 (11) | 0.54 → 0.89 | +0.35 [+0.18, +0.53] | 0.171 → 0.020 | 0.103 | 0.046 → 0.041 |
-| Jev, seed 2 | 300 | 0.890 | 8 (7) | 0.63 → 0.84 | +0.21 [+0.07, +0.35] | 0.151 → 0.064 | 0.110 | 0.050 → 0.048 |
-| LLM stated scores, seed 0 | 300 | 0.927 | 10 (9) | 0.69 → 0.92 | +0.23 [+0.11, +0.35] | 0.037 → 0.013 | 0.073 | 0.032 → 0.021 |
-| token probabilities, seed 0 | 300 | 0.853 | 10 (9) | 0.77 → 0.97 | +0.20 [+0.09, +0.32] | 0.139 → 0.016 | 0.147 | 0.074 → 0.048 |
-| Jev, seed 3 (held out) | 300 | 0.937 | 10 (10) | 0.32 → 0.85 | +0.53 [+0.30, +0.76] | 0.170 → 0.044 | 0.063 | 0.032 → 0.030 |
-| Jev, seed 3 (held out), unseen questions | 267 | 0.936 | 9 (9) | 0.31 → 0.83 | +0.53 [+0.29, +0.77] | 0.174 → 0.048 | 0.064 | 0.033 → 0.023 |
+| 2Wiki walks | n | EM | zero-choice (wrong) | AUROC | Δ AUROC | AUROC, decided only (wrong) | AURC | AURC random | ECE after Platt |
+|---|---|---|---|---|---|---|---|---|---|
+| Jev, seed 0 | 300 | 0.883 | 10 (9) | 0.67 → 0.92 | +0.25 [+0.12, +0.40] | 0.90 [0.83, 0.95] (26) | 0.141 → 0.018 | 0.117 | 0.053 → 0.051 |
+| Jev, seed 1 | 300 | 0.897 | 11 (11) | 0.54 → 0.89 | +0.35 [+0.18, +0.53] | 0.83 [0.74, 0.92] (20) | 0.171 → 0.020 | 0.103 | 0.046 → 0.041 |
+| Jev, seed 2 | 300 | 0.890 | 8 (7) | 0.63 → 0.84 | +0.21 [+0.07, +0.35] | 0.80 [0.65, 0.91] (26) | 0.151 → 0.064 | 0.110 | 0.050 → 0.048 |
+| LLM stated scores, seed 0 | 300 | 0.927 | 10 (9) | 0.69 → 0.92 | +0.23 [+0.11, +0.35] | 0.87 [0.71, 1.00] (13) | 0.037 → 0.013 | 0.073 | 0.032 → 0.021 |
+| token probabilities, seed 0 | 300 | 0.853 | 10 (9) | 0.77 → 0.97 | +0.20 [+0.09, +0.32] | 0.97 [0.94, 0.98] (35) | 0.139 → 0.016 | 0.147 | 0.074 → 0.048 |
+| Jev, seed 3 (held out) | 300 | 0.937 | 10 (10) | 0.32 → 0.85 | +0.53 [+0.30, +0.76] | 0.68 [0.42, 0.93] (9) | 0.170 → 0.044 | 0.063 | 0.032 → 0.030 |
+| Jev, seed 3 (held out), unseen questions | 267 | 0.936 | 9 (9) | 0.31 → 0.83 | +0.53 [+0.29, +0.77] | 0.65 [0.34, 0.92] (8) | 0.174 → 0.048 | 0.064 | 0.033 → 0.023 |
 
 - **The rule removes most of 2Wiki's failure.** AUROC rises by 0.20–0.35 on the three
   runs where it was found and by 0.53 on the held-out sample, every interval excluding
   zero; AURC goes from worse than random to well below it. The deciders agree because
   these walks never reach the decider.
+- **On the held-out sample, most of the gain is the flag.** The walks that made a
+  decision keep their confidence; among them the path probability ranks well on seeds
+  0–2 and for both other signals (0.80–0.97) but not clearly on seed 3 (0.68 [0.42,
+  0.93], only 9 wrong). Say "the confidence plus the no-decision flag ranks well", not
+  that the held-out run confirms the probability on its own.
 - **It barely touches anything else.** The only other zero-choice walks behind the
   confidence tables are 2 of 50 on CWQ with the stated-score decider, which aborted
   before any decision because its replies could not be parsed (that row's AUROC: 0.54
@@ -366,5 +371,10 @@ held-out test; its last row keeps only questions absent from seeds 0–2.
 - **The confidence still cannot see why a walk is wrong.** It flags walks with no
   evidence; it does not fix the graph. Merging the split entities would answer these
   questions; flagging them only stops them from being trusted.
+
+- **Escalation does not change** (`table_escalation.py`): with the rule, the walks
+  without a decision are escalated too (34% → 38% at 0.95), but the LLM decider takes
+  the same forced moves to the same answer, with no calls, so F1 and cost are
+  identical. Re-walking with another decider cannot fix them; only another system can.
 
 Held-out run: `results/decider/20261028T004206Z-2wiki-gold` (Jev, seed 3, cost ≈ $0.014).
