@@ -9,6 +9,10 @@ on a grid, not tuned per dataset (the grid sits high because Jev's confidences c
 near 1). F1 and EM are shown with 95% bootstrap CIs, and their gaps to the LLM
 decider alone with paired CIs. Only seed 0 is used: the other Jev seeds drew
 different question samples, which the single LLM-decider run does not cover.
+
+Where a run has walks that made no decision (``no_decision``, 2Wiki), the thresholds
+are also applied with those walks rescored at ``prob_floor`` as the engine now scores
+them (P9), so they are always escalated.
 """
 
 from common import Row, by_system, mean, scores, table, with_ci
@@ -17,6 +21,7 @@ from runs import CALIBRATION
 from graphwalk.eval.metrics import bootstrap_ci
 
 THRESHOLDS = (0.8, 0.9, 0.95, 0.99)
+FLOOR = 1e-3
 
 
 def _rows(run: str, system: str) -> dict[str, Row]:
@@ -27,13 +32,22 @@ def _cost(row: Row) -> float:
     return row.get("cost_usd") or 0.0
 
 
-def escalate(jev: dict[str, Row], llm: dict[str, Row], threshold: float) -> list[Row]:
+def _confidence(row: Row, rescore: bool) -> float:
+    if rescore and row.get("no_decision"):
+        return FLOOR
+    return row["confidence"] or 0.0
+
+
+def escalate(
+    jev: dict[str, Row], llm: dict[str, Row], threshold: float, rescore: bool = False
+) -> list[Row]:
     """Per shared question: Jev's row, or the LLM decider's (with both costs) if
-    Jev's confidence is below ``threshold``."""
+    Jev's confidence (``rescore``: with no-decision walks at ``FLOOR``) is below
+    ``threshold``."""
     out: list[Row] = []
     for qid in sorted(jev.keys() & llm.keys()):
         j = jev[qid]
-        if (j["confidence"] or 0.0) < threshold:
+        if _confidence(j, rescore) < threshold:
             out.append({**llm[qid], "cost_usd": _cost(j) + _cost(llm[qid]), "escalated": True})
         else:
             out.append({**j, "escalated": False})
@@ -58,6 +72,9 @@ def main() -> None:
             ("LLM decider only", [{**llm[q], "escalated": True} for q in shared]),
         ]
         lines += [(f"escalate below {t}", escalate(jev, llm, t)) for t in THRESHOLDS]
+        if any(jev[q].get("no_decision") for q in shared):
+            lines += [(f"escalate below {t}, no-decision rule", escalate(jev, llm, t, True))
+                      for t in THRESHOLDS]  # fmt: skip
         for label, rows in lines:
             esc = mean([1.0 if r.get("escalated") else 0.0 for r in rows])
             body.append(
