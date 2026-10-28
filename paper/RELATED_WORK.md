@@ -26,7 +26,8 @@ fast (several of the closest papers are from 2026).
 
 **Overall:** the paper is an empirical study, not a method paper. Its defensible
 contributions are (1) the selective-prediction evaluation of path confidence across
-deciders and datasets, including where it fails (2Wiki); (2) the cross-decider
+deciders and datasets, including where it fails (CWQ; 2Wiki until walks without a
+decision are scored lowest, P9); (2) the cross-decider
 comparison (hosted classifier, open LLM log-probs, stated scores); (3) the memorization
 control for agents, graph tools vs search; (4) honest cost/accuracy trade-offs; (5) the
 library. The working title's "hops as calibrated classification" reads as a method claim

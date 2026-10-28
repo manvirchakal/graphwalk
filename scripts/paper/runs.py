@@ -130,6 +130,19 @@ KGQA_CALIBRATION = {
     "WebQSP, one graph": {"Jev": ("kgqa/20261001T172038Z-webqsp-global", "graphwalk-kgqa-jev")},
 }  # fmt: skip
 
+# P9: 2Wiki walks the decider never answered. label -> (run, system); seeds 0-2 are the
+# runs above, where the problem was found; seed 3 was run after the rule was committed.
+NOCHOICE = {
+    "Jev, seed 0": ("decider/20260930T123900Z-2wiki-gold", "graphwalk-greedy-v2-jev"),
+    "Jev, seed 1": ("decider/20260930T124528Z-2wiki-gold", "graphwalk-greedy-v2-jev"),
+    "Jev, seed 2": ("decider/20260930T124928Z-2wiki-gold", "graphwalk-greedy-v2-jev"),
+    "LLM stated scores, seed 0": ("decider/20260930T161921Z-2wiki-gold",
+                                  "graphwalk-greedy-v2-llm"),
+    "token probabilities, seed 0": ("decider/20261002T024030Z-2wiki-gold",
+                                    "graphwalk-greedy-v2-logprob"),
+    "Jev, seed 3 (held out)": ("decider/20261028T004206Z-2wiki-gold", "graphwalk-greedy-v2-jev"),
+}  # fmt: skip
+
 # P1: the same walks with an open-weights model's token probabilities as the decider
 # (graphwalk.decisions.logprob). label -> (run, system, correctness metric).
 _LP = "graphwalk-relation-v2-logprob"

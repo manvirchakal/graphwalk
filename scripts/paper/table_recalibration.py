@@ -33,12 +33,25 @@ def brier(pairs: list[tuple[float, float]]) -> float:
     return mean([(c - y) ** 2 for c, y in pairs])
 
 
+def penalized_loss(xs: list[float], ys: list[float], a: float, b: float, ridge: float) -> float:
+    """Log-loss of sigmoid(a * x + b) plus the ridge, computed without overflow."""
+    total = 0.0
+    for x, y in zip(xs, ys, strict=True):
+        z = a * x + b
+        softplus = max(z, 0.0) + math.log1p(math.exp(-abs(z)))  # log(1 + e^z)
+        total += softplus - y * z
+    return total + 0.5 * ridge * (a * a + b * b)
+
+
 def platt(train: list[tuple[float, float]]) -> tuple[float, float]:
     """Fit p = sigmoid(a * log c + b) by Newton's method, with a small ridge on ``a`` and
-    ``b`` so a perfectly separable split stays finite."""
+    ``b`` so a perfectly separable split stays finite. Each step is halved until the
+    penalized loss falls: a far outlier in log c (a 10^-3 floor among values near 0)
+    otherwise sends full Newton steps off to huge ``a`` and ``b``."""
     a, b, ridge = 1.0, 0.0, 1e-2
     xs = [math.log(max(c, FLOOR)) for c, _ in train]
     ys = [y for _, y in train]
+    loss = penalized_loss(xs, ys, a, b, ridge)
     for _ in range(50):
         ga = gb = haa = hab = hbb = 0.0
         for x, y in zip(xs, ys, strict=True):
@@ -58,8 +71,16 @@ def platt(train: list[tuple[float, float]]) -> tuple[float, float]:
             break
         da = (hbb * ga - hab * gb) / det
         db = (haa * gb - hab * ga) / det
-        a, b = a - da, b - db
-        if abs(da) + abs(db) < 1e-9:  # noqa: PLR2004
+        step = 1.0
+        while step > 1e-6:  # noqa: PLR2004
+            new_loss = penalized_loss(xs, ys, a - step * da, b - step * db, ridge)
+            if new_loss <= loss:
+                break
+            step /= 2
+        else:
+            break
+        a, b, loss = a - step * da, b - step * db, new_loss
+        if step * (abs(da) + abs(db)) < 1e-9:  # noqa: PLR2004
             break
     return a, b
 

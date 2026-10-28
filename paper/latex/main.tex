@@ -48,7 +48,9 @@ on WebQSP), but a two-parameter Platt fit repairs much of that. Shuffling the op
 changes an LLM decider's answer on 10--27\% of questions without moving aggregate
 accuracy or AUROC. The walk is \emph{less} accurate than an LLM writing the relation
 path in one call ($-0.08$ F1 on MetaQA 3-hop, $-0.15$ on WebQSP), cheaper only on
-Freebase, and its confidence fails on 2Wiki and CWQ. As a tool for a strong agent it
+Freebase, and its confidence fails on CWQ. On 2Wiki it failed because walks the decider
+never answered were scored as certain; scoring them lowest lifts AUROC from 0.67 to
+0.92, and to 0.85 on a sample drawn after the rule was fixed. As a tool for a strong agent it
 cuts cost by 17\% at equal accuracy. We release the library, every run and the scripts
 that produce every table.
 \end{abstract}
@@ -93,14 +95,16 @@ and the signal comes from reading token probabilities, not from a particular dec
 open 27B model matches a dedicated classifier, and the same model's stated confidence is
 clearly worse. But the walk is less accurate than one LLM call that writes the whole
 relation path, it is cheaper only on Freebase's larger schemas, its raw confidence is
-overconfident, and on two of five graphs (2Wiki, CWQ) the confidence does little. Our
+overconfident, and on CWQ the confidence does little. On 2Wiki it ranked wrong answers
+first until we traced the cause: walks the decider never answered, scored as certain. Our
 contributions are:
 \begin{itemize}
 \setlength\itemsep{0pt}
 \item To our knowledge, among the first evaluations of per-hop path probability as a
   selective-prediction signal for KGQA, across four decider types and five graphs, with
   the controls a reviewer of letter-reading LLMs would ask for: option order, format
-  adherence, calibration, and a same-model stated-confidence baseline.
+  adherence, calibration, and a same-model stated-confidence baseline; and one diagnosed
+  failure, with a fix tested on held-out questions.
 \item A measured cost and accuracy comparison against an LLM path writer and against
   multi-step RAG, including the settings where walking loses.
 \item An agent-tool ablation with a memorization control: replacing entity names with
@@ -190,7 +194,10 @@ not decisions) gets the confidence
 \end{equation}
 the geometric mean of the step probabilities. This is the length-normalized path
 probability used to rank beams, not the raw product; the two order walks of equal
-length identically. A walk with no answer gets $c = 0$.
+length identically. A dead end counts as a \stopop{} with $p = 1$. A walk with no answer
+gets $c = 0$, and a walk with no decision the decider answered (forced moves to a dead
+end) gets $c = 10^{-3}$, the floor; when the runs were made it got $c = 1$, which matters
+only on 2Wiki (\S\ref{sec:selective}), and the other tables use the original scoring.
 
 \paragraph{Deciders.} We use four.
 \textbf{Jev} is a hosted classification model (\citealp{jev}; version 1.13 through
@@ -320,7 +327,8 @@ CWQ & 50 & 0.28 & 0.28 & 0.28 & 0.59 & 0.54 & \textbf{0.73} & .611 (.720) & .750
 deciders: Jev, an LLM's stated 0--100 scores (\texttt{gpt-6-luna}), and an open LLM's
 token probabilities (Qwen3.8-27B). Accuracy is EM on MetaQA and 2Wiki, hits@1 on
 WebQSP/CWQ. AURC: lower is better; in parentheses, the AURC of a random order (the error
-rate). Bold: AUROC $\geq 0.70$.}
+rate). Bold: AUROC $\geq 0.70$. Original scoring; with walks that made no decision
+scored lowest, 2Wiki's AUROC is 0.92 / 0.92 / 0.97 (Appendix~\ref{app:nochoice}).}
 \label{tab:selective}
 \end{table*}
 
@@ -346,12 +354,23 @@ EM, although its confidence still ranks (AUROC 0.84; Appendix~\ref{app:models}).
 
 \paragraph{Stated scores are weak, and the confidence fails on some graphs.} The
 stated-score LLM decider is as accurate or more, but its confidence barely ranks
-answers (AUROC 0.54--0.69). On 2Wiki, sorting by Jev's confidence is \emph{worse} than a
-random order (AURC 0.141 vs.\ 0.117) despite AUROC 0.67: a few confidently wrong walks
-sit at the top. On CWQ ($n=50$, 28\% correct) the best AUROC is 0.73 and no decider's
-confidence is useful after recalibration (\S\ref{sec:robust}). Path confidence measures
-whether the decider was sure of each relation choice; it cannot see a constraint the
-walk ignored, or a graph that lacks the fact.
+answers (AUROC 0.54--0.69). On CWQ ($n=50$, 28\% correct) the best AUROC is 0.73 and no
+decider's confidence is useful after recalibration (\S\ref{sec:robust}). Path
+confidence measures whether the decider was sure of each relation choice; it cannot see
+a constraint the walk ignored, or a graph that lacks the fact.
+
+\paragraph{On 2Wiki, the failure was walks without a decision.} Sorting 2Wiki answers by
+Jev's confidence is \emph{worse} than a random order (AURC 0.141 vs.\ 0.117), because
+its most confident walks are wrong. They are walks of forced moves into a dead end: the
+two evidence facts of a question often name one entity differently (``Francesco Galli''
+and ``Francesco Galli Bibiena''), so the graph holds two nodes, and the walk reaches
+the first with no way on. The dead end counted as a certain \stopop{}, so a walk the
+decider was never asked about scored $c = 1$. Such walks are 3\% of questions and 37 of
+39 are wrong over four samples. Scoring them at the floor raises AUROC by 0.20--0.35 on
+the three samples where we found this, for every decider, and by 0.53 \ci{0.30}{0.76}
+on a fourth sample run after the rule was committed (AURC 0.170 $\to$ 0.044, against
+0.063 for a random order; Appendix~\ref{app:nochoice}). No other graph in the
+confidence experiments has such walks. The rule flags walks with no evidence; it does not repair the graph.
 
 % ======================================================================================
 \section{Is It the Signal or the Model?}
@@ -502,8 +521,9 @@ two-parameter fit on a few hundred labeled answers repairs much of it} (WebQSP E
 $\to$ 0.10, skill +0.25--0.28). After scaling, the decider ordering of
 \S\ref{sec:selective} holds for calibration too: on MetaQA 3-hop, Jev and token
 probabilities reach skill +0.62 and +0.57 and the stated scores +0.02, although their
-raw ECE is similar (0.13--0.15). Raw ECE alone would have hidden the difference. Where
-the confidence failed to rank (2Wiki, CWQ), scaling cannot rescue it. ECE with 10 bins
+raw ECE is similar (0.13--0.15). Raw ECE alone would have hidden the difference.
+Scaling is monotone, so it cannot rescue a confidence that fails to rank (CWQ, and 2Wiki
+under the original scoring). ECE with 10 bins
 is noisy at these sample sizes, and each fit sees only half the questions.
 
 % ======================================================================================
@@ -513,7 +533,7 @@ is noisy at these sample sizes, and each fit sees only half the questions.
 \paragraph{Escalation.} Simulated offline from runs in which both systems answered the
 same questions (Appendix~\ref{app:escalation}): on MetaQA 3-hop, passing walks with
 $c < 0.9$ (25\% of questions) to the LLM decider recovers all of its +0.06 F1 lead at
-\$0.30 instead of \$0.55 per 1k questions. On 2Wiki, where the confidence is weaker,
+\$0.30 instead of \$0.55 per 1k questions. On 2Wiki, where the confidence is weaker under the original scoring,
 closing the gap takes $t=0.95$ (34\% escalated, \$0.13 vs.\ \$0.16). On Freebase,
 escalation saves little, because the questions the walk answers confidently are the easy
 ones that the path writer also answers: on WebQSP ($n=50$), matching the path writer
@@ -605,8 +625,9 @@ Reading a decider's probabilities at each hop of a KG walk gives a confidence th
 where walks fail often enough to need one, separates right from wrong answers well; it
 does not depend on a particular classifier; and, with the model fixed, it beats asking
 the model how sure it is. It is not a probability until recalibrated, it is unstable per
-question under option reordering, and it fails on graphs where errors come from missing
-facts or ignored constraints. The walk it comes from is cheaper but less accurate than
+question under option reordering, and it fails on graphs where errors come from
+ignored constraints. A walk the decider never answered must be scored lowest, or a graph
+with broken links puts its wrong answers first. The walk it comes from is cheaper but less accurate than
 an LLM writing the query. We see its use as a cheap first pass whose confidence decides
 what to escalate, and as a tool that makes strong agents cheaper, not as a competitor
 to LLM-based KGQA on accuracy.
@@ -622,6 +643,8 @@ given; the walker is greedy over relations from one entity, with no beam search,
 constraint handling or multi-entity questions, which caps accuracy on WebQSP and CWQ.
 Freebase is the only large curated graph. \textbf{Calibration protocol.} We judge
 confidence mostly by ranking; Platt scaling needs labeled answers from the target graph.
+\textbf{Post-hoc rule.} The no-decision rule was found on 2Wiki and tested on one
+held-out sample of the same graph, not on another graph with broken links.
 \textbf{Data quality.} A large share of WebQSP/CWQ-style gold answers may be wrong or
 incomplete \citep{zhang2025kgqagen}, which bounds every accuracy number.
 
@@ -754,6 +777,39 @@ WebQSP, one graph & path writer only & 100\% & 0.66 & 1.48 \\
 \bottomrule
 \end{tabular}}
 \caption{Escalation simulated offline; an escalated question pays for both systems.}
+\end{table}
+
+\section{Walks Without a Decision}
+\label{app:nochoice}
+
+Table~\ref{tab:nochoice} rescores the committed 2Wiki runs with walks that made no
+decision at $c = 10^{-3}$ instead of 1; the walks themselves are unchanged. The rule was
+committed before the seed-3 sample was run.
+
+% Source: scripts/paper/table_nochoice.py (P9), docs/results-paper.md.
+\begin{table}[!h]
+\centering\small
+\setlength\tabcolsep{2.5pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+2Wiki sample & No dec. (wrong) & AUROC & $\Delta$ AUROC & AURC & Rand. \\
+\midrule
+Jev, seed 0 & 10 (9) & 0.67 $\to$ 0.92 & $+0.25$ \ci{$+0.12$}{$+0.40$} & .141 $\to$ .018 & .117 \\
+Jev, seed 1 & 11 (11) & 0.54 $\to$ 0.89 & $+0.35$ \ci{$+0.18$}{$+0.53$} & .171 $\to$ .020 & .103 \\
+Jev, seed 2 & 8 (7) & 0.63 $\to$ 0.84 & $+0.21$ \ci{$+0.07$}{$+0.35$} & .151 $\to$ .064 & .110 \\
+stated, seed 0 & 10 (9) & 0.69 $\to$ 0.92 & $+0.23$ \ci{$+0.11$}{$+0.35$} & .037 $\to$ .013 & .073 \\
+token, seed 0 & 10 (9) & 0.77 $\to$ 0.97 & $+0.20$ \ci{$+0.09$}{$+0.32$} & .139 $\to$ .016 & .147 \\
+\midrule
+Jev, seed 3 (held out) & 10 (10) & 0.32 $\to$ 0.85 & $+0.53$ \ci{$+0.30$}{$+0.76$} & .170 $\to$ .044 & .063 \\
+\quad unseen questions & 9 (9) & 0.31 $\to$ 0.83 & $+0.53$ \ci{$+0.29$}{$+0.77$} & .174 $\to$ .048 & .064 \\
+\bottomrule
+\end{tabular}}
+\caption{2Wiki walks rescored with walks that made no decision at $c = 10^{-3}$ instead of
+1 ($n = 300$ per sample, 267 unseen). Seed 3 was run after the rule was committed; its
+last row drops questions that occur in seeds 0--2. $\Delta$: paired bootstrap. Rand.:
+AURC of a random order. ECE after Platt scaling holds or falls in every row.}
+\label{tab:nochoice}
 \end{table}
 
 \section{Reproducibility}
