@@ -7,6 +7,35 @@ API; the changelog says when.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-28
+
+One behavior change to the walk's confidence, and the paper experiment behind it (P9).
+Upgrading from 0.2.0 changes confidences only for walks the decider never answered.
+
+### Changed
+
+- A walk the decider never answered (only forced moves, ending at a dead end) now has
+  confidence `prob_floor` (0.001 by default) instead of 1.0. The dead end counted as a
+  certain STOP, so such a walk ranked as the most confident answer with no decision
+  behind it; with `escalate_below` it now escalates. On 2Wiki's gold-evidence graph these
+  walks were 3% of questions and almost all wrong; scoring them lowest raised AUROC by
+  0.20–0.53, including on a sample run after the change (P9). Elsewhere only walks that
+  aborted before their first decision are affected. If you tuned a threshold on a graph
+  with dead ends, recheck it.
+
+### Added
+
+- `Answer.n_choices`: the decisions the decider answered (`n_decisions` also counts a
+  dead end's STOP). Eval records keep it, and `scores.jsonl` rows have `no_decision`
+  (`graphwalk.eval.runner.no_decision`; the confidence runs are re-exported with it).
+- `scripts/paper/table_nochoice.py` (P9).
+
+### Fixed
+
+- `scripts/paper/table_recalibration.py`: the Platt fit halves Newton steps until the
+  loss falls, so a far outlier in log-confidence no longer sends it off to huge
+  coefficients. P7 and P8 are unchanged.
+
 ## [0.2.0] - 2026-10-25
 
 Bring your own decider: graphwalk is the machinery (options, walks, confidence,
@@ -208,6 +237,7 @@ Details, by area:
 - The Wikipedia page fetcher and HTML-to-text converter for FanOutQA (superseded by
   the pinned corpus mirror) and unused JSON cache helpers in `eval/ingest_eval.py`.
 
-[Unreleased]: https://github.com/manvirchakal/graphwalk/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/manvirchakal/graphwalk/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/manvirchakal/graphwalk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/manvirchakal/graphwalk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/manvirchakal/graphwalk/releases/tag/v0.1.0

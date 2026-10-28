@@ -8,7 +8,7 @@ import random
 import subprocess
 import time
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -257,6 +257,20 @@ SCORES_FILE = "scores.jsonl"
 MAX_SCORED_ANSWERS = 50
 
 
+def no_decision(detail: Mapping[str, JsonValue], score: JsonValue) -> bool | None:
+    """Whether a walk finished without a decision the decider answered (its confidence
+    is then the floor; it was 1.0 before ``Answer.n_choices``). ``None``: not a walk with
+    a score. Runs recorded before ``n_choices`` are read from ``min_confidence``, which is
+    ``None`` exactly when no decision was answered."""
+    if not isinstance(score, int | float):
+        return None
+    if "n_choices" in detail:
+        return detail["n_choices"] == 0
+    if "min_confidence" in detail:
+        return detail["min_confidence"] is None
+    return None
+
+
 def score_rows(runs: Sequence[SystemRun]) -> list[dict[str, JsonValue]]:
     """One compact row per (system, question): scores, cost, latency, the walk's
     confidence, and the answers. Small enough to commit, so tables and confidence
@@ -284,6 +298,7 @@ def score_rows(runs: Sequence[SystemRun]) -> list[dict[str, JsonValue]]:
                     "confidence": (
                         math.exp(float(score_)) if isinstance(score_, int | float) else None
                     ),
+                    "no_decision": no_decision(answer.detail, score_),
                     "answers": list(answer.answer_set[:MAX_SCORED_ANSWERS]),
                 }
             )

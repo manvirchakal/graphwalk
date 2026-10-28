@@ -14,11 +14,13 @@ per beam (``per_beam``). Then:
 
 A move to a node the beam already visited is not offered (``exclude_visited``). A beam
 with no legal move and STOP ends as a ``dead_end``; one legal option is taken without a
-call and is not counted as a decision.
+call and is not counted as a decision. A walk the decider never answered (forced moves to
+a dead end) scores ``log(prob_floor)``: nothing in it is evidence that it is right.
 """
 
 import asyncio
 import logging
+import math
 import random
 import time
 from collections import defaultdict
@@ -85,6 +87,8 @@ class _Beam:
     visited: frozenset[NodeId] = frozenset()
     sum_logp: float = 0.0
     n_decisions: int = 0
+    n_choices: int = 0
+    """Decisions the decider answered; ``n_decisions`` also counts a dead end's STOP."""
     min_confidence: float | None = None
     finished: Termination | None = None
 
@@ -285,6 +289,9 @@ class Traverser:
         return (-self._score(beam), beam.order)
 
     def _score(self, beam: _Beam) -> float:
+        if beam.n_choices == 0:
+            # Only forced moves: a dead end's certain STOP would otherwise score 0 (p = 1).
+            return math.log(self.config.prob_floor)
         return normalized_score(beam.sum_logp, beam.n_decisions, self.config.length_alpha)
 
     async def _plan(self, run: _Run, beam: _Beam, depth: int) -> _Plan:
@@ -636,6 +643,7 @@ class Traverser:
             order=beam_id,
             sum_logp=beam.sum_logp + logp,
             n_decisions=beam.n_decisions + int(decided),
+            n_choices=beam.n_choices + int(confidence is not None),
             min_confidence=min_conf,
             finished=end,
         )
@@ -699,6 +707,7 @@ class Traverser:
                 score=self._score(best),
                 sum_logp=best.sum_logp,
                 n_decisions=best.n_decisions,
+                n_choices=best.n_choices,
                 min_confidence=best.min_confidence,
                 terminated_by=best.finished or "max_depth",
                 votes=votes,

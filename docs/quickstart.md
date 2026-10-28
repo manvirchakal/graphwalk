@@ -96,6 +96,9 @@ automatically. It ranks answers; it is **not** the probability of being right (o
 WebQSP the mean confidence was 0.80 for 54% correct). If you need a probability, fit a
 logistic curve on log-confidence over 100+ labeled answers: that cut the calibration
 error from 0.26 to 0.10 there ([P7](results-paper.md#p7-calibration-error-before-and-after-recalibration-scriptspapertable_recalibrationpy)).
+A walk the decider never had to answer (only one way on at every step, then a dead end)
+gets confidence 0.001 (`n_choices == 0`): there is no evidence it is right, and on
+2Wiki such walks were almost always wrong ([P9](results-paper.md#p9-walks-the-decider-never-answered-scriptspapertable_nochoicepy)).
 The LLM-decider fallback's confidence barely is informative: it is the
 model's stated scores, not probabilities.
 

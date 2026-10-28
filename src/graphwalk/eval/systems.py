@@ -117,6 +117,7 @@ class GraphwalkSystem:
                     "terminated_by": best.terminated_by,
                     "score": best.score,
                     "min_confidence": best.min_confidence,
+                    "n_choices": best.n_choices,
                     "n_answers": len(best.names),
                 }
             )
