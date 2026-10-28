@@ -224,10 +224,35 @@ async def test_dead_end_ends_without_a_call() -> None:
     assert result.best.node_ids == ("B",)
     assert result.best.terminated_by == "dead_end"
     assert result.best.n_decisions == 1  # the forced STOP counts as a certain decision
-    assert result.best.score == 0.0
+    # ...but the decider was never asked, so the walk gets the lowest score, not p = 1.
+    assert result.best.n_choices == 0
+    assert result.best.score == math.log(1e-3)
+    assert result.best.confidence == pytest.approx(1e-3)
     assert result.best.min_confidence is None
     assert result.trace.totals.cost_usd == 0.0  # no calls made: nothing to pay
     assert [s.call_id for s in result.trace.steps] == [None, None]
+
+
+async def test_one_answered_decision_is_scored_normally() -> None:
+    store = NetworkXStore()
+    for name in ("A", "B", "C"):
+        await store.upsert_node(node(name))
+    await store.upsert_edge(edge("A", "r", "B"))
+    await store.upsert_edge(edge("A", "s", "C"))
+
+    def script(question: ChoiceQuestion, _state: JSONContent) -> dict[str, float]:
+        first, *rest = question.options
+        return {first: 0.8} | {label: 0.2 / len(rest) for label in rest}
+
+    backend = FakeDecisionBackend(script=script)
+    config = cfg(strategy="greedy", allow_stop_at_start=False, direction="out")
+    result = await Traverser(store, backend, config=config).traverse("q", ["A"])
+    # Depth 0: two moves -> one call. Depth 1: a dead end, counted as a certain STOP.
+    assert backend.calls == 1
+    assert result.best is not None
+    assert result.best.terminated_by == "dead_end"
+    assert (result.best.n_choices, result.best.n_decisions) == (1, 2)
+    assert result.best.confidence == pytest.approx(math.sqrt(0.8))
 
 
 async def test_no_stop_at_start_when_disabled() -> None:

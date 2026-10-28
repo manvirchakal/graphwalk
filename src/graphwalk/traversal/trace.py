@@ -101,6 +101,9 @@ class Answer(BaseModel):
     """Length-normalized log-probability (higher is better, max 0)."""
     sum_logp: float
     n_decisions: int
+    n_choices: int = 0
+    """Decisions the decider answered. 0 means the walk was all forced moves to a dead
+    end: its score is then ``log(prob_floor)``, the lowest possible."""
     min_confidence: float | None
     """Lowest per-decision confidence along the path (``None`` if no decisions)."""
     terminated_by: Termination

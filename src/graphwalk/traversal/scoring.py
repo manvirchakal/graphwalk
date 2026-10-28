@@ -4,6 +4,8 @@
 (including STOP). ``alpha = 1`` is the mean log-prob, i.e. the log of TypeSafe's
 hierarchical-classification path score ``prod(p_i) ** (1 / L)``. Forced moves (a
 single legal option) are not decisions: they add nothing and do not increase ``L``.
+A dead end counts as a certain STOP (``p = 1``). A walk with no decision the decider
+answered gets ``log(floor)`` instead (in the engine): it would otherwise score 0, the best.
 """
 
 import math
