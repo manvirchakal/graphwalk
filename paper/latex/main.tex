@@ -32,27 +32,22 @@ An Empirical Study of Per-Hop Decision Confidence}
 \maketitle
 
 \begin{abstract}
-Question answering over knowledge graphs with large language models is accurate but
-expensive, and it rarely says when an answer is likely wrong. We study an old design,
+LLM-based question answering over knowledge graphs is accurate but expensive, and it
+rarely says when an answer is likely wrong. We study an old design,
 in which each hop of a walk is a classification over the current node's relations plus
 \stopop{} \citep{zhang2022sr,das2018minerva}, with a zero-shot, swappable decider, and
-ask what the walk's path confidence is worth. On MetaQA, WebQSP, CWQ and a
-2WikiMultiHopQA evidence graph, we compare a hosted classifier, three open LLMs read
-through their option-letter token probabilities, and LLM-stated confidence. Where walks
-fail often enough to matter (MetaQA 3-hop, WebQSP), path confidence ranks right above
-wrong answers well (AUROC 0.82--0.97): answering the most confident half of MetaQA
-3-hop questions is 99\% accurate, against 81\% overall. With the model and prompt held
-fixed, token probabilities beat stated per-option scores, stated top-1 confidence and
-5-sample voting by 0.06--0.23 AUROC. The raw confidence is not a probability (ECE 0.26
-on WebQSP), but a two-parameter Platt fit repairs much of that. Shuffling the options
-changes an LLM decider's answer on 10--27\% of questions without moving aggregate
-accuracy or AUROC. The walk is \emph{less} accurate than an LLM writing the relation
-path in one call ($-0.08$ F1 on MetaQA 3-hop, $-0.15$ on WebQSP), cheaper only on
-Freebase, and its confidence fails on CWQ. On 2Wiki it failed because walks the decider
-never answered were scored as certain; scoring them lowest lifts AUROC from 0.67 to
-0.92, and to 0.85 on a sample drawn after the rule was fixed. As a tool for a strong agent it
-cuts cost by 17\% at equal accuracy. We release the library, every run and the scripts
-that produce every table.
+ask what the walk's path confidence is worth on MetaQA, WebQSP, CWQ and a
+2WikiMultiHopQA evidence graph. Where walks fail often enough to matter (MetaQA 3-hop,
+WebQSP), path confidence ranks right above wrong answers well (AUROC 0.82--0.97): the
+most confident half of MetaQA 3-hop answers is 99\% accurate (81\% overall).
+With the model and prompt fixed, reading token probabilities beats stated confidence by
+0.09--0.23 AUROC and matches or beats 5-sample voting at a fifth of its cost. Raw
+confidence is overconfident, but a two-parameter Platt fit repairs much of that. The
+walk is \emph{less} accurate than an LLM writing the relation path in one call, cheaper
+only on Freebase, and its confidence fails on CWQ. On 2Wiki, walks that never reached a
+decision were scored as certain; scoring them lowest lifts AUROC from 0.67 to 0.92, and
+to 0.85 on a held-out sample. As a strong agent's tool, the walk cuts cost by 17\% at
+equal accuracy. The library, every run and the table scripts are released.
 \end{abstract}
 
 % ======================================================================================
@@ -292,7 +287,7 @@ better and the walk 3.6$\times$ cheaper, with a much shorter tail (p95 3.1\,s vs
 merged 5,419-relation WebQSP graph, giving the path writer only the relations within two
 hops of the topic entity keeps it 16 F1 points ahead (+0.16 \ci{+0.07}{+0.25}). On CWQ
 every system is weak (0.29--0.33 F1, against hits@1 of 0.59--0.72 reported by
-recent LLM methods), because
+recent LLM methods; \citealp{sun2024tog,jiang2025kgagent}), because
 none handles CWQ's constraints and a fifth of the sampled questions have no answer in
 their subgraph; parity there shows nothing. Walking wins only on noisy graphs extracted
 from text, where an LLM's plausible relation names usually do not exist (81\% of its
@@ -341,7 +336,7 @@ open model's token probabilities reach AUROC 0.97 and 0.96, and AURC 0.028--0.03
 against 0.20 for a random order: answering the most confident half is 99\% accurate,
 against 81\% overall. On WebQSP, the confidence stays informative at ten times the
 pilot's sample (Jev, $n=500$: AUROC 0.86 with EM). On MetaQA 1--2 hop, 93--98\% of walks
-are right and there is little to rank; AUROC is noisy there (0.54--0.97, from 2--14 wrong
+are right and there is little to rank; AUROC is noisy there (0.54--0.97, from 3--14 wrong
 answers).
 
 \paragraph{The signal is not Jev's.} The open model's letter probabilities match Jev
@@ -447,9 +442,9 @@ Table~\ref{tab:stated} and Figure~\ref{fig:riskcov} give the result.
 \paragraph{With the model fixed, the signal is what matters.} Both stated formats lose
 0.09--0.23 AUROC to token probabilities, every interval excluding zero. Asking for one
 confidence in the chosen answer, the stronger stated baseline, is no better than scores
-per option. Sampling consistency is the best alternative but still worse ($-0.06$; on
-WebQSP the interval touches zero), it costs 5--6$\times$ as much per decision, and
-sampling at temperature 1 costs some accuracy. Token probabilities are also the cheapest
+per option. Sampling consistency is the best alternative, worse by 0.06 on MetaQA and
+indistinguishable on WebQSP (the interval includes zero), but it costs 5--6$\times$ as
+much per decision, and sampling at temperature 1 costs some accuracy. Token probabilities are also the cheapest
 LLM signal: one output token per decision, 1.4--2.6$\times$ cheaper per question than
 the stated formats. Parsing was not the cause: 1.6\% (MetaQA) and 3.4\% (WebQSP) of
 per-option replies could not be parsed and were scored uniformly; the other formats
