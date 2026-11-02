@@ -3,7 +3,7 @@
 % regenerate from committed runs. Each table names its script in a comment.
 \documentclass[11pt]{article}
 
-\usepackage[review]{acl}
+\usepackage[preprint]{acl}
 \usepackage{times}
 \usepackage{latexsym}
 \usepackage[T1]{fontenc}
@@ -47,7 +47,8 @@ walk is \emph{less} accurate than an LLM writing the relation path in one call, 
 only on Freebase, and its confidence fails on CWQ. On 2Wiki, walks that never reached a
 decision were scored as certain; scoring them lowest lifts AUROC from 0.67 to 0.92, and
 to 0.85 on a held-out sample. As a strong agent's tool, the walk cuts cost by 17\% at
-equal accuracy. The library, every run and the table scripts are released.
+equal accuracy. The library, every run and the table scripts are released at
+\url{https://github.com/manvirchakal/graphwalk}.
 \end{abstract}
 
 % ======================================================================================
@@ -106,7 +107,7 @@ contributions are:
   aliases drops closed-book F1 from 0.42 to 0.01 and separates graph tools from text
   search by 0.25 F1, where with real names they tie.
 \item An open-source library (\sys{}) and every run, so each table can be regenerated
-  without new model calls.
+  without new model calls (\url{https://github.com/manvirchakal/graphwalk}).
 \end{itemize}
 
 % ======================================================================================
@@ -194,7 +195,7 @@ gets $c = 0$, and a walk with no decision the decider answered (forced moves to 
 end) gets $c = 10^{-3}$, the floor; when the runs were made it got $c = 1$, which matters
 only on 2Wiki (\S\ref{sec:selective}), and the other tables use the original scoring.
 
-\paragraph{Deciders.} We use four.
+\paragraph{Deciders.} We use three below, and a fourth, a 5-sample vote, in \S\ref{sec:signal}.
 \textbf{Jev} is a hosted classification model (\citealp{jev}; version 1.13 through
 OpenRouter) that takes a state, instructions and labeled options and returns a
 probability per option; it is closed, and the main reason we test the others.
@@ -608,8 +609,9 @@ in context, the questions here are ones the model may have memorized.
 
 We report the settings where walking did not help, since each was a plausible use.
 \textbf{QA over text}: on 2Wiki and HotpotQA paragraphs ingested into a graph by LLM
-extraction, walking loses to multi-step RAG over the same text by 10--19 F1 points, and
-a 20$\times$ pricier extraction model does not close the gap. \textbf{As a RAG add-on},
+extraction, the walk alone is far below multi-step RAG over the same text
+(Table~\ref{tab:accuracy}), and even with a reader over the walk's source paragraphs it
+loses by 10--15 F1 points; a 20$\times$ pricier extraction model does not close the gap. \textbf{As a RAG add-on},
 the graph's first retrieval cut multi-step RAG's LLM rounds by 16--21\% but gave no
 reliable accuracy gain, and the classifier calls cost more than the saved LLM calls.
 \textbf{Large curated schemas} do not favor walking (\S\ref{sec:accuracy}).
