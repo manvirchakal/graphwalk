@@ -4,6 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/graphwalk)](https://pypi.org/project/graphwalk/)
 [![Docs](https://img.shields.io/badge/docs-github.io-blue)](https://manvirchakal.github.io/graphwalk/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](https://github.com/manvirchakal/graphwalk/blob/main/LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23900499.svg)](https://doi.org/10.5281/zenodo.23900499)
 
 **Cheap, confidence-scored question answering over a knowledge graph you already
 have.** Python library, CLI, and MCP server for agents.
