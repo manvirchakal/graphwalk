@@ -7,6 +7,11 @@ API; the changelog says when.
 
 ## [Unreleased]
 
+### Added
+
+- Zenodo DOI (10.5281/zenodo.23900499, all versions) in the README, `CITATION.cff`
+  and the paper.
+
 ## [0.3.1] - 2026-11-03
 
 No code changes. This release exists to archive the code and runs on Zenodo with a DOI.
