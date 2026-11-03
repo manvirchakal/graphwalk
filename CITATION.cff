@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use graphwalk, please cite it using these metadata."
+type: software
+title: "graphwalk: confidence-scored question answering over knowledge graphs"
+abstract: >-
+  A library, CLI and MCP server for question answering over knowledge graphs, in which
+  each hop of a walk is a classification over the current node's relations plus STOP,
+  and the walk's path probability is a confidence for its answer. Includes every
+  experiment run and the scripts that regenerate the paper's tables.
+authors:
+  - family-names: Chakal
+    given-names: Manvir
+    affiliation: Independent Researcher
+version: 0.3.1
+date-released: 2026-11-03
+license: Apache-2.0
+repository-code: "https://github.com/manvirchakal/graphwalk"
+url: "https://manvirchakal.github.io/graphwalk/"
+keywords:
+  - knowledge graph
+  - question answering
+  - KGQA
+  - selective prediction
+  - calibration
+  - LLM agents

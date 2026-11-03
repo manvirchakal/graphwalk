@@ -7,6 +7,20 @@ API; the changelog says when.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-03
+
+No code changes. This release exists to archive the code and runs on Zenodo with a DOI.
+
+### Added
+
+- `CITATION.cff`, so GitHub shows "Cite this repository" and Zenodo takes its metadata
+  from it.
+
+### Changed
+
+- Paper (`paper/latex/`): preprint mode, a link to this repository, a contact email,
+  the 2Wiki no-decision-rule results, and corrected claims from a table cross-check.
+
 ## [0.3.0] - 2026-10-28
 
 One behavior change to the walk's confidence, and the paper experiment behind it (P9).
@@ -237,7 +251,8 @@ Details, by area:
 - The Wikipedia page fetcher and HTML-to-text converter for FanOutQA (superseded by
   the pinned corpus mirror) and unused JSON cache helpers in `eval/ingest_eval.py`.
 
-[Unreleased]: https://github.com/manvirchakal/graphwalk/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/manvirchakal/graphwalk/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/manvirchakal/graphwalk/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/manvirchakal/graphwalk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/manvirchakal/graphwalk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/manvirchakal/graphwalk/releases/tag/v0.1.0
